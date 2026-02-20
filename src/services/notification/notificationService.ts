@@ -78,6 +78,10 @@ export function renderWithdrawalStatusTemplate(status: string, currency: string,
   return `Your ACBU withdrawal of ${amount} ${currency} has been ${status}.`;
 }
 
+export function renderInvestmentWithdrawalReadyTemplate(amountAcbu: number): string {
+  return `Your investment withdrawal of ${amountAcbu} ACBU is now available. You can complete the transfer or burn from your wallet.`;
+}
+
 export function renderReserveAlertTemplate(health: string, ratio: number): string {
   return `ACBU reserve alert: health=${health}, overcollateralization ratio=${ratio.toFixed(2)}%.`;
 }

@@ -123,6 +123,18 @@ async function startServer() {
       const { startWithdrawalProcessingConsumer } = await import('./jobs/withdrawalProcessingJob');
       await startWithdrawalProcessingConsumer();
 
+      // Start XLM→ACBU consumer (XLM deposit: sell XLM and mint ACBU to user)
+      const { startXlmToAcbuConsumer } = await import('./jobs/xlmToAcbuJob');
+      await startXlmToAcbuConsumer();
+
+      // Start USDC convert-and-mint consumer (USDC deposit: convert USDC→XLM in backend, then mint)
+      const { startUsdcConvertAndMintConsumer } = await import('./jobs/usdcConvertAndMintJob');
+      await startUsdcConvertAndMintConsumer();
+
+      // Investment withdrawal: mark requests available at T+24h and send notification
+      const { startInvestmentWithdrawalScheduler } = await import('./jobs/investmentWithdrawalJob');
+      await startInvestmentWithdrawalScheduler();
+
       // Register MintEvent/BurnEvent handlers and start Stellar event listener (runs in background)
       const { startMintEventListener } = await import('./jobs/acbu_minting_event_listener');
       await startMintEventListener();

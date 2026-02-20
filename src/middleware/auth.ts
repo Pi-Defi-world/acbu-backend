@@ -4,6 +4,8 @@ import bcrypt from 'bcryptjs';
 import { AppError } from './errorHandler';
 import { logger } from '../config/logger';
 
+export type Audience = 'retail' | 'business' | 'government';
+
 export interface AuthRequest extends Request {
   apiKey?: {
     id: string;
@@ -12,6 +14,8 @@ export interface AuthRequest extends Request {
     permissions: string[];
     rateLimit: number;
   };
+  /** Set by audience-specific routes (e.g. /retail, /business, /government) for limits and behaviour. */
+  audience?: Audience;
 }
 
 /**

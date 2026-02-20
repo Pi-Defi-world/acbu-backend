@@ -13,7 +13,7 @@ model Organization {
   name          String?   @db.VarChar(255)
   kycStatus     String    @default("pending") @map("kyc_status") @db.VarChar(20)
   kycVerifiedAt DateTime? @map("kyc_verified_at") @db.Timestamp
-  actorType     String    @default("sme") @map("actor_type") @db.VarChar(20) // 'sme' | 'enterprise' | 'merchant'
+  actorType     String    @default("sme") @map("actor_type") @db.VarChar(20) // 'sme' | 'enterprise' | 'merchant' | 'government'
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamp
 
@@ -41,7 +41,7 @@ model User {
   keyEncryptionHint    String?   @map("key_encryption_hint") @db.VarChar(50)
   twoFaMethod          String?   @map("two_fa_method") @db.VarChar(20) // 'totp' | 'sms' | 'email'
   totpSecretEncrypted  String?   @map("totp_secret_encrypted") @db.VarChar(512)
-  actorType            String    @default("retail") @map("actor_type") @db.VarChar(20) // 'retail' | 'sme' | 'enterprise' | 'merchant' | 'platform'
+  actorType            String    @default("retail") @map("actor_type") @db.VarChar(20) // 'retail' | 'sme' | 'enterprise' | 'merchant' | 'platform' | 'government'
   tier                 String    @default("free") @db.VarChar(20) // 'free' | 'verified' | 'sme' | 'enterprise'
   organizationId       String?   @map("organization_id") @db.Uuid
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp
@@ -58,6 +58,7 @@ model User {
   wardGuardians   Guardian[]         @relation("GuardianWard")
   contacts        UserContact[]      @relation("UserContacts")
   contactOf       UserContact[]      @relation("ContactOf")
+  onRampSwaps     OnRampSwap[]
 
   @@index([stellarAddress], name: "idx_stellar_address")
   @@index([username], name: "idx_username")
@@ -111,16 +112,18 @@ model Transaction {
 model Reserve {
   id              String    @id @default(uuid()) @db.Uuid
   currency        String    @db.VarChar(3)
+  segment         String    @default("transactions") @db.VarChar(20) // 'transactions' | 'investment_savings'
   targetWeight    Decimal   @map("target_weight") @db.Decimal(5, 2)
   actualWeight    Decimal   @map("actual_weight") @db.Decimal(5, 2)
   reserveAmount   Decimal   @map("reserve_amount") @db.Decimal(20, 2)
   reserveValueUsd Decimal   @map("reserve_value_usd") @db.Decimal(20, 2)
   timestamp       DateTime  @default(now()) @db.Timestamp
 
-  @@unique([currency, timestamp])
+  @@unique([currency, segment, timestamp])
   @@index([currency], name: "idx_reserves_currency")
+  @@index([segment], name: "idx_reserves_segment")
   @@index([timestamp], name: "idx_reserves_timestamp")
-  @@index([currency, timestamp(sort: Desc)], name: "idx_reserves_currency_timestamp")
+  @@index([currency, segment, timestamp(sort: Desc)], name: "idx_reserves_currency_segment_timestamp")
   @@map("reserves")
 }
 
@@ -266,6 +269,48 @@ model Webhook {
   @@index([transactionId], name: "idx_webhooks_transaction_id")
   @@index([status], name: "idx_webhooks_status")
   @@map("webhooks")
+}
+
+/// Deposit USDC or XLM: we run conversion (USDC→XLM) and/or LP/swap in backend; mint is approved once conversion succeeds. Pools/swaps run independently.
+model OnRampSwap {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  stellarAddress  String    @map("stellar_address") @db.VarChar(56)
+  source          String    @default("xlm_deposit") @db.VarChar(20) // 'usdc_deposit' | 'xlm_deposit'
+  xlmAmount       Decimal?  @map("xlm_amount") @db.Decimal(20, 7)
+  usdcAmount      Decimal?  @map("usdc_amount") @db.Decimal(20, 8)
+  status          String    @db.VarChar(20) // pending_convert | processing | completed | failed
+  transactionId   String?   @map("transaction_id") @db.Uuid
+  completedAt     DateTime? @map("completed_at") @db.Timestamp
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status], name: "idx_on_ramp_swap_status")
+  @@index([source], name: "idx_on_ramp_swap_source")
+  @@index([userId], name: "idx_on_ramp_swap_user_id")
+  @@index([createdAt], name: "idx_on_ramp_swap_created_at")
+  @@map("on_ramp_swaps")
+}
+
+/// Investment withdrawal request: retail (24h + message when ready) or business (calendar or 1% early fee).
+model InvestmentWithdrawalRequest {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String?   @map("user_id") @db.Uuid
+  organizationId  String?   @map("organization_id") @db.Uuid
+  audience        String    @db.VarChar(20) // 'retail' | 'business'
+  amountAcbu      Decimal   @map("amount_acbu") @db.Decimal(20, 8)
+  status          String    @db.VarChar(20) // 'requested' | 'processing' | 'available' | 'completed' | 'failed'
+  forcedRemoval   Boolean   @default(false) @map("forced_removal") @db.Boolean
+  feePercent      Decimal?  @map("fee_percent") @db.Decimal(5, 2)
+  availableAt     DateTime  @map("available_at") @db.Timestamp
+  notifiedAt      DateTime? @map("notified_at") @db.Timestamp
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp
+
+  @@index([status], name: "idx_inv_withdrawal_status")
+  @@index([availableAt], name: "idx_inv_withdrawal_available_at")
+  @@index([userId], name: "idx_inv_withdrawal_user_id")
+  @@map("investment_withdrawal_requests")
 }
 
 model ApiKey {

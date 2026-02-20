@@ -21,6 +21,11 @@ import savingsRoutes from './savingsRoutes';
 import lendingRoutes from './lendingRoutes';
 import gatewayRoutes from './gatewayRoutes';
 import billsRoutes from './billsRoutes';
+import onrampRoutes from './onrampRoutes';
+import retailFundsRoutes from './retailFundsRoutes';
+import businessFundsRoutes from './businessFundsRoutes';
+import governmentFundsRoutes from './governmentFundsRoutes';
+import investmentRoutes from './investmentRoutes';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -78,6 +83,11 @@ router.use('/savings', savingsRoutes);
 router.use('/lending', lendingRoutes);
 router.use('/gateway', gatewayRoutes);
 router.use('/bills', billsRoutes);
+router.use('/onramp', onrampRoutes);
+router.use('/retail', retailFundsRoutes);
+router.use('/business', businessFundsRoutes);
+router.use('/government', governmentFundsRoutes);
+router.use('/investment', investmentRoutes);
 router.use('/webhooks', webhookRoutes);
 
 export default router;

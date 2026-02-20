@@ -27,6 +27,10 @@ export const SEGMENT_SCOPES = [
   'gateway:write',
   'payroll:read',
   'payroll:write',
+  'government:read',
+  'government:write',
+  'investment:read',
+  'investment:write',
 ] as const;
 
 export type SegmentScope = (typeof SEGMENT_SCOPES)[number];

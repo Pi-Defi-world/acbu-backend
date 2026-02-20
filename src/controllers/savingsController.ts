@@ -3,6 +3,11 @@ import { acbuSavingsVaultService } from '../services/contracts';
 import { contractAddresses } from '../config/contracts';
 import type { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import {
+  isSavingsLockDate,
+  getNextSavingsWithdrawalDate,
+  getApyForTerm,
+} from '../config/savings';
 
 export async function postSavingsDeposit(
   req: Request,
@@ -37,6 +42,16 @@ export async function postSavingsWithdraw(
   next: NextFunction
 ): Promise<void> {
   try {
+    if (isSavingsLockDate()) {
+      const nextDate = getNextSavingsWithdrawalDate();
+      res.status(403).json({
+        error: 'Savings locked',
+        code: 'SAVINGS_LOCK_DATE',
+        message: 'Savings withdrawals are not allowed on this date. Next available withdrawal date below.',
+        next_available_withdrawal_date: nextDate.toISOString().slice(0, 10),
+      });
+      return;
+    }
     const { user, term_seconds, amount } = (req as AuthRequest).body || {};
     if (!user || term_seconds == null || !amount) {
       throw new AppError('user, term_seconds, and amount required', 400);
@@ -73,10 +88,32 @@ export async function getSavingsPositions(
       user,
       termSeconds != null ? Number(termSeconds) : 0
     );
+    const termSec = termSeconds != null ? Number(termSeconds) : 0;
+    const apy = getApyForTerm(termSec);
+    const nextDate = getNextSavingsWithdrawalDate();
     res.status(200).json({
       user,
-      term_seconds: termSeconds != null ? Number(termSeconds) : null,
+      term_seconds: termSec || null,
       balance,
+      apy_percent: apy,
+      next_available_withdrawal_date: isSavingsLockDate() ? nextDate.toISOString().slice(0, 10) : null,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/** GET /savings/next-withdrawal-date - When is the next date withdrawals are allowed. */
+export async function getNextWithdrawalDate(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const nextDate = getNextSavingsWithdrawalDate();
+    res.status(200).json({
+      next_available_withdrawal_date: nextDate.toISOString().slice(0, 10),
+      is_locked_today: isSavingsLockDate(),
     });
   } catch (e) {
     next(e);

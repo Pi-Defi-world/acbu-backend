@@ -11,6 +11,7 @@ import {
   renderOtpTemplate,
   renderWithdrawalStatusTemplate,
   renderReserveAlertTemplate,
+  renderInvestmentWithdrawalReadyTemplate,
 } from '../services/notification';
 
 interface OtpSendPayload {
@@ -65,6 +66,20 @@ async function processNotification(payload: NotificationPayload): Promise<void> 
       });
       if (channels.includes('email') && user?.email) await sendEmail(user.email, 'ACBU Withdrawal Update', body);
       if (channels.includes('sms') && user?.phoneE164) await sendSms(user.phoneE164, body);
+    }
+    return;
+  }
+  if (type === 'investment_withdrawal_ready') {
+    const userId = payload.userId as string | null;
+    const amountAcbu = (payload.amountAcbu as number) ?? 0;
+    const body = renderInvestmentWithdrawalReadyTemplate(amountAcbu);
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, phoneE164: true },
+      });
+      if (user?.email) await sendEmail(user.email, 'Your investment withdrawal is ready', body);
+      if (user?.phoneE164) await sendSms(user.phoneE164, body);
     }
     return;
   }

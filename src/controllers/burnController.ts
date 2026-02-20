@@ -10,8 +10,9 @@ import { acbuBurningService } from '../services/contracts';
 import { AuthRequest } from '../middleware/auth';
 import { Decimal } from '@prisma/client/runtime/library';
 import { logAudit } from '../services/audit';
+import { checkWithdrawalLimits, isCurrencyWithdrawalPaused } from '../services/limits/limitsService';
+import { getBurnFeeBps } from '../services/feePolicy/feePolicyService';
 
-const BURN_FEE_BPS = 10; // 0.1%
 const DECIMALS_7 = 1e7;
 
 const recipientAccountSchema = z.object({
@@ -40,8 +41,28 @@ export async function burnAcbu(
     }
     const { acbu_amount, currency, recipient_account } = parsed.data;
     const acbuNum = Number(acbu_amount);
-    const feeAcbu = (acbuNum * BURN_FEE_BPS) / 10000;
+    const burnFeeBps = await getBurnFeeBps(currency);
+    const feeAcbu = (acbuNum * burnFeeBps) / 10000;
     const acbuAmount7 = Math.round(acbuNum * DECIMALS_7).toString();
+
+    if (req.audience) {
+      const paused = await isCurrencyWithdrawalPaused(currency);
+      if (paused) {
+        res.status(503).json({
+          error: 'Withdrawal paused for currency',
+          code: 'CIRCUIT_BREAKER',
+          message: `Single-currency withdrawals for ${currency} are temporarily paused (reserve below threshold). Basket withdrawals continue.`,
+        });
+        return;
+      }
+      await checkWithdrawalLimits(
+        req.audience,
+        acbuNum,
+        currency,
+        req.apiKey?.userId ?? null,
+        req.apiKey?.organizationId ?? null
+      );
+    }
 
     const tx = await prisma.transaction.create({
       data: {

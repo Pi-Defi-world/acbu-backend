@@ -40,3 +40,18 @@ export const BASKET_WEIGHTS_SUM = Object.values(BASKET_WEIGHTS).reduce(
   (a, b) => a + b,
   0
 );
+
+/** Currencies that must NOT be deposited into the pool. Deposit API accepts only basket currencies. */
+export const FORBIDDEN_DEPOSIT_CURRENCIES = ['USDC', 'USDT'] as const;
+
+/** Check if a currency code is allowed for pool deposit (must be in basket). */
+export function isAllowedDepositCurrency(currency: string): boolean {
+  return BASKET_CURRENCIES.includes(currency as BasketCurrency);
+}
+
+/** Check if a currency is forbidden (USDC/USDT). */
+export function isForbiddenDepositCurrency(currency: string): boolean {
+  return FORBIDDEN_DEPOSIT_CURRENCIES.includes(
+    currency.toUpperCase() as (typeof FORBIDDEN_DEPOSIT_CURRENCIES)[number]
+  );
+}

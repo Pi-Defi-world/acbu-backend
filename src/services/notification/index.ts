@@ -4,4 +4,5 @@ export {
   renderOtpTemplate,
   renderWithdrawalStatusTemplate,
   renderReserveAlertTemplate,
+  renderInvestmentWithdrawalReadyTemplate,
 } from './notificationService';

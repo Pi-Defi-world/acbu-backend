@@ -66,6 +66,8 @@ export const QUEUES = {
   ACBU_SAVINGS_VAULT_EVENTS: 'acbu_savings_vault_events',
   ACBU_LENDING_POOL_EVENTS: 'acbu_lending_pool_events',
   ACBU_ESCROW_EVENTS: 'acbu_escrow_events',
+  XLM_TO_ACBU: 'xlm_to_acbu', // XLM deposit: sell XLM and mint ACBU to user
+  USDC_CONVERT_AND_MINT: 'usdc_convert_and_mint', // USDC deposit: convert USDC→XLM (backend), then mint
 } as const;
 
 // Exchange names

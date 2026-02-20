@@ -80,10 +80,11 @@ export class ReserveTracker {
           const totalReserveValue = await this.getTotalReserveValue();
           const actualWeight = totalReserveValue > 0 ? (reserveValueUsd / totalReserveValue) * 100 : 0;
 
-          // Store reserve snapshot (off-chain)
+          // Store reserve snapshot (off-chain) for transactions segment
           await prisma.reserve.create({
             data: {
               currency,
+              segment: 'transactions',
               targetWeight: new Decimal(targetWeight),
               actualWeight: new Decimal(actualWeight),
               reserveAmount: new Decimal(balance),
@@ -136,12 +137,17 @@ export class ReserveTracker {
     }
   }
 
+  /** Reserve segment: transactions (mint/burn liquidity) or investment_savings */
+  static readonly SEGMENT_TRANSACTIONS = 'transactions' as const;
+  static readonly SEGMENT_INVESTMENT_SAVINGS = 'investment_savings' as const;
+
   /**
-   * Get current reserve status
+   * Get current reserve status (default: transactions segment only for health).
+   * Use getReserveStatusBySegment to get investment_savings or both.
    */
-  async getReserveStatus(): Promise<ReserveHealth> {
+  async getReserveStatus(segment: string = ReserveTracker.SEGMENT_TRANSACTIONS): Promise<ReserveHealth> {
     const totalAcbuSupply = await this.getTotalAcbuSupply();
-    const totalReserveValue = await this.getTotalReserveValue();
+    const totalReserveValue = await this.getTotalReserveValue(segment);
     const overcollateralizationRatio =
       totalAcbuSupply > 0 ? (totalReserveValue / totalAcbuSupply) * 100 : 0;
 
@@ -150,7 +156,7 @@ export class ReserveTracker {
 
     for (const currency of currencies) {
       const latestReserve = await prisma.reserve.findFirst({
-        where: { currency },
+        where: { currency, segment },
         orderBy: { timestamp: 'desc' },
       });
 
@@ -183,11 +189,11 @@ export class ReserveTracker {
   }
 
   /**
-   * Calculate reserve ratio
+   * Calculate reserve ratio (default: transactions segment).
    */
-  async calculateReserveRatio(): Promise<number> {
+  async calculateReserveRatio(segment: string = ReserveTracker.SEGMENT_TRANSACTIONS): Promise<number> {
     const totalAcbuSupply = await this.getTotalAcbuSupply();
-    const totalReserveValue = await this.getTotalReserveValue();
+    const totalReserveValue = await this.getTotalReserveValue(segment);
 
     if (totalAcbuSupply === 0) {
       return 0;
@@ -267,15 +273,15 @@ export class ReserveTracker {
   }
 
   /**
-   * Get total reserve value in USD
+   * Get total reserve value in USD for a segment (default: transactions).
    */
-  private async getTotalReserveValue(): Promise<number> {
+  private async getTotalReserveValue(segment: string = ReserveTracker.SEGMENT_TRANSACTIONS): Promise<number> {
     const currencies = await basketService.getCurrencies();
     let total = 0;
 
     for (const currency of currencies) {
       const latest = await prisma.reserve.findFirst({
-        where: { currency },
+        where: { currency, segment },
         orderBy: { timestamp: 'desc' },
       });
 
