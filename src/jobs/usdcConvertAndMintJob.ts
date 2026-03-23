@@ -23,17 +23,19 @@ export async function startUsdcConvertAndMintConsumer(): Promise<void> {
     async (msg: ConsumeMessage | null) => {
       if (!msg) return;
       try {
-        const body = JSON.parse(msg.content.toString()) as UsdcConvertAndMintPayload;
+        const body = JSON.parse(
+          msg.content.toString(),
+        ) as UsdcConvertAndMintPayload;
         await processUsdcConvertAndMint(body);
         ch.ack(msg);
       } catch (e) {
-        logger.error('USDC convert-and-mint job failed', { error: e });
+        logger.error("USDC convert-and-mint job failed", { error: e });
         ch.nack(msg, false, true);
       }
     },
-    { noAck: false }
+    { noAck: false },
   );
-  logger.info('USDC convert-and-mint consumer started', { queue: QUEUE });
+  logger.info("USDC convert-and-mint consumer started", { queue: QUEUE });
 }
 
 /**
@@ -46,24 +48,32 @@ async function convertUsdcToXlm(_usdcAmount: number): Promise<void> {
   return;
 }
 
-export async function processUsdcConvertAndMint(payload: UsdcConvertAndMintPayload): Promise<void> {
+export async function processUsdcConvertAndMint(
+  payload: UsdcConvertAndMintPayload,
+): Promise<void> {
   const { onRampSwapId } = payload;
   const swap = await prisma.onRampSwap.findUnique({
     where: { id: onRampSwapId },
   });
-  if (!swap || swap.source !== 'usdc_deposit' || swap.status !== 'pending_convert') {
-    logger.warn('OnRampSwap not found or not a pending USDC deposit', { onRampSwapId });
+  if (
+    !swap ||
+    swap.source !== "usdc_deposit" ||
+    swap.status !== "pending_convert"
+  ) {
+    logger.warn("OnRampSwap not found or not a pending USDC deposit", {
+      onRampSwapId,
+    });
     return;
   }
   const usdcAmount = swap.usdcAmount ? Number(swap.usdcAmount) : 0;
   if (usdcAmount <= 0) {
-    logger.warn('OnRampSwap has no usdcAmount', { onRampSwapId });
+    logger.warn("OnRampSwap has no usdcAmount", { onRampSwapId });
     return;
   }
 
   await prisma.onRampSwap.update({
     where: { id: onRampSwapId },
-    data: { status: 'processing' },
+    data: { status: "processing" },
   });
 
   try {
@@ -71,17 +81,17 @@ export async function processUsdcConvertAndMint(payload: UsdcConvertAndMintPaylo
     const { transactionId, acbuAmount } = await mintFromUsdcInternal(
       usdcAmount,
       swap.stellarAddress,
-      swap.userId
+      swap.userId,
     );
     await prisma.onRampSwap.update({
       where: { id: onRampSwapId },
       data: {
-        status: 'completed',
+        status: "completed",
         transactionId,
         completedAt: new Date(),
       },
     });
-    logger.info('USDC convert-and-mint completed', {
+    logger.info("USDC convert-and-mint completed", {
       onRampSwapId,
       userId: swap.userId,
       stellarAddress: swap.stellarAddress,
@@ -91,18 +101,22 @@ export async function processUsdcConvertAndMint(payload: UsdcConvertAndMintPaylo
   } catch (e) {
     await prisma.onRampSwap.update({
       where: { id: onRampSwapId },
-      data: { status: 'failed' },
+      data: { status: "failed" },
     });
-    logger.error('USDC convert-and-mint failed', { onRampSwapId, error: e });
+    logger.error("USDC convert-and-mint failed", { onRampSwapId, error: e });
     throw e;
   }
 }
 
-export async function enqueueUsdcConvertAndMint(payload: UsdcConvertAndMintPayload): Promise<void> {
+export async function enqueueUsdcConvertAndMint(
+  payload: UsdcConvertAndMintPayload,
+): Promise<void> {
   const ch = await connectRabbitMQ();
   await ch.assertQueue(QUEUE, { durable: true });
   ch.sendToQueue(QUEUE, Buffer.from(JSON.stringify(payload)), {
     persistent: true,
   });
-  logger.info('USDC convert-and-mint enqueued', { onRampSwapId: payload.onRampSwapId });
+  logger.info("USDC convert-and-mint enqueued", {
+    onRampSwapId: payload.onRampSwapId,
+  });
 }

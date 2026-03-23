@@ -1,6 +1,6 @@
-import { TransactionBuilder, Operation, xdr } from 'stellar-sdk';
-import { stellarClient } from './client';
-import { logger } from '../../config/logger';
+import { TransactionBuilder, Operation, xdr } from "stellar-sdk";
+import { stellarClient } from "./client";
+import { logger } from "../../config/logger";
 
 export interface ContractCallOptions {
   contractId: string;
@@ -28,24 +28,36 @@ export class ContractClient {
   /**
    * Invoke a contract function
    */
-  async invokeContract(options: ContractCallOptions): Promise<ContractInvokeResult> {
+  async invokeContract(
+    options: ContractCallOptions,
+  ): Promise<ContractInvokeResult> {
     try {
       const { contractId, functionName, args, sourceAccount, fee } = options;
 
-      logger.info('Invoking contract function', {
+      logger.info("Invoking contract function", {
         contractId,
         functionName,
         sourceAccount,
       });
 
       // Build invoke contract operation (stellar-sdk type shape varies by version)
-      const invokeOp = (Operation.invokeHostFunction as (opts: unknown) => unknown)({
-        function: (xdr.HostFunction as unknown as { hostFunctionTypeInvokeContract: unknown }).hostFunctionTypeInvokeContract,
+      const invokeOp = (
+        Operation.invokeHostFunction as (opts: unknown) => unknown
+      )({
+        function: (
+          xdr.HostFunction as unknown as {
+            hostFunctionTypeInvokeContract: unknown;
+          }
+        ).hostFunctionTypeInvokeContract,
         parameters: [
           xdr.ScVal.scvAddress(
             xdr.ScAddress.scAddressTypeContract(
-              (xdr as unknown as { ContractId: { fromXdr: (s: string) => Buffer } }).ContractId.fromXdr(contractId)
-            )
+              (
+                xdr as unknown as {
+                  ContractId: { fromXdr: (s: string) => Buffer };
+                }
+              ).ContractId.fromXdr(contractId),
+            ),
           ),
           xdr.ScVal.scvSymbol(functionName),
           ...args,
@@ -55,11 +67,13 @@ export class ContractClient {
       // Build transaction
       const sourceAccountObj = await stellarClient.getAccount(sourceAccount);
       const builder = new TransactionBuilder(sourceAccountObj, {
-        fee: fee || '100',
+        fee: fee || "100",
         networkPassphrase: this.networkPassphrase,
       });
 
-      builder.addOperation(invokeOp as Parameters<typeof builder.addOperation>[0]);
+      builder.addOperation(
+        invokeOp as Parameters<typeof builder.addOperation>[0],
+      );
       const transaction = builder.build();
 
       // Sign transaction (if keypair is available)
@@ -80,7 +94,7 @@ export class ContractClient {
         ledger: result.ledger || 0,
       };
     } catch (error) {
-      logger.error('Failed to invoke contract', {
+      logger.error("Failed to invoke contract", {
         contractId: options.contractId,
         functionName: options.functionName,
         error,
@@ -95,26 +109,36 @@ export class ContractClient {
   async readContract(
     contractId: string,
     functionName: string,
-    args: xdr.ScVal[]
+    args: xdr.ScVal[],
   ): Promise<xdr.ScVal> {
     try {
-      logger.info('Reading contract data', { contractId, functionName });
+      logger.info("Reading contract data", { contractId, functionName });
 
       // For read operations, we can use simulateTransaction
       // This is a simplified version - in production, use proper simulation
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
-        throw new Error('No source account available for contract read');
+        throw new Error("No source account available for contract read");
       }
 
       // Build invoke operation
-      const invokeOp = (Operation.invokeHostFunction as (opts: unknown) => unknown)({
-        function: (xdr.HostFunction as unknown as { hostFunctionTypeInvokeContract: unknown }).hostFunctionTypeInvokeContract,
+      const invokeOp = (
+        Operation.invokeHostFunction as (opts: unknown) => unknown
+      )({
+        function: (
+          xdr.HostFunction as unknown as {
+            hostFunctionTypeInvokeContract: unknown;
+          }
+        ).hostFunctionTypeInvokeContract,
         parameters: [
           xdr.ScVal.scvAddress(
             xdr.ScAddress.scAddressTypeContract(
-              (xdr as unknown as { ContractId: { fromXdr: (s: string) => Buffer } }).ContractId.fromXdr(contractId)
-            )
+              (
+                xdr as unknown as {
+                  ContractId: { fromXdr: (s: string) => Buffer };
+                }
+              ).ContractId.fromXdr(contractId),
+            ),
           ),
           xdr.ScVal.scvSymbol(functionName),
           ...args,
@@ -123,15 +147,23 @@ export class ContractClient {
 
       const sourceAccountObj = await stellarClient.getAccount(sourceAccount);
       const builder = new TransactionBuilder(sourceAccountObj, {
-        fee: '100',
+        fee: "100",
         networkPassphrase: this.networkPassphrase,
       });
 
-      builder.addOperation(invokeOp as Parameters<typeof builder.addOperation>[0]);
+      builder.addOperation(
+        invokeOp as Parameters<typeof builder.addOperation>[0],
+      );
       const transaction = builder.build();
 
       // Simulate transaction (read-only)
-      const simulation = await (this.server as unknown as { simulateTransaction: (tx: unknown) => Promise<{ error?: string; result?: unknown }> }).simulateTransaction(transaction);
+      const simulation = await (
+        this.server as unknown as {
+          simulateTransaction: (
+            tx: unknown,
+          ) => Promise<{ error?: string; result?: unknown }>;
+        }
+      ).simulateTransaction(transaction);
 
       if (simulation.error) {
         throw new Error(`Simulation error: ${simulation.error}`);
@@ -140,7 +172,7 @@ export class ContractClient {
       // Parse result
       return this.parseSimulationResult(simulation as { result?: unknown });
     } catch (error) {
-      logger.error('Failed to read contract', {
+      logger.error("Failed to read contract", {
         contractId,
         functionName,
         error,
@@ -157,18 +189,23 @@ export class ContractClient {
     // This is a simplified version - actual implementation depends on transaction structure
     try {
       if (result.result_xdr) {
-        const txResult = xdr.TransactionResult.fromXDR(result.result_xdr, 'base64');
+        const txResult = xdr.TransactionResult.fromXDR(
+          result.result_xdr,
+          "base64",
+        );
         const operations = txResult.result().results();
         if (operations.length > 0) {
           const opResult = operations[0].tr().invokeHostFunctionResult();
           if (opResult) {
-            return (opResult.success() as unknown as { returnValue: () => xdr.ScVal }).returnValue();
+            return (
+              opResult.success() as unknown as { returnValue: () => xdr.ScVal }
+            ).returnValue();
           }
         }
       }
-      throw new Error('Could not parse transaction result');
+      throw new Error("Could not parse transaction result");
     } catch (error) {
-      logger.error('Failed to parse transaction result', { error });
+      logger.error("Failed to parse transaction result", { error });
       throw error;
     }
   }
@@ -181,9 +218,9 @@ export class ContractClient {
       if (simulation.result) {
         return simulation.result.returnValue;
       }
-      throw new Error('Could not parse simulation result');
+      throw new Error("Could not parse simulation result");
     } catch (error) {
-      logger.error('Failed to parse simulation result', { error });
+      logger.error("Failed to parse simulation result", { error });
       throw error;
     }
   }
@@ -192,16 +229,19 @@ export class ContractClient {
    * Convert JavaScript value to ScVal
    */
   static toScVal(value: any): xdr.ScVal {
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       return xdr.ScVal.scvString(value);
-    } else if (typeof value === 'number') {
+    } else if (typeof value === "number") {
       return xdr.ScVal.scvI128(
-        new (xdr.Int128Parts as unknown as new (arg: { hi: unknown; lo: unknown }) => unknown)({
+        new (xdr.Int128Parts as unknown as new (arg: {
+          hi: unknown;
+          lo: unknown;
+        }) => unknown)({
           hi: xdr.Int64.fromString(Math.floor(value / 2 ** 64).toString()),
           lo: xdr.Uint64.fromString((value % 2 ** 64).toString()),
-        }) as xdr.Int128Parts
+        }) as xdr.Int128Parts,
       );
-    } else if (typeof value === 'boolean') {
+    } else if (typeof value === "boolean") {
       return xdr.ScVal.scvBool(value);
     } else if (value instanceof Uint8Array) {
       return xdr.ScVal.scvBytes(Buffer.from(value));
@@ -232,15 +272,21 @@ export class ContractClient {
         return scVal.i64().toString();
       case xdr.ScValType.scvU128():
         return scVal.u128().toString();
-      case xdr.ScValType.scvI128():
+      case xdr.ScValType.scvI128(): {
         const parts = scVal.i128();
-        return BigInt(parts.hi().toString()) * BigInt(2 ** 64) + BigInt(parts.lo().toString());
+        return (
+          BigInt(parts.hi().toString()) * BigInt(2 ** 64) +
+          BigInt(parts.lo().toString())
+        );
+      }
       case xdr.ScValType.scvString():
         return scVal.str().toString();
       case xdr.ScValType.scvBytes():
         return scVal.bytes();
       case xdr.ScValType.scvVec():
-        return (scVal.vec() ?? []).map((v: xdr.ScVal) => ContractClient.fromScVal(v));
+        return (scVal.vec() ?? []).map((v: xdr.ScVal) =>
+          ContractClient.fromScVal(v),
+        );
       default:
         throw new Error(`Unsupported ScVal type: ${scVal.switch()}`);
     }

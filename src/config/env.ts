@@ -167,6 +167,32 @@ export const config = {
     secret: process.env.WEBHOOK_SECRET || '',
   },
 
+  // Limits
+  limits: {
+    retail: {
+      depositDailyUsd: parseInt(process.env.LIMIT_RETAIL_DEPOSIT_DAILY_USD || '5000', 10),
+      depositMonthlyUsd: parseInt(process.env.LIMIT_RETAIL_DEPOSIT_MONTHLY_USD || '50000', 10),
+      withdrawalSingleCurrencyDailyUsd: parseInt(process.env.LIMIT_RETAIL_WITHDRAWAL_DAILY_USD || '10000', 10),
+      withdrawalSingleCurrencyMonthlyUsd: parseInt(process.env.LIMIT_RETAIL_WITHDRAWAL_MONTHLY_USD || '80000', 10),
+    },
+    business: {
+      depositDailyUsd: parseInt(process.env.LIMIT_BUSINESS_DEPOSIT_DAILY_USD || '50000', 10),
+      depositMonthlyUsd: parseInt(process.env.LIMIT_BUSINESS_DEPOSIT_MONTHLY_USD || '500000', 10),
+      withdrawalSingleCurrencyDailyUsd: parseInt(process.env.LIMIT_BUSINESS_WITHDRAWAL_DAILY_USD || '100000', 10),
+      withdrawalSingleCurrencyMonthlyUsd: parseInt(process.env.LIMIT_BUSINESS_WITHDRAWAL_MONTHLY_USD || '800000', 10),
+    },
+    government: {
+      depositDailyUsd: parseInt(process.env.LIMIT_GOV_DEPOSIT_DAILY_USD || '500000', 10),
+      depositMonthlyUsd: parseInt(process.env.LIMIT_GOV_DEPOSIT_MONTHLY_USD || '5000000', 10),
+      withdrawalSingleCurrencyDailyUsd: parseInt(process.env.LIMIT_GOV_WITHDRAWAL_DAILY_USD || '500000', 10),
+      withdrawalSingleCurrencyMonthlyUsd: parseInt(process.env.LIMIT_GOV_WITHDRAWAL_MONTHLY_USD || '4000000', 10),
+    },
+    circuitBreaker: {
+      reserveWeightThresholdPct: parseFloat(process.env.LIMIT_CIRCUIT_BREAKER_RESERVE_WEIGHT_PCT || '10'),
+      minReserveRatio: parseFloat(process.env.LIMIT_CIRCUIT_BREAKER_MIN_RATIO || '1.02')
+    }
+  },
+
   // CORS
   corsOrigin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
 };

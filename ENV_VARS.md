@@ -101,6 +101,25 @@ Or per network: `CONTRACT_ORACLE_TESTNET`, `CONTRACT_ORACLE_MAINNET`, etc.
 |----------|---------|-------------|
 | `BASKET_METRICS_INTERVAL_DAYS` | `30` | Days between metrics ingestion and proposed basket weight creation |
 
+## Limits (Deposit/Withdrawal & Circuit Breakers)
+
+| Variable | Default (USD) | Description |
+|----------|---------|-------------|
+| `LIMIT_RETAIL_DEPOSIT_DAILY_USD` | `5000` | Daily deposit limit for retail users |
+| `LIMIT_RETAIL_DEPOSIT_MONTHLY_USD` | `50000` | Monthly deposit limit for retail users |
+| `LIMIT_RETAIL_WITHDRAWAL_DAILY_USD` | `10000` | Daily withdrawal limit for retail users |
+| `LIMIT_RETAIL_WITHDRAWAL_MONTHLY_USD` | `80000` | Monthly withdrawal limit for retail users |
+| `LIMIT_BUSINESS_DEPOSIT_DAILY_USD` | `50000` | Daily deposit limit for business users |
+| `LIMIT_BUSINESS_DEPOSIT_MONTHLY_USD` | `500000` | Monthly deposit limit for business users |
+| `LIMIT_BUSINESS_WITHDRAWAL_DAILY_USD` | `100000` | Daily withdrawal limit for business users |
+| `LIMIT_BUSINESS_WITHDRAWAL_MONTHLY_USD` | `800000` | Monthly withdrawal limit for business users |
+| `LIMIT_GOV_DEPOSIT_DAILY_USD` | `500000` | Daily deposit limit for government users |
+| `LIMIT_GOV_DEPOSIT_MONTHLY_USD` | `5000000` | Monthly deposit limit for government users |
+| `LIMIT_GOV_WITHDRAWAL_DAILY_USD` | `500000` | Daily withdrawal limit for government users |
+| `LIMIT_GOV_WITHDRAWAL_MONTHLY_USD` | `4000000` | Monthly withdrawal limit for government users |
+| `LIMIT_CIRCUIT_BREAKER_RESERVE_WEIGHT_PCT`| `10` | Reserve % weight threshold circuit breaker |
+| `LIMIT_CIRCUIT_BREAKER_MIN_RATIO` | `1.02` | Minimum reserve ratio threshold circuit breaker |
+
 ## Reserve
 
 | Variable | Default | Description |

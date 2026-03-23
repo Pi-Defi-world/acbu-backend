@@ -1,29 +1,36 @@
-import { Request, Response, NextFunction } from 'express';
-import { acbuSavingsVaultService } from '../services/contracts';
-import { contractAddresses } from '../config/contracts';
-import type { AuthRequest } from '../middleware/auth';
-import { AppError } from '../middleware/errorHandler';
+import { Request, Response, NextFunction } from "express";
+import { acbuSavingsVaultService } from "../services/contracts";
+import { contractAddresses } from "../config/contracts";
+import type { AuthRequest } from "../middleware/auth";
+import { AppError } from "../middleware/errorHandler";
 import {
   isSavingsLockDate,
   getNextSavingsWithdrawalDate,
   getApyForTerm,
-} from '../config/savings';
+} from "../config/savings";
 
 export async function postSavingsDeposit(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
-    const { user, amount, term_seconds } = (req as AuthRequest).body || {};
-    if (!user || !amount || term_seconds == null) {
-      throw new AppError('user, amount, and term_seconds required', 400);
+    const authReq = req as AuthRequest;
+    const userId = authReq.apiKey?.userId;
+
+    if (!userId) {
+      throw new AppError("Authenticated user ID required for savings", 401);
+    }
+
+    const { amount, term_seconds } = authReq.body || {};
+    if (!amount || term_seconds == null) {
+      throw new AppError("amount and term_seconds required", 400);
     }
     if (!contractAddresses.savingsVault) {
-      throw new AppError('Savings vault contract not configured', 503);
+      throw new AppError("Savings vault contract not configured", 503);
     }
     const result = await acbuSavingsVaultService.deposit({
-      user,
+      user: userId,
       amount: String(amount),
       termSeconds: Number(term_seconds),
     });
@@ -39,28 +46,36 @@ export async function postSavingsDeposit(
 export async function postSavingsWithdraw(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
     if (isSavingsLockDate()) {
       const nextDate = getNextSavingsWithdrawalDate();
       res.status(403).json({
-        error: 'Savings locked',
-        code: 'SAVINGS_LOCK_DATE',
-        message: 'Savings withdrawals are not allowed on this date. Next available withdrawal date below.',
+        error: "Savings locked",
+        code: "SAVINGS_LOCK_DATE",
+        message:
+          "Savings withdrawals are not allowed on this date. Next available withdrawal date below.",
         next_available_withdrawal_date: nextDate.toISOString().slice(0, 10),
       });
       return;
     }
-    const { user, term_seconds, amount } = (req as AuthRequest).body || {};
-    if (!user || term_seconds == null || !amount) {
-      throw new AppError('user, term_seconds, and amount required', 400);
+    const authReq = req as AuthRequest;
+    const userId = authReq.apiKey?.userId;
+
+    if (!userId) {
+      throw new AppError("Authenticated user ID required for savings", 401);
+    }
+
+    const { term_seconds, amount } = authReq.body || {};
+    if (term_seconds == null || !amount) {
+      throw new AppError("term_seconds and amount required", 400);
     }
     if (!contractAddresses.savingsVault) {
-      throw new AppError('Savings vault contract not configured', 503);
+      throw new AppError("Savings vault contract not configured", 503);
     }
     const txHash = await acbuSavingsVaultService.withdraw({
-      user,
+      user: userId,
       termSeconds: Number(term_seconds),
       amount: String(amount),
     });
@@ -73,30 +88,35 @@ export async function postSavingsWithdraw(
 export async function getSavingsPositions(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
-    const user = (req as AuthRequest).query?.user as string;
-    const termSeconds = (req as AuthRequest).query?.term_seconds as string;
-    if (!user) {
-      throw new AppError('query user required', 400);
+    const authReq = req as AuthRequest;
+    const userId = authReq.apiKey?.userId;
+
+    if (!userId) {
+      throw new AppError("Authenticated user ID required for savings", 401);
     }
+
+    const termSeconds = authReq.query?.term_seconds as string;
     if (!contractAddresses.savingsVault) {
-      throw new AppError('Savings vault contract not configured', 503);
+      throw new AppError("Savings vault contract not configured", 503);
     }
     const balance = await acbuSavingsVaultService.getBalance(
-      user,
-      termSeconds != null ? Number(termSeconds) : 0
+      userId,
+      termSeconds != null ? Number(termSeconds) : 0,
     );
     const termSec = termSeconds != null ? Number(termSeconds) : 0;
     const apy = getApyForTerm(termSec);
     const nextDate = getNextSavingsWithdrawalDate();
     res.status(200).json({
-      user,
+      user: userId,
       term_seconds: termSec || null,
       balance,
       apy_percent: apy,
-      next_available_withdrawal_date: isSavingsLockDate() ? nextDate.toISOString().slice(0, 10) : null,
+      next_available_withdrawal_date: isSavingsLockDate()
+        ? nextDate.toISOString().slice(0, 10)
+        : null,
     });
   } catch (e) {
     next(e);
@@ -107,7 +127,7 @@ export async function getSavingsPositions(
 export async function getNextWithdrawalDate(
   _req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   try {
     const nextDate = getNextSavingsWithdrawalDate();
