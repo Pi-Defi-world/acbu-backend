@@ -126,9 +126,7 @@ export const config = {
     apiUrl: process.env.PI_API_URL || "https://api.pi.network.com",
     /** Minimum Pi sent to user wallet for activation. Default 0.1 */
     minBalancePi: parseFloat(
-      process.env.WALLET_ACTIVATION_PI ||
-        process.env.PI_MIN_BALANCE ||
-        "0.1",
+      process.env.WALLET_ACTIVATION_PI || process.env.PI_MIN_BALANCE || "0.1",
     ),
     /** Network: testnet or mainnet */
     network: (process.env.PI_NETWORK || "testnet") as "testnet" | "mainnet",

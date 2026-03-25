@@ -1,7 +1,7 @@
 /**
  * Send minimum cryptocurrency to user's address to activate the wallet (create account on-chain).
  * Called when user has paid KYC fee; platform wallet (Stellar or Pi) is the source.
- * 
+ *
  * Chain Selection:
  * - Uses Pi when PI_BRIDGE_ENABLED=true (Pi bridge/chain is active)
  * - Falls back to Stellar XLM otherwise (default behavior)
@@ -17,7 +17,7 @@ import { logger } from "../../config/logger";
 /**
  * Send minimum balance to activate a wallet.
  * Automatically selects between Pi and Stellar based on configuration.
- * 
+ *
  * @param address - The target address on the active chain (Stellar or Pi)
  * @returns Transaction hash
  */

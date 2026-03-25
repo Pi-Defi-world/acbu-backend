@@ -31,10 +31,7 @@ export async function sendPiToActivate(piAddress: string): Promise<string> {
     const msg = e?.message ?? String(err);
 
     // Already exists is not a failure
-    if (
-      msg.includes("already_exists") ||
-      msg.includes("already_funded")
-    ) {
+    if (msg.includes("already_exists") || msg.includes("already_funded")) {
       logger.info("Pi wallet already funded, skip activation", {
         piAddress: piAddress.slice(0, 8) + "…",
       });
