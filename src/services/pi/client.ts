@@ -41,7 +41,7 @@ export class PiClient {
       timeout: 30000,
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${this.secretKey}`,
+        Authorization: `Bearer ${this.secretKey}`,
       },
     });
 
@@ -84,15 +84,20 @@ export class PiClient {
     }
 
     if (!this.secretKey) {
-      throw new Error("Platform Pi secret key not configured; cannot fund wallet");
+      throw new Error(
+        "Platform Pi secret key not configured; cannot fund wallet",
+      );
     }
 
     try {
-      const response = await this.apiClient.post("/v1/transactions/create-account", {
-        destination: piAddress,
-        amount: amountPi,
-        network: this.network,
-      });
+      const response = await this.apiClient.post(
+        "/v1/transactions/create-account",
+        {
+          destination: piAddress,
+          amount: amountPi,
+          network: this.network,
+        },
+      );
 
       const txHash = response.data?.hash || response.data?.id;
 
@@ -121,7 +126,11 @@ export class PiClient {
         message?: string;
       };
 
-      const errorMsg = e?.response?.data?.message || e?.response?.data?.error || e?.message || String(err);
+      const errorMsg =
+        e?.response?.data?.message ||
+        e?.response?.data?.error ||
+        e?.message ||
+        String(err);
       const errorCode = e?.response?.data?.code || "";
 
       if (
@@ -174,7 +183,9 @@ export class PiClient {
     }
 
     try {
-      const response = await this.apiClient.get(`/v1/accounts/${piAddress}/balance`);
+      const response = await this.apiClient.get(
+        `/v1/accounts/${piAddress}/balance`,
+      );
       return response.data?.balance ?? 0;
     } catch (err) {
       logger.error("Failed to get Pi account balance", {

@@ -3,4 +3,3 @@ export {
   sendCryptoToActivate,
   sendXlmToActivate,
 } from "./walletActivationService";
-

@@ -13,6 +13,22 @@ export class AppError extends Error {
   }
 }
 
+/**
+ * Sanitize an error for logging: strip stack traces in production
+ * and ensure no PII or secrets leak into log output.
+ */
+function sanitizeForLog(err: Error, req: Request) {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  return {
+    message: err.message,
+    name: err.name,
+    path: req.path,
+    method: req.method,
+    ...(isProduction ? {} : { stack: err.stack }),
+  };
+}
+
 export const errorHandler = (
   err: Error | AppError,
   req: Request,
@@ -36,14 +52,8 @@ export const errorHandler = (
     return;
   }
 
-  // Unexpected errors
-  logger.error("Unexpected error", {
-    error: err,
-    message: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-  });
+  // Unexpected errors: log sanitized details, never expose internals to client
+  logger.error("Unexpected error", sanitizeForLog(err, req));
 
   res.status(500).json({
     error: {

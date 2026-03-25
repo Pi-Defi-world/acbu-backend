@@ -1,7 +1,7 @@
 /**
  * Send minimum cryptocurrency to user's address to activate the wallet (create account on-chain).
  * Called when user has paid KYC fee; platform wallet (Stellar or Pi) is the source.
- * 
+ *
  * Chain Selection:
  * - Uses Pi when PI_BRIDGE_ENABLED=true (Pi bridge/chain is active)
  * - Falls back to Stellar XLM otherwise (default behavior)
@@ -9,6 +9,7 @@
 import { Operation, TransactionBuilder } from "stellar-sdk";
 import { config } from "../../config/env";
 import { stellarClient } from "../stellar/client";
+import { getBaseFee } from "../stellar/feeManager";
 import { piClient } from "../pi/client";
 import { sendPiToActivate } from "../pi/activationService";
 import { logger } from "../../config/logger";
@@ -16,7 +17,7 @@ import { logger } from "../../config/logger";
 /**
  * Send minimum balance to activate a wallet.
  * Automatically selects between Pi and Stellar based on configuration.
- * 
+ *
  * @param address - The target address on the active chain (Stellar or Pi)
  * @returns Transaction hash
  */
@@ -59,7 +60,7 @@ export async function sendXlmToActivate(
   });
 
   const builder = new TransactionBuilder(sourceAccount, {
-    fee: "100",
+    fee: await getBaseFee(),
     networkPassphrase,
   }).addOperation(op);
   const transaction = builder.build();

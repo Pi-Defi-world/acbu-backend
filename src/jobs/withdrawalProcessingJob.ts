@@ -3,7 +3,11 @@
  * disburse via fintech, update transaction status, optionally publish user notification.
  */
 import type { ConsumeMessage } from "amqplib";
-import { connectRabbitMQ, QUEUES } from "../config/rabbitmq";
+import {
+  connectRabbitMQ,
+  QUEUES,
+  assertQueueWithDLQ,
+} from "../config/rabbitmq";
 import { logger } from "../config/logger";
 import { prisma } from "../config/database";
 import { getFintechRouter } from "../services/fintech";
@@ -17,7 +21,7 @@ export interface WithdrawalPayload {
 export async function startWithdrawalProcessingConsumer(): Promise<void> {
   const ch = await connectRabbitMQ();
   const queue = QUEUES.WITHDRAWAL_PROCESSING;
-  await ch.assertQueue(queue, { durable: true });
+  await assertQueueWithDLQ(queue);
   ch.prefetch(1);
   ch.consume(
     queue,
@@ -173,7 +177,7 @@ async function publishWithdrawalNotification(
 ): Promise<void> {
   try {
     const ch = await connectRabbitMQ();
-    await ch.assertQueue(QUEUES.NOTIFICATIONS, { durable: true });
+    await assertQueueWithDLQ(QUEUES.NOTIFICATIONS);
     ch.sendToQueue(
       QUEUES.NOTIFICATIONS,
       Buffer.from(
@@ -204,7 +208,7 @@ export async function enqueueWithdrawalProcessing(
   payload: WithdrawalPayload,
 ): Promise<void> {
   const ch = await connectRabbitMQ();
-  await ch.assertQueue(QUEUES.WITHDRAWAL_PROCESSING, { durable: true });
+  await assertQueueWithDLQ(QUEUES.WITHDRAWAL_PROCESSING);
   ch.sendToQueue(
     QUEUES.WITHDRAWAL_PROCESSING,
     Buffer.from(JSON.stringify(payload)),

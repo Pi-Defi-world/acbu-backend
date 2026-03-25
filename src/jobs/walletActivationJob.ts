@@ -1,6 +1,6 @@
 /**
  * Consumes WALLET_ACTIVATION queue: when user pays KYC fee, send min crypto to their address.
- * 
+ *
  * Chain Selection:
  * - Uses Pi when PI_BRIDGE_ENABLED=true
  * - Falls back to Stellar XLM otherwise
@@ -36,4 +36,3 @@ export async function startWalletActivationConsumer(): Promise<void> {
   );
   logger.info("Wallet activation consumer started", { queue: QUEUE });
 }
-

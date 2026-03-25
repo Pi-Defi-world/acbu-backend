@@ -5,6 +5,7 @@
 import { Operation, Asset, Keypair, TransactionBuilder } from "stellar-sdk";
 import { prisma } from "../../config/database";
 import { stellarClient } from "../stellar/client";
+import { getBaseFee } from "../stellar/feeManager";
 import { resolveRecipientToStellarAddress } from "../recipient/recipientResolver";
 import { logger } from "../../config/logger";
 import type {
@@ -42,7 +43,7 @@ async function submitStellarPayment(
     amount: amountAcbu,
   });
   const builder = new TransactionBuilder(sourceAccount, {
-    fee: "100",
+    fee: await getBaseFee(),
     networkPassphrase,
   }).addOperation(op);
   const transaction = builder.build();

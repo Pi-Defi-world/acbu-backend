@@ -15,13 +15,6 @@ import { QUEUES } from "../../config/rabbitmq";
 import { ensureWalletForUser } from "../wallet/walletService";
 import { logAudit } from "../audit";
 
-import * as crypto from "crypto";
-
-/** Placeholder Stellar address until wallet is created on first signin. Schema: 56 chars, unique. */
-function getPlaceholderStellarAddress(): string {
-  return ("P" + crypto.randomBytes(28).toString("hex")).slice(0, 56);
-}
-
 export interface SignupParams {
   username: string;
   passcode: string;
@@ -156,7 +149,6 @@ export async function signup(params: SignupParams): Promise<SignupResult> {
     data: {
       username,
       passcodeHash,
-      stellarAddress: getPlaceholderStellarAddress(),
     },
     select: { id: true },
   });

@@ -1,5 +1,6 @@
 import { TransactionBuilder, Operation, xdr } from "stellar-sdk";
 import { stellarClient } from "./client";
+import { getBaseFee } from "./feeManager";
 import { logger } from "../../config/logger";
 
 export interface ContractCallOptions {
@@ -67,7 +68,7 @@ export class ContractClient {
       // Build transaction
       const sourceAccountObj = await stellarClient.getAccount(sourceAccount);
       const builder = new TransactionBuilder(sourceAccountObj, {
-        fee: fee || "100",
+        fee: fee || (await getBaseFee()),
         networkPassphrase: this.networkPassphrase,
       });
 
@@ -147,7 +148,7 @@ export class ContractClient {
 
       const sourceAccountObj = await stellarClient.getAccount(sourceAccount);
       const builder = new TransactionBuilder(sourceAccountObj, {
-        fee: "100",
+        fee: await getBaseFee(),
         networkPassphrase: this.networkPassphrase,
       });
 
