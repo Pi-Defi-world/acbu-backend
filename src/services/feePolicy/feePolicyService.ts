@@ -17,6 +17,10 @@ const BASE_BURN_FEE_BPS = 10;
 const LOW_RESERVE_BURN_FEE_BPS = 200; // 2%
 /** When reserve weight is above target, reduce burn fee. */
 const HIGH_RESERVE_BURN_FEE_BPS = 10; // 0.1%
+/** Trigger high burn fee below 85% of target reserve weight. */
+const LOW_RESERVE_THRESHOLD_PCT = 85;
+/** Trigger low burn fee above 115% of target reserve weight. */
+const HIGH_RESERVE_THRESHOLD_PCT = 115;
 
 /**
  * Get spread in basis points (buy/sell spread for quote).
@@ -52,8 +56,9 @@ export async function getBurnFeeBps(currency: string): Promise<number> {
   const actualWeight = curr.actualWeight;
   if (targetWeight <= 0) return BASE_BURN_FEE_BPS;
   const pctOfTarget = (actualWeight / targetWeight) * 100;
-  if (pctOfTarget < 15) return LOW_RESERVE_BURN_FEE_BPS;
-  if (pctOfTarget > 21) return HIGH_RESERVE_BURN_FEE_BPS;
+  if (pctOfTarget < LOW_RESERVE_THRESHOLD_PCT) return LOW_RESERVE_BURN_FEE_BPS;
+  if (pctOfTarget > HIGH_RESERVE_THRESHOLD_PCT)
+    return HIGH_RESERVE_BURN_FEE_BPS;
   return BASE_BURN_FEE_BPS;
 }
 
