@@ -106,6 +106,22 @@ export async function put(
 }
 
 /**
+ * Download a document from object storage and return it as a Buffer.
+ */
+export async function getDocumentBuffer(key: string): Promise<Buffer> {
+  const client = getClient();
+  const command = new GetObjectCommand({ Bucket: BUCKET, Key: key });
+  const response = await client.send(command);
+  const stream = response.Body;
+  if (!stream) throw new Error(`Empty body for key ${key}`);
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of stream as AsyncIterable<Uint8Array>) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
  * Check if object store is configured (bucket + client). Does not validate credentials.
  */
 export function isConfigured(): boolean {
