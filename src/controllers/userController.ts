@@ -6,6 +6,7 @@ import { Keypair } from "stellar-sdk";
 import { AuthRequest } from "../middleware/auth";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
+import { stellarClient } from "../services/stellar/client";
 
 const WALLET_ENC_SALT_PREFIX = "acbu-wallet-v1:";
 const WALLET_ENC_KEYLEN = 32;
@@ -551,6 +552,61 @@ export async function getReceiveQrcode(
       margin: 2,
     });
     res.json({ pay_uri, qr_data_url });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
+ * GET /users/me/balance
+ * Returns the authenticated user's on-chain balances (ACBU + XLM + all assets).
+ */
+export async function getBalance(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const userId = req.apiKey?.userId;
+    if (!userId) throw new AppError("User-scoped API key required", 401);
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { stellarAddress: true },
+    });
+    if (!user) throw new AppError("User not found", 404);
+    if (!user.stellarAddress) throw new AppError("Wallet not activated", 400);
+
+    const account = await stellarClient.getAccount(user.stellarAddress);
+
+    // Determine ACBU balance (custom asset or native XLM)
+    const acbuIssuer = process.env.STELLAR_ACBU_ASSET_ISSUER;
+    let acbuBalance = "0";
+    let xlmBalance = "0";
+
+    for (const b of account.balances) {
+      if (b.asset_type === "native") {
+        xlmBalance = b.balance;
+        if (!acbuIssuer) {
+          // When no custom issuer, ACBU is native XLM
+          acbuBalance = b.balance;
+        }
+      } else if (
+        acbuIssuer &&
+        "asset_code" in b &&
+        b.asset_code === "ACBU" &&
+        "asset_issuer" in b &&
+        b.asset_issuer === acbuIssuer
+      ) {
+        acbuBalance = b.balance;
+      }
+    }
+
+    res.json({
+      acbu_balance: acbuBalance,
+      xlm_balance: xlmBalance,
+      balances: account.balances,
+    });
   } catch (e) {
     next(e);
   }

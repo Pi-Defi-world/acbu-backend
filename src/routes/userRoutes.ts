@@ -12,6 +12,7 @@ import {
   postGuardians,
   getGuardians,
   deleteGuardian,
+  getBalance,
 } from "../controllers/userController";
 import { validateApiKey } from "../middleware/auth";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";
@@ -22,6 +23,7 @@ router.use(validateApiKey);
 router.use(apiKeyRateLimiter);
 
 router.get("/me", getMe);
+router.get("/me/balance", getBalance);
 router.patch("/me", patchMe);
 router.delete("/me", deleteMe);
 router.get("/me/receive", getReceive);
