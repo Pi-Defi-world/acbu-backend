@@ -15,8 +15,13 @@ export function verifyFlutterwaveSignature(
 ): void {
   const secret = config.flutterwave.webhookSecret;
   if (!secret) {
-    logger.warn("Flutterwave webhook secret not set; skipping verification");
-    next();
+    logger.error(
+      "FLUTTERWAVE_WEBHOOK_SECRET is not configured — rejecting webhook. " +
+        "Set the environment variable to accept Flutterwave webhooks.",
+    );
+    res.status(503).json({
+      error: "Webhook verification unavailable: secret not configured",
+    });
     return;
   }
   const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
@@ -48,6 +53,97 @@ export function verifyFlutterwaveSignature(
   }
   logger.warn("Flutterwave webhook signature mismatch");
   res.status(401).json({ error: "Invalid signature" });
+}
+
+// ── Paystack Webhook ────────────────────────────────────────────────────────
+
+/**
+ * Verify Paystack webhook signature using HMAC-SHA512 of the raw body.
+ * Rejects the request if PAYSTACK_SECRET_KEY is not configured.
+ */
+export function verifyPaystackSignature(
+  req: Request & { rawBody?: Buffer },
+  res: Response,
+  next: NextFunction,
+): void {
+  const secret = config.paystack.secretKey;
+  if (!secret) {
+    logger.error(
+      "PAYSTACK_SECRET_KEY is not configured — rejecting webhook. " +
+        "Set the environment variable to accept Paystack webhooks.",
+    );
+    res.status(503).json({
+      error: "Webhook verification unavailable: secret not configured",
+    });
+    return;
+  }
+  const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+  if (!rawBody || !Buffer.isBuffer(rawBody)) {
+    res.status(400).json({ error: "Raw body required for verification" });
+    return;
+  }
+  const received = req.headers["x-paystack-signature"] as string | undefined;
+  if (!received) {
+    res.status(401).json({ error: "Missing x-paystack-signature header" });
+    return;
+  }
+  const computed = crypto
+    .createHmac("sha512", secret)
+    .update(rawBody)
+    .digest("hex");
+  if (computed === received) {
+    next();
+    return;
+  }
+  logger.warn("Paystack webhook signature mismatch");
+  res.status(401).json({ error: "Invalid signature" });
+}
+
+/**
+ * Handle Paystack webhook payload: persist and optionally process transaction.
+ */
+export async function handlePaystackWebhook(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const payload = req.body as {
+      event?: string;
+      data?: {
+        id?: number;
+        reference?: string;
+        amount?: number;
+        currency?: string;
+        status?: string;
+        customer?: { email?: string };
+      };
+    };
+    const eventType = payload.event ?? "unknown";
+    const data = payload.data ?? {};
+    logger.info("Paystack webhook received", {
+      eventType,
+      reference: data.reference,
+      status: data.status,
+    });
+
+    await prisma.webhook.create({
+      data: {
+        eventType: `paystack:${String(eventType)}`,
+        payload: payload as object,
+        status: "processed",
+      },
+    });
+
+    if (eventType === "charge.success" && data.status === "success") {
+      // Optional: create or update Transaction for deposit (mint flow)
+      // When reference links to a pending mint, update transaction
+    }
+
+    res.status(200).json({ status: "ok" });
+  } catch (error) {
+    next(error);
+  }
 }
 
 /**

@@ -9,9 +9,17 @@ import { AuthRequest } from "../middleware/auth";
 import { Decimal } from "@prisma/client/runtime/library";
 import { enqueueXlmToAcbu } from "../jobs/xlmToAcbuJob";
 import { AppError } from "../middleware/errorHandler";
+import { isValidStellarAddress } from "../utils/stellar";
 
 const bodySchema = z.object({
-  stellar_address: z.string().length(56).regex(/^G/),
+  stellar_address: z
+    .string()
+    .length(56)
+    .regex(/^G/)
+    .refine(
+      (s) => isValidStellarAddress(s),
+      "Invalid Stellar address (bad checksum)",
+    ),
   xlm_amount: z
     .string()
     .min(1)

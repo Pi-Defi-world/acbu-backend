@@ -74,6 +74,7 @@ export async function mintFromUsdc(
     }
 
     // Apply deposit limits - use retail as default if no audience is set
+    // FIX #32: Defaulting to "retail" prevents limit bypass when audience is undefined
     const audience = req.audience || "retail";
     await checkDepositLimits(
       audience,

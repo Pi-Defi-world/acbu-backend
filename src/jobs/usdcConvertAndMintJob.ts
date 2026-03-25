@@ -3,7 +3,11 @@
  * Pools and swaps run independently; user does not wait. Mint is approved once conversion succeeds.
  */
 import type { ConsumeMessage } from "amqplib";
-import { connectRabbitMQ, QUEUES } from "../config/rabbitmq";
+import {
+  connectRabbitMQ,
+  QUEUES,
+  assertQueueWithDLQ,
+} from "../config/rabbitmq";
 import { logger } from "../config/logger";
 import { prisma } from "../config/database";
 import { mintFromUsdcInternal } from "../controllers/mintController";
@@ -16,7 +20,7 @@ export interface UsdcConvertAndMintPayload {
 
 export async function startUsdcConvertAndMintConsumer(): Promise<void> {
   const ch = await connectRabbitMQ();
-  await ch.assertQueue(QUEUE, { durable: true });
+  await assertQueueWithDLQ(QUEUE);
   ch.prefetch(1);
   ch.consume(
     QUEUE,
@@ -112,7 +116,7 @@ export async function enqueueUsdcConvertAndMint(
   payload: UsdcConvertAndMintPayload,
 ): Promise<void> {
   const ch = await connectRabbitMQ();
-  await ch.assertQueue(QUEUE, { durable: true });
+  await assertQueueWithDLQ(QUEUE);
   ch.sendToQueue(QUEUE, Buffer.from(JSON.stringify(payload)), {
     persistent: true,
   });
