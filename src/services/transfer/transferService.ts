@@ -3,6 +3,7 @@
  * Uses direct wallets (G...). When getSenderSigningKey is provided, signs and submits; otherwise leaves pending.
  */
 import { Operation, Asset, Keypair, TransactionBuilder } from "stellar-sdk";
+import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../../config/database";
 import { stellarClient } from "../stellar/client";
 import { resolveRecipientToStellarAddress } from "../recipient/recipientResolver";
@@ -100,7 +101,7 @@ export async function createTransfer(
       type: "transfer",
       status: "pending",
       recipientAddress,
-      acbuAmount: amount,
+      acbuAmount: new Decimal(amount),
     },
   });
 
