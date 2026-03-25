@@ -40,7 +40,7 @@ export function normalizeRecipientQuery(
   }
   if (
     trimmed.length === STELLAR_ADDRESS_LENGTH &&
-    /^G[A-Za-z0-9]+$/.test(trimmed)
+    /^G[A-Z2-7]+$/.test(trimmed)
   ) {
     return { kind: "address", value: trimmed };
   }

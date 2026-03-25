@@ -6,5 +6,7 @@ export {
 export {
   recordYield,
   getYieldTotal,
+  getYieldTotals,
   type YieldCredit,
+  type YieldSource,
 } from "./yieldAccountingService";

@@ -5,6 +5,7 @@ import { AppError } from "./errorHandler";
 import { logger } from "../config/logger";
 
 export type Audience = "retail" | "business" | "government";
+export type UserTier = "free" | "verified" | "sme" | "enterprise";
 const API_KEY_PREFIX = "acbu";
 const API_KEY_LOOKUP_LENGTH = 12;
 const API_KEY_SECRET_LENGTH = 64;
@@ -23,6 +24,8 @@ export interface AuthRequest extends Request {
   };
   /** Set by audience-specific routes (e.g. /retail, /business, /government) for limits and behaviour. */
   audience?: Audience;
+  /** Optional user tier populated by upstream middleware/services for authorization checks. */
+  userTier?: UserTier;
 }
 
 function parseApiKey(

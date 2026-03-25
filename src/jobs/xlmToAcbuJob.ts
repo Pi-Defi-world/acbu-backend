@@ -8,11 +8,9 @@ import { connectRabbitMQ, QUEUES } from "../config/rabbitmq";
 import { logger } from "../config/logger";
 import { prisma } from "../config/database";
 import { mintFromUsdcInternal } from "../controllers/mintController";
+import { fetchXlmRateUsd } from "../services/oracle/cryptoClient";
 
 const QUEUE = QUEUES.XLM_TO_ACBU;
-
-/** Stub: XLM to USD rate (replace with oracle/DEX in production). */
-const XLM_USD_RATE = Number(process.env.XLM_USD_RATE ?? "0.2");
 
 export interface XlmToAcbuPayload {
   onRampSwapId: string;
@@ -53,12 +51,17 @@ export async function processXlmToAcbu(
   const { onRampSwapId, userId, stellarAddress, xlmAmount, usdcEquivalent } =
     payload;
   const xlmNum = Number(xlmAmount);
-  const usdcAmount = usdcEquivalent
-    ? Number(usdcEquivalent)
-    : xlmNum * XLM_USD_RATE;
+  let usdcAmount = usdcEquivalent ? Number(usdcEquivalent) : 0;
 
-  // OnRampSwap delegate; run npx prisma generate if types are missing
-  const swap = await (prisma as any).onRampSwap.findUnique({
+  if (!usdcEquivalent) {
+    const liveRate = await fetchXlmRateUsd();
+    // Fallback to env or historical default if Oracle is down to maintain resilience
+    const fallbackRate = Number(process.env.XLM_USD_RATE ?? "0.2");
+    const rate = liveRate ?? fallbackRate;
+    usdcAmount = xlmNum * rate;
+  }
+
+  const swap = await prisma.onRampSwap.findUnique({
     where: { id: onRampSwapId },
   });
   if (!swap || swap.status !== "pending_convert") {
@@ -66,7 +69,7 @@ export async function processXlmToAcbu(
     return;
   }
 
-  await (prisma as any).onRampSwap.update({
+  await prisma.onRampSwap.update({
     where: { id: onRampSwapId },
     data: { status: "processing" },
   });
@@ -77,7 +80,7 @@ export async function processXlmToAcbu(
       stellarAddress,
       userId,
     );
-    await (prisma as any).onRampSwap.update({
+    await prisma.onRampSwap.update({
       where: { id: onRampSwapId },
       data: {
         status: "completed",
@@ -93,7 +96,7 @@ export async function processXlmToAcbu(
       transactionId,
     });
   } catch (e) {
-    await (prisma as any).onRampSwap.update({
+    await prisma.onRampSwap.update({
       where: { id: onRampSwapId },
       data: { status: "failed" },
     });

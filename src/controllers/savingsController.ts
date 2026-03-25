@@ -22,10 +22,7 @@ export async function postSavingsDeposit(
       throw new AppError("Authenticated user ID required for savings", 401);
     }
 
-    const { amount, term_seconds } = authReq.body || {};
-    if (!amount || term_seconds == null) {
-      throw new AppError("amount and term_seconds required", 400);
-    }
+    const { amount, term_seconds } = authReq.body;
     if (!contractAddresses.savingsVault) {
       throw new AppError("Savings vault contract not configured", 503);
     }
@@ -67,10 +64,7 @@ export async function postSavingsWithdraw(
       throw new AppError("Authenticated user ID required for savings", 401);
     }
 
-    const { term_seconds, amount } = authReq.body || {};
-    if (term_seconds == null || !amount) {
-      throw new AppError("term_seconds and amount required", 400);
-    }
+    const { term_seconds, amount } = authReq.body;
     if (!contractAddresses.savingsVault) {
       throw new AppError("Savings vault contract not configured", 503);
     }
@@ -98,7 +92,7 @@ export async function getSavingsPositions(
       throw new AppError("Authenticated user ID required for savings", 401);
     }
 
-    const termSeconds = authReq.query?.term_seconds as string;
+    const termSeconds = authReq.query.term_seconds as string;
     if (!contractAddresses.savingsVault) {
       throw new AppError("Savings vault contract not configured", 503);
     }

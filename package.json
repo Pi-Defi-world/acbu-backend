@@ -20,6 +20,7 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "backfill:org-limits": "ts-node prisma/backfillOrgTransactionContext.ts",
     "stellar:create-wallet": "ts-node scripts/create-stellar-wallet.ts",
+    "compute:basket-weights": "ts-node scripts/compute-basket-weights.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [
@@ -45,6 +46,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.3.0",
+    "openai": "^6.32.0",
     "otplib": "^12.0.1",
     "qrcode": "^1.5.4",
     "stellar-sdk": "^11.2.2",

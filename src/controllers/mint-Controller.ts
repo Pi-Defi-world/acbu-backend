@@ -1,9 +1,15 @@
 // src/controllers/mintController.ts
-import { Controller, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
-import { MintService } from '../services/mint.service';
-import { PriceService } from '../services/price.service'; // Add price service for conversions
+import {
+  Controller,
+  Post,
+  Body,
+  HttpException,
+  HttpStatus,
+} from "@nestjs/common";
+import { MintService } from "../services/mint.service";
+import { PriceService } from "../services/price.service"; // Add price service for conversions
 
-@Controller('mint')
+@Controller("mint")
 export class MintController {
   constructor(
     private readonly mintService: MintService,
@@ -17,7 +23,7 @@ export class MintController {
 
       // Convert local currency amount to USD using real-time price
       const amountUsd = await this.convertToUsd(amount, currency);
-      
+
       // Validate against USD limits
       this.validateLimits(amountUsd, limits);
 
@@ -37,7 +43,7 @@ export class MintController {
     } catch (error) {
       throw new HttpException(
         {
-          message: 'Mint failed',
+          message: "Mint failed",
           error: error.message,
         },
         HttpStatus.BAD_REQUEST,
@@ -45,21 +51,24 @@ export class MintController {
     }
   }
 
-  private async convertToUsd(amount: number, currency: string): Promise<number> {
-    if (currency === 'USD') {
+  private async convertToUsd(
+    amount: number,
+    currency: string,
+  ): Promise<number> {
+    if (currency === "USD") {
       return amount;
     }
 
     try {
       // Fetch real-time price from oracle/API
-      const priceUsd = await this.priceService.getPrice(currency, 'USD');
-      
+      const priceUsd = await this.priceService.getPrice(currency, "USD");
+
       if (!priceUsd || priceUsd <= 0) {
         throw new Error(`Invalid price for ${currency}: ${priceUsd}`);
       }
 
       const amountUsd = amount * priceUsd;
-      
+
       // Round to 6 decimals for precision
       return parseFloat(amountUsd.toFixed(6));
     } catch (error) {
@@ -90,16 +99,16 @@ export class MintController {
   }
 
   // Placeholder methods - implement based on your storage solution
-  private getUserDailyUsage(amountUsd: number): number {
+  private getUserDailyUsage(_amountUsd: number): number {
     // Fetch from Redis/DB: user's daily USD usage
     return 0; // Replace with real implementation
   }
 
-  private getUserWeeklyUsage(amountUsd: number): number {
+  private getUserWeeklyUsage(_amountUsd: number): number {
     return 0; // Replace with real implementation
   }
 
-  private getUserMonthlyUsage(amountUsd: number): number {
+  private getUserMonthlyUsage(_amountUsd: number): number {
     return 0; // Replace with real implementation
   }
 }

@@ -4,6 +4,7 @@
 import { Keypair } from "stellar-sdk";
 import { prisma } from "../../config/database";
 import { logger } from "../../config/logger";
+import { assertValidStellarAddress } from "../../utils/stellar";
 
 export interface EnsureWalletResult {
   wallet_created: boolean;
@@ -27,6 +28,9 @@ export async function ensureWalletForUser(
   const keypair = Keypair.random();
   const publicKey = keypair.publicKey();
   const secretKey = keypair.secret();
+
+  // Guard: ensure generated address is valid before persisting
+  assertValidStellarAddress(publicKey);
 
   await prisma.user.update({
     where: { id: userId },

@@ -111,8 +111,22 @@ export class StellarClient {
   ) {
     try {
       const sourceAccount = await this.getAccount(sourceAccountId);
+      let fee = options?.fee;
+      if (!fee) {
+        if (config.stellar.useDynamicFees) {
+          try {
+            fee = String(await this.server.fetchBaseFee());
+          } catch (err) {
+            logger.warn(
+              "Failed to fetch dynamic Stellar base fee; falling back to configured value",
+              { err, fallback: config.stellar.baseFeeStroops },
+            );
+          }
+        }
+        fee = fee ?? String(config.stellar.baseFeeStroops);
+      }
       const builder = new TransactionBuilder(sourceAccount, {
-        fee: options?.fee || "100",
+        fee,
         networkPassphrase: this.networkPassphrase,
         timebounds: options?.timebounds,
       });

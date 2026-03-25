@@ -105,8 +105,19 @@ export async function postInvestmentWithdrawRequest(
   }
 }
 
+const getWithdrawRequestsQuerySchema = z.object({
+  limit: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseInt(v, 10) : 20))
+    .pipe(z.number().int().min(1).max(100)),
+  cursor: z.string().optional(), // last request id from previous page
+});
+
 /**
- * GET /v1/investment/withdraw/requests - List user's investment withdrawal requests.
+ * GET /v1/investment/withdraw/requests?limit=20&cursor=<last_id>
+ * List user's investment withdrawal requests with cursor-based pagination.
+ * Returns { requests, next_cursor } — pass next_cursor as cursor on the next request.
  */
 export async function getInvestmentWithdrawRequests(
   req: AuthRequest,
@@ -116,13 +127,27 @@ export async function getInvestmentWithdrawRequests(
   try {
     const userId = req.apiKey?.userId ?? null;
     const organizationId = req.apiKey?.organizationId ?? null;
+
+    const query = getWithdrawRequestsQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      const msg = query.error.errors.map((x) => x.message).join("; ");
+      throw new AppError(msg, 400);
+    }
+    const { limit, cursor } = query.data;
+
     const list = await prisma.investmentWithdrawalRequest.findMany({
       where: userId ? { userId } : { organizationId },
       orderBy: { createdAt: "desc" },
-      take: 50,
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
+
+    const hasMore = list.length > limit;
+    const page = hasMore ? list.slice(0, limit) : list;
+    const nextCursor = hasMore ? page[page.length - 1].id : null;
+
     res.status(200).json({
-      requests: list.map((r: InvestmentWithdrawalRequest) => ({
+      requests: page.map((r: InvestmentWithdrawalRequest) => ({
         id: r.id,
         amount_acbu: r.amountAcbu.toString(),
         status: r.status,
@@ -131,6 +156,7 @@ export async function getInvestmentWithdrawRequests(
         available_at: r.availableAt.toISOString(),
         created_at: r.createdAt.toISOString(),
       })),
+      next_cursor: nextCursor,
     });
   } catch (e) {
     next(e);

@@ -8,6 +8,7 @@ import { basketService } from "../basket";
 import { getRabbitMQChannel } from "../../config/rabbitmq";
 import { QUEUES } from "../../config/rabbitmq";
 import { Decimal } from "@prisma/client/runtime/library";
+import { stellarClient } from "../stellar/client";
 
 /** Contract uses 7 decimals (10^7) for reserve amount and value_usd */
 const RESERVE_DECIMALS = 1e7;
@@ -280,25 +281,64 @@ export class ReserveTracker {
   }
 
   /**
-   * Get total ACBU supply from blockchain
+   * Get total ACBU supply from blockchain.
+   * Queries Horizon to get the actual amount in circulation, preventing divergence from internal tracking.
    */
   private async getTotalAcbuSupply(): Promise<number> {
-    // TODO: Implement blockchain query to get total ACBU supply
-    // For now, calculate from transactions
-    const minted = await prisma.transaction.aggregate({
-      where: { type: "mint", status: "completed" },
-      _sum: { acbuAmount: true },
-    });
+    const issuer = process.env.STELLAR_ACBU_ASSET_ISSUER;
+    const assetCode = process.env.STELLAR_ACBU_ASSET_CODE || "ACBU";
 
-    const burned = await prisma.transaction.aggregate({
-      where: { type: "burn", status: "completed" },
-      _sum: { acbuAmountBurned: true },
-    });
+    if (!issuer) {
+      logger.warn(
+        "ACBU issuer not configured. Falling back to internal transaction aggregates for supply calculation.",
+        { assetCode },
+      );
 
-    const totalMinted = minted._sum.acbuAmount?.toNumber() || 0;
-    const totalBurned = burned._sum.acbuAmountBurned?.toNumber() || 0;
+      const minted = await prisma.transaction.aggregate({
+        where: { type: "mint", status: "completed" },
+        _sum: { acbuAmount: true },
+      });
 
-    return totalMinted - totalBurned;
+      const burned = await prisma.transaction.aggregate({
+        where: { type: "burn", status: "completed" },
+        _sum: { acbuAmountBurned: true },
+      });
+
+      const totalMinted = minted._sum.acbuAmount?.toNumber() || 0;
+      const totalBurned = burned._sum.acbuAmountBurned?.toNumber() || 0;
+
+      return totalMinted - totalBurned;
+    }
+
+    try {
+      const server = stellarClient.getServer();
+      const assets = await server
+        .assets()
+        .forCode(assetCode)
+        .forIssuer(issuer)
+        .call();
+
+      if (assets.records.length === 0) {
+        logger.warn(
+          "ACBU asset not found on Stellar; supply is effectively zero.",
+          {
+            assetCode,
+            issuer,
+          },
+        );
+        return 0;
+      }
+
+      // Assets response contains 'amount' which represents total circulating supply
+      const totalSupply = parseFloat(assets.records[0].amount);
+      return totalSupply;
+    } catch (e) {
+      logger.error("Failed to query Stellar for ACBU total supply", {
+        error: e,
+      });
+      // We throw here because returning a stale or zero value would incorrectly trigger health alerts
+      throw new Error(`Stellar Horizon query failed for ACBU supply: ${e}`);
+    }
   }
 
   /**

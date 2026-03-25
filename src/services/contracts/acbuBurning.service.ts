@@ -122,16 +122,22 @@ export class BurningService {
       });
 
       // Parse result (array of local amounts)
-      const localAmounts = ContractClient.fromScVal(result.result) as any[];
+      const parsedResult = ContractClient.fromScVal(result.result);
+      if (!Array.isArray(parsedResult)) {
+        throw new Error("Invalid burn_for_basket result: expected array");
+      }
+      const localAmounts = parsedResult.map((amount: unknown) =>
+        String(amount),
+      );
 
       logger.info("Basket burning successful", {
         transactionHash: result.transactionHash,
-        localAmounts: localAmounts.map((a) => a.toString()),
+        localAmounts,
       });
 
       return {
         transactionHash: result.transactionHash,
-        localAmounts: localAmounts.map((a) => a.toString()),
+        localAmounts,
       };
     } catch (error) {
       logger.error("Failed to burn for basket", { params, error });

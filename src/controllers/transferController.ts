@@ -10,8 +10,9 @@ const createTransferSchema = z.object({
   amount_acbu: z
     .string()
     .min(1, "amount_acbu is required")
-    .refine((s) => !Number.isNaN(Number(s)) && Number(s) > 0, {
-      message: "amount_acbu must be a positive number",
+    .refine((s) => /^\d+(\.\d{1,7})?$/.test(s) && Number(s) > 0, {
+      message:
+        "amount_acbu must be a positive number with up to 7 decimal places",
     }),
 });
 
@@ -54,6 +55,9 @@ export async function postTransfers(
         e.message === "Sender user not found")
     ) {
       return next(new AppError(e.message, 404));
+    }
+    if (e instanceof Error && e.message === "Cannot transfer to yourself") {
+      return next(new AppError(e.message, 400));
     }
     if (
       e instanceof Error &&

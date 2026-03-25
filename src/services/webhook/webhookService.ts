@@ -88,6 +88,12 @@ export async function deliverWebhook(webhookId: string): Promise<boolean> {
     logger.debug("Webhook already completed", { webhookId });
     return true;
   }
+  if (webhook.status === "failed") {
+    logger.debug("Webhook already marked failed; skipping redelivery", {
+      webhookId,
+    });
+    return true;
+  }
 
   const url = config.webhook.url;
   if (!url) {
@@ -128,15 +134,22 @@ export async function deliverWebhook(webhookId: string): Promise<boolean> {
     return true;
   } catch (e) {
     const attempts = webhook.attempts + 1;
+    const terminalFailure = attempts >= MAX_ATTEMPTS;
     await prisma.webhook.update({
       where: { id: webhookId },
       data: {
-        status: attempts >= MAX_ATTEMPTS ? "failed" : "pending",
+        status: terminalFailure ? "failed" : "pending",
         attempts,
         lastAttemptAt: new Date(),
       },
     });
-    logger.warn("Webhook delivery failed", { webhookId, attempts, error: e });
-    return false;
+    logger.warn("Webhook delivery failed", {
+      webhookId,
+      attempts,
+      terminalFailure,
+      error: e,
+    });
+    // Return true for terminal failures so consumer can ack and stop requeueing.
+    return terminalFailure;
   }
 }

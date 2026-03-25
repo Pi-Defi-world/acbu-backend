@@ -2,6 +2,27 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// ── Validate required env vars BEFORE building config ────────────────────────
+// This ensures the app fails fast with a clear message instead of starting
+// with empty strings and failing later in an unpredictable way.
+const requiredEnvVars = [
+  "DATABASE_URL",
+  "MONGODB_URI",
+  "RABBITMQ_URL",
+  "JWT_SECRET",
+];
+
+if (process.env.NODE_ENV === "production") {
+  requiredEnvVars.push("PRISMA_ACCELERATE_URL");
+}
+
+const missing = requiredEnvVars.filter((v) => !process.env[v]);
+if (missing.length > 0) {
+  throw new Error(
+    `Missing required environment variable(s): ${missing.join(", ")}`,
+  );
+}
+
 export const config = {
   // Server
   nodeEnv: process.env.NODE_ENV || "development",
@@ -110,6 +131,26 @@ export const config = {
         process.env.STELLAR_MIN_BALANCE ||
         "1",
     ),
+    /** Base transaction fee in stroops used as fallback when dynamic fee fetch is disabled or fails. Default 100. */
+    baseFeeStroops: parseInt(process.env.STELLAR_BASE_FEE_STROOPS || "100", 10),
+    /** When true, fetches the current recommended base fee from Horizon before each transaction. Falls back to baseFeeStroops on failure. */
+    useDynamicFees: process.env.STELLAR_USE_DYNAMIC_FEES === "true",
+  },
+
+  // Pi Network / Bridge
+  pi: {
+    /** Enable Pi bridge/chain for wallet activation */
+    enabled: process.env.PI_BRIDGE_ENABLED === "true" || false,
+    /** Secret key for Pi bridge transactions */
+    secretKey: process.env.PI_SECRET_KEY || "",
+    /** Pi bridge/chain API endpoint */
+    apiUrl: process.env.PI_API_URL || "https://api.pi.network.com",
+    /** Minimum Pi sent to user wallet for activation. Default 0.1 */
+    minBalancePi: parseFloat(
+      process.env.WALLET_ACTIVATION_PI || process.env.PI_MIN_BALANCE || "0.1",
+    ),
+    /** Network: testnet or mainnet */
+    network: (process.env.PI_NETWORK || "testnet") as "testnet" | "mainnet",
   },
 
   // Oracle (40/40/20: central bank, fintech, forex)
@@ -284,21 +325,3 @@ export const config = {
   // CORS
   corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["http://localhost:3000"],
 };
-
-// Validate required environment variables
-const requiredEnvVars = [
-  "DATABASE_URL",
-  "MONGODB_URI",
-  "RABBITMQ_URL",
-  "JWT_SECRET",
-];
-
-if (config.nodeEnv === "production") {
-  requiredEnvVars.push("PRISMA_ACCELERATE_URL");
-}
-
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    throw new Error(`Missing required environment variable: ${envVar}`);
-  }
-}

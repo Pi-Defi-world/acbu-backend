@@ -53,7 +53,14 @@ export async function getGovernmentStatements(
   try {
     const userId = req.apiKey?.userId ?? null;
     const organizationId = req.apiKey?.organizationId ?? null;
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const rawLimit = req.query.limit;
+    let limit = 20;
+    if (rawLimit !== undefined) {
+      const parsed = Number(rawLimit);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        limit = Math.min(100, Math.max(1, Math.floor(parsed)));
+      }
+    }
     const transactions = await prisma.transaction.findMany({
       where: {
         type: { in: ["mint", "burn", "transfer"] },

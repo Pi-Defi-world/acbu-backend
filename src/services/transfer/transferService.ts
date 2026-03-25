@@ -5,6 +5,7 @@
 import { Operation, Asset, Keypair, TransactionBuilder } from "stellar-sdk";
 import { prisma } from "../../config/database";
 import { stellarClient } from "../stellar/client";
+import { getBaseFee } from "../stellar/feeManager";
 import { resolveRecipientToStellarAddress } from "../recipient/recipientResolver";
 import { logger } from "../../config/logger";
 import type {
@@ -42,7 +43,7 @@ async function submitStellarPayment(
     amount: amountAcbu,
   });
   const builder = new TransactionBuilder(sourceAccount, {
-    fee: "100",
+    fee: await getBaseFee(),
     networkPassphrase,
   }).addOperation(op);
   const transaction = builder.build();
@@ -61,16 +62,11 @@ export async function createTransfer(
 ): Promise<CreateTransferResult> {
   const { senderUserId, to } = params;
   const amount = params.amountAcbu.trim();
-  if (!amount || Number(amount) <= 0) {
-    throw new Error("amount_acbu must be a positive number");
-  }
-
-  const recipientAddress = await resolveRecipientToStellarAddress(
-    to,
-    senderUserId,
-  );
-  if (!recipientAddress) {
-    throw new Error("Recipient not found or not available");
+  // Reject scientific notation and enforce up to 7 decimal places (Stellar max precision)
+  if (!amount || !/^\d+(\.\d{1,7})?$/.test(amount) || Number(amount) <= 0) {
+    throw new Error(
+      "amount_acbu must be a positive number with up to 7 decimal places",
+    );
   }
 
   const sender = await prisma.user.findUnique({
@@ -84,6 +80,19 @@ export async function createTransfer(
     throw new Error(
       "KYC required to make payments. Complete verification first.",
     );
+  }
+
+  const recipientAddress = await resolveRecipientToStellarAddress(
+    to,
+    senderUserId,
+  );
+  if (!recipientAddress) {
+    throw new Error("Recipient not found or not available");
+  }
+
+  // Prevent self-transfer
+  if (sender.stellarAddress && recipientAddress === sender.stellarAddress) {
+    throw new Error("Cannot transfer to yourself");
   }
 
   const tx = await prisma.transaction.create({

@@ -26,7 +26,7 @@ model Organization {
 
 model User {
   id                   String    @id @default(uuid()) @db.Uuid
-  stellarAddress       String    @unique @db.VarChar(56)
+  stellarAddress       String?   @unique @db.VarChar(56)
   kycStatus            String    @default("pending") @db.VarChar(20)
   kycVerifiedAt        DateTime? @map("kyc_verified_at") @db.Timestamp
   countryCode          String?   @map("country_code") @db.VarChar(3)
@@ -287,6 +287,7 @@ model OnRampSwap {
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status], name: "idx_on_ramp_swap_status")
+  @@index([status, createdAt], name: "idx_on_ramp_swap_status_created_at")
   @@index([source], name: "idx_on_ramp_swap_source")
   @@index([userId], name: "idx_on_ramp_swap_user_id")
   @@index([createdAt], name: "idx_on_ramp_swap_created_at")

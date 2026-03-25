@@ -71,6 +71,8 @@ The app uses **Prisma Accelerate** for the primary database (managed PostgreSQL;
 | `STELLAR_NETWORK` | `testnet` | `testnet` \| `mainnet` |
 | `STELLAR_HORIZON_URL` | horizon-testnet URL | Horizon base URL |
 | `STELLAR_SECRET_KEY` | — | Secret key for contract txs |
+| `STELLAR_BASE_FEE_STROOPS` | `100` | Base transaction fee in stroops (1 stroop = 0.0000001 XLM). Used as the static fee when dynamic fees are disabled, and as the fallback when a Horizon fee fetch fails. |
+| `STELLAR_USE_DYNAMIC_FEES` | `false` | Set to `true` to fetch the current recommended base fee from Horizon before each transaction. Automatically falls back to `STELLAR_BASE_FEE_STROOPS` if the Horizon request fails. Recommended for mainnet deployments under variable network load. |
 
 ## Stellar contract IDs (after deploy)
 
