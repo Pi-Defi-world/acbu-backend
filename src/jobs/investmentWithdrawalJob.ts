@@ -21,7 +21,7 @@ export async function processInvestmentWithdrawalAvailability(): Promise<void> {
         data: { status: "available", notifiedAt: new Date() },
       });
       const amountAcbu = r.amountAcbu.toNumber();
-      if (r.userId) {
+      if (r.userId || r.organizationId) {
         await publishInvestmentWithdrawalReady(r.userId, amountAcbu);
       }
       logger.info("Investment withdrawal marked available and notified", {
