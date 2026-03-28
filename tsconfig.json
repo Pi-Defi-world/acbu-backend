@@ -22,6 +22,6 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
-  "include": ["src/**/*", "tests/webhookService.test.ts", "tests/walletActivationService.test.ts", "tests/walletService.test.ts", "tests/transferService.test.ts", "tests/RebalancingEngine.test.ts", "tests/recoveryService.test.ts", "tests/centralBankClient.test.ts", "tests/forexClient.test.ts", "tests/notificationService.test.ts", "tests/metricsService.test.ts", "scripts/basketService.test.ts", "scripts/contracts.test.ts", "scripts/auditService.test.ts"],
+  "include": ["src/**/*", "tests/setup.ts", "tests/webhookService.test.ts", "tests/walletActivationService.test.ts", "tests/walletService.test.ts", "tests/transferService.test.ts", "tests/RebalancingEngine.test.ts", "tests/recoveryService.test.ts", "tests/centralBankClient.test.ts", "tests/forexClient.test.ts", "tests/notificationService.test.ts", "tests/metricsService.test.ts", "scripts/basketService.test.ts", "scripts/contracts.test.ts", "scripts/auditService.test.ts"],
   "exclude": ["node_modules", "dist", "tests", "src/controllers/mint-Controller.ts"]
 }
