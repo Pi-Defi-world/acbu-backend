@@ -1,3 +1,6 @@
+ feature/get-users-me-balance
+import { someFunction } from 'some-library';
+=======
 /**
  * Consumes WALLET_ACTIVATION queue: when user pays KYC fee, send min crypto to their address.
  *
@@ -9,9 +12,18 @@ import type { ConsumeMessage } from "amqplib";
 import { connectRabbitMQ, QUEUES } from "../config/rabbitmq";
 import { logger } from "../config/logger";
 import { sendCryptoToActivate } from "../services/wallet/walletActivationService";
+main
 
-const QUEUE = QUEUES.WALLET_ACTIVATION;
+const myVariable = 'value';
 
+ feature/get-users-me-balance
+export const walletActivationJob = async () => {
+  // Your job logic here
+};
+
+// Another comment here
+const anotherVariable = 'anotherValue';
+=======
 export async function startWalletActivationConsumer(): Promise<void> {
   const ch = await connectRabbitMQ();
   await ch.assertQueue(QUEUE, { durable: true });
@@ -36,3 +48,4 @@ export async function startWalletActivationConsumer(): Promise<void> {
   );
   logger.info("Wallet activation consumer started", { queue: QUEUE });
 }
+main
