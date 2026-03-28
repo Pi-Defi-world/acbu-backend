@@ -111,6 +111,7 @@ export const QUEUES = {
   XLM_TO_ACBU: "xlm_to_acbu", // XLM deposit: sell XLM and mint ACBU to user
   XLM_TO_ACBU_DLQ: "xlm_to_acbu_dlq",
   USDC_CONVERT_AND_MINT: "usdc_convert_and_mint", // USDC deposit: convert USDC→XLM (backend), then mint
+  AUDIT_LOGS: "audit_logs",
   USDC_CONVERT_AND_MINT_DLQ: "usdc_convert_and_mint_dlq",
   AUDIT_LOGS: "audit_logs",
   AUDIT_LOGS_DLQ: "audit_logs_dlq",
