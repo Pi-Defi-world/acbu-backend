@@ -1,5 +1,8 @@
 import { Router } from "express";
-import { postUnlock } from "../controllers/recoveryController";
+import {
+  postUnlock,
+  postUnlockVerify,
+} from "../controllers/recoveryController";
 import { standardRateLimiter } from "../middleware/rateLimiter";
 
 const router: ReturnType<typeof Router> = Router();
@@ -7,5 +10,6 @@ const router: ReturnType<typeof Router> = Router();
 router.use(standardRateLimiter);
 
 router.post("/unlock", postUnlock);
+router.post("/unlock/verify", postUnlockVerify);
 
 export default router;
