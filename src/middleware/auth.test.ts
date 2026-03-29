@@ -16,7 +16,12 @@ jest.mock("../config/database", () => ({
 }));
 
 jest.mock("../config/logger", () => ({
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  },
 }));
 
 jest.mock("bcryptjs", () => ({
@@ -48,7 +53,11 @@ describe("auth middleware", () => {
     });
 
     it("rejects malformed key format — 401 with message", async () => {
-      await validateApiKey(makeReq({ headers: { "x-api-key": "bad_key" } }), mockRes, mockNext);
+      await validateApiKey(
+        makeReq({ headers: { "x-api-key": "bad_key" } }),
+        mockRes,
+        mockNext,
+      );
       const err = (mockNext as jest.Mock).mock.calls[0][0] as AppError;
       expect(err.statusCode).toBe(401);
       expect(err.message).toBe("Invalid API key format");
@@ -56,7 +65,11 @@ describe("auth middleware", () => {
 
     it("rejects when lookup key not in DB — 401", async () => {
       (prisma.apiKey.findFirst as jest.Mock).mockResolvedValue(null);
-      await validateApiKey(makeReq({ headers: { "x-api-key": VALID_KEY } }), mockRes, mockNext);
+      await validateApiKey(
+        makeReq({ headers: { "x-api-key": VALID_KEY } }),
+        mockRes,
+        mockNext,
+      );
       const err = (mockNext as jest.Mock).mock.calls[0][0] as AppError;
       expect(err.statusCode).toBe(401);
       expect(err.message).toBe("Invalid API key");
@@ -64,11 +77,19 @@ describe("auth middleware", () => {
 
     it("rejects when bcrypt compare fails — 401", async () => {
       (prisma.apiKey.findFirst as jest.Mock).mockResolvedValue({
-        id: "key-1", userId: "user-1", organizationId: null,
-        permissions: [], rateLimit: 100, keyHash: "hashed",
+        id: "key-1",
+        userId: "user-1",
+        organizationId: null,
+        permissions: [],
+        rateLimit: 100,
+        keyHash: "hashed",
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-      await validateApiKey(makeReq({ headers: { "x-api-key": VALID_KEY } }), mockRes, mockNext);
+      await validateApiKey(
+        makeReq({ headers: { "x-api-key": VALID_KEY } }),
+        mockRes,
+        mockNext,
+      );
       const err = (mockNext as jest.Mock).mock.calls[0][0] as AppError;
       expect(err.statusCode).toBe(401);
       expect(err.message).toBe("Invalid API key");
@@ -76,8 +97,12 @@ describe("auth middleware", () => {
 
     it("calls next() with no error and populates req.apiKey on valid key", async () => {
       (prisma.apiKey.findFirst as jest.Mock).mockResolvedValue({
-        id: "key-1", userId: "user-1", organizationId: null,
-        permissions: ["p2p:read", "p2p:write"], rateLimit: 100, keyHash: "hashed",
+        id: "key-1",
+        userId: "user-1",
+        organizationId: null,
+        permissions: ["p2p:read", "p2p:write"],
+        rateLimit: 100,
+        keyHash: "hashed",
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       const req = makeReq({ headers: { "x-api-key": VALID_KEY } });
@@ -94,11 +119,17 @@ describe("auth middleware", () => {
 
     it("accepts Bearer token in Authorization header", async () => {
       (prisma.apiKey.findFirst as jest.Mock).mockResolvedValue({
-        id: "key-2", userId: "user-2", organizationId: null,
-        permissions: [], rateLimit: 50, keyHash: "hashed2",
+        id: "key-2",
+        userId: "user-2",
+        organizationId: null,
+        permissions: [],
+        rateLimit: 50,
+        keyHash: "hashed2",
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      const req = makeReq({ headers: { authorization: `Bearer ${VALID_KEY2}` } });
+      const req = makeReq({
+        headers: { authorization: `Bearer ${VALID_KEY2}` },
+      });
       await validateApiKey(req, mockRes, mockNext);
       expect(mockNext).toHaveBeenCalledWith();
       expect(req.apiKey?.userId).toBe("user-2");
@@ -106,8 +137,12 @@ describe("auth middleware", () => {
 
     it("treats invalid permissions JSON as empty array", async () => {
       (prisma.apiKey.findFirst as jest.Mock).mockResolvedValue({
-        id: "key-3", userId: "user-3", organizationId: null,
-        permissions: { invalid: true }, rateLimit: 100, keyHash: "hashed",
+        id: "key-3",
+        userId: "user-3",
+        organizationId: null,
+        permissions: { invalid: true },
+        rateLimit: 100,
+        keyHash: "hashed",
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       const req = makeReq({ headers: { "x-api-key": VALID_KEY } });
@@ -117,11 +152,19 @@ describe("auth middleware", () => {
 
     it("updates lastUsedAt asynchronously after valid auth", async () => {
       (prisma.apiKey.findFirst as jest.Mock).mockResolvedValue({
-        id: "key-1", userId: "user-1", organizationId: null,
-        permissions: [], rateLimit: 100, keyHash: "hashed",
+        id: "key-1",
+        userId: "user-1",
+        organizationId: null,
+        permissions: [],
+        rateLimit: 100,
+        keyHash: "hashed",
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      await validateApiKey(makeReq({ headers: { "x-api-key": VALID_KEY } }), mockRes, mockNext);
+      await validateApiKey(
+        makeReq({ headers: { "x-api-key": VALID_KEY } }),
+        mockRes,
+        mockNext,
+      );
       // Allow async update to fire
       await Promise.resolve();
       expect(prisma.apiKey.update).toHaveBeenCalledWith(
@@ -147,7 +190,10 @@ describe("auth middleware", () => {
       expect(key).toMatch(/^acbu_[a-f0-9]{12}_[a-f0-9]{64}$/);
       expect(prisma.apiKey.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ userId: "user-42", permissions: ["p2p:write"] }),
+          data: expect.objectContaining({
+            userId: "user-42",
+            permissions: ["p2p:write"],
+          }),
         }),
       );
     });

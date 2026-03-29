@@ -34,7 +34,12 @@ jest.mock("../reserve/ReserveTracker", () => ({
 }));
 
 jest.mock("../../config/logger", () => ({
-  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  },
 }));
 
 import { reserveTracker } from "../reserve/ReserveTracker";
@@ -47,16 +52,28 @@ describe("limitsService", () => {
   describe("checkDepositLimits", () => {
     it("resolves without error when amount is within daily and monthly caps", async () => {
       (prisma.transaction.aggregate as jest.Mock)
-        .mockResolvedValueOnce({ _sum: { usdcAmount: { toNumber: () => 100 } } })  // daily
-        .mockResolvedValueOnce({ _sum: { usdcAmount: { toNumber: () => 500 } } }); // monthly
-      await expect(checkDepositLimits("retail", 100, "u1", null)).resolves.toBeUndefined();
+        .mockResolvedValueOnce({
+          _sum: { usdcAmount: { toNumber: () => 100 } },
+        }) // daily
+        .mockResolvedValueOnce({
+          _sum: { usdcAmount: { toNumber: () => 500 } },
+        }); // monthly
+      await expect(
+        checkDepositLimits("retail", 100, "u1", null),
+      ).resolves.toBeUndefined();
     });
 
     it("throws AppError 429 when daily deposit limit is exceeded", async () => {
       (prisma.transaction.aggregate as jest.Mock)
-        .mockResolvedValueOnce({ _sum: { usdcAmount: { toNumber: () => 4950 } } })
-        .mockResolvedValueOnce({ _sum: { usdcAmount: { toNumber: () => 1000 } } });
-      await expect(checkDepositLimits("retail", 100, "u1", null)).rejects.toMatchObject({
+        .mockResolvedValueOnce({
+          _sum: { usdcAmount: { toNumber: () => 4950 } },
+        })
+        .mockResolvedValueOnce({
+          _sum: { usdcAmount: { toNumber: () => 1000 } },
+        });
+      await expect(
+        checkDepositLimits("retail", 100, "u1", null),
+      ).rejects.toMatchObject({
         statusCode: 429,
         message: expect.stringContaining("daily limit"),
       });
@@ -65,8 +82,12 @@ describe("limitsService", () => {
     it("throws AppError 429 when monthly deposit limit is exceeded", async () => {
       (prisma.transaction.aggregate as jest.Mock)
         .mockResolvedValueOnce({ _sum: { usdcAmount: { toNumber: () => 0 } } })
-        .mockResolvedValueOnce({ _sum: { usdcAmount: { toNumber: () => 49950 } } });
-      await expect(checkDepositLimits("retail", 100, "u1", null)).rejects.toMatchObject({
+        .mockResolvedValueOnce({
+          _sum: { usdcAmount: { toNumber: () => 49950 } },
+        });
+      await expect(
+        checkDepositLimits("retail", 100, "u1", null),
+      ).rejects.toMatchObject({
         statusCode: 429,
         message: expect.stringContaining("monthly limit"),
       });
@@ -76,7 +97,9 @@ describe("limitsService", () => {
       (prisma.transaction.aggregate as jest.Mock)
         .mockResolvedValueOnce({ _sum: { usdcAmount: null } })
         .mockResolvedValueOnce({ _sum: { usdcAmount: null } });
-      await expect(checkDepositLimits("retail", 50, "u1", null)).resolves.toBeUndefined();
+      await expect(
+        checkDepositLimits("retail", 50, "u1", null),
+      ).resolves.toBeUndefined();
     });
 
     it("uses organizationId actor when userId is null", async () => {
@@ -94,16 +117,28 @@ describe("limitsService", () => {
   describe("checkWithdrawalLimits", () => {
     it("resolves without error when amount is within limits", async () => {
       (prisma.transaction.aggregate as jest.Mock)
-        .mockResolvedValueOnce({ _sum: { acbuAmountBurned: { toNumber: () => 0 } } })
-        .mockResolvedValueOnce({ _sum: { acbuAmountBurned: { toNumber: () => 0 } } });
-      await expect(checkWithdrawalLimits("retail", 100, "NGN", "u1", null)).resolves.toBeUndefined();
+        .mockResolvedValueOnce({
+          _sum: { acbuAmountBurned: { toNumber: () => 0 } },
+        })
+        .mockResolvedValueOnce({
+          _sum: { acbuAmountBurned: { toNumber: () => 0 } },
+        });
+      await expect(
+        checkWithdrawalLimits("retail", 100, "NGN", "u1", null),
+      ).resolves.toBeUndefined();
     });
 
     it("throws AppError 429 when daily withdrawal limit is exceeded", async () => {
       (prisma.transaction.aggregate as jest.Mock)
-        .mockResolvedValueOnce({ _sum: { acbuAmountBurned: { toNumber: () => 9950 } } })
-        .mockResolvedValueOnce({ _sum: { acbuAmountBurned: { toNumber: () => 0 } } });
-      await expect(checkWithdrawalLimits("retail", 100, "NGN", "u1", null)).rejects.toMatchObject({
+        .mockResolvedValueOnce({
+          _sum: { acbuAmountBurned: { toNumber: () => 9950 } },
+        })
+        .mockResolvedValueOnce({
+          _sum: { acbuAmountBurned: { toNumber: () => 0 } },
+        });
+      await expect(
+        checkWithdrawalLimits("retail", 100, "NGN", "u1", null),
+      ).rejects.toMatchObject({
         statusCode: 429,
         message: expect.stringContaining("daily limit"),
       });
@@ -111,9 +146,15 @@ describe("limitsService", () => {
 
     it("throws AppError 429 when monthly withdrawal limit is exceeded", async () => {
       (prisma.transaction.aggregate as jest.Mock)
-        .mockResolvedValueOnce({ _sum: { acbuAmountBurned: { toNumber: () => 0 } } })
-        .mockResolvedValueOnce({ _sum: { acbuAmountBurned: { toNumber: () => 79950 } } });
-      await expect(checkWithdrawalLimits("retail", 100, "NGN", "u1", null)).rejects.toMatchObject({
+        .mockResolvedValueOnce({
+          _sum: { acbuAmountBurned: { toNumber: () => 0 } },
+        })
+        .mockResolvedValueOnce({
+          _sum: { acbuAmountBurned: { toNumber: () => 79950 } },
+        });
+      await expect(
+        checkWithdrawalLimits("retail", 100, "NGN", "u1", null),
+      ).rejects.toMatchObject({
         statusCode: 429,
         message: expect.stringContaining("monthly limit"),
       });
@@ -123,12 +164,15 @@ describe("limitsService", () => {
       (prisma.transaction.aggregate as jest.Mock)
         .mockResolvedValueOnce({ _sum: { acbuAmountBurned: null } })
         .mockResolvedValueOnce({ _sum: { acbuAmountBurned: null } });
-      await expect(checkWithdrawalLimits("retail", 50, "NGN", "u1", null)).resolves.toBeUndefined();
+      await expect(
+        checkWithdrawalLimits("retail", 50, "NGN", "u1", null),
+      ).resolves.toBeUndefined();
     });
 
     it("scopes query to the specific currency", async () => {
-      (prisma.transaction.aggregate as jest.Mock)
-        .mockResolvedValue({ _sum: { acbuAmountBurned: null } });
+      (prisma.transaction.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { acbuAmountBurned: null },
+      });
       await checkWithdrawalLimits("retail", 10, "KES", "u1", null);
       const call = (prisma.transaction.aggregate as jest.Mock).mock.calls[0][0];
       expect(call.where).toMatchObject({ localCurrency: "KES" });
@@ -139,7 +183,9 @@ describe("limitsService", () => {
 
   describe("isCurrencyWithdrawalPaused", () => {
     it("returns false when currency is not present in reserve status", async () => {
-      (reserveTracker.getReserveStatus as jest.Mock).mockResolvedValue({ currencies: [] });
+      (reserveTracker.getReserveStatus as jest.Mock).mockResolvedValue({
+        currencies: [],
+      });
       expect(await isCurrencyWithdrawalPaused("XYZ")).toBe(false);
     });
 
@@ -169,17 +215,23 @@ describe("limitsService", () => {
 
   describe("isMintingPaused", () => {
     it("returns true when reserve ratio is below minimum (1.01 < 1.02)", async () => {
-      (reserveTracker.calculateReserveRatio as jest.Mock).mockResolvedValue(1.01);
+      (reserveTracker.calculateReserveRatio as jest.Mock).mockResolvedValue(
+        1.01,
+      );
       expect(await isMintingPaused()).toBe(true);
     });
 
     it("returns false when reserve ratio is exactly at minimum (1.02)", async () => {
-      (reserveTracker.calculateReserveRatio as jest.Mock).mockResolvedValue(1.02);
+      (reserveTracker.calculateReserveRatio as jest.Mock).mockResolvedValue(
+        1.02,
+      );
       expect(await isMintingPaused()).toBe(false);
     });
 
     it("returns false when reserve ratio is comfortably above minimum (1.05)", async () => {
-      (reserveTracker.calculateReserveRatio as jest.Mock).mockResolvedValue(1.05);
+      (reserveTracker.calculateReserveRatio as jest.Mock).mockResolvedValue(
+        1.05,
+      );
       expect(await isMintingPaused()).toBe(false);
     });
   });
