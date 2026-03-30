@@ -113,7 +113,6 @@ export const QUEUES = {
   USDC_CONVERT_AND_MINT: "usdc_convert_and_mint", // USDC deposit: convert USDC→XLM (backend), then mint
   AUDIT_LOGS: "audit_logs",
   USDC_CONVERT_AND_MINT_DLQ: "usdc_convert_and_mint_dlq",
-  AUDIT_LOGS: "audit_logs",
   AUDIT_LOGS_DLQ: "audit_logs_dlq",
 } as const;
 
