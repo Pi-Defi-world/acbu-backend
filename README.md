@@ -17,7 +17,7 @@ Backend API server for the ACBU (African Currency Basket Unit) platform.
 
 - Node.js 20 or higher
 - Docker and Docker Compose
-- npm or yarn
+- pnpm 8+ (Required package manager)
 
 ## Setup Instructions
 
@@ -25,7 +25,7 @@ Backend API server for the ACBU (African Currency Basket Unit) platform.
 
 ```bash
 cd backend
-npm install
+ppnpm install
 ```
 
 ### 2. Environment Configuration
@@ -64,19 +64,19 @@ Initialize Prisma and run migrations:
 
 ```bash
 # Generate Prisma Client
-npm run prisma:generate
+pnpm prisma:generate
 
 # Run database migrations
-npm run prisma:migrate
+pnpm prisma:migrate
 
 # (Optional) Seed database
-npm run prisma:seed
+pnpm prisma:seed
 ```
 
 ### 5. Start Development Server
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 The server will start on `http://localhost:3000` (or the port specified in `.env`).
@@ -85,20 +85,20 @@ Nodemon will automatically restart the server when you make changes to the code.
 
 ## Available Scripts
 
-- `npm run dev` - Start development server with hot reloading
-- `npm run build` - Build TypeScript to JavaScript
-- `npm start` - Start production server
-- `npm test` - Run tests
-- `npm run test:watch` - Run tests in watch mode
-- `npm run test:coverage` - Run tests with coverage report
-- `npm run lint` - Run ESLint
-- `npm run lint:fix` - Fix ESLint errors
-- `npm run format` - Format code with Prettier
-- `npm run format:check` - Check code formatting
-- `npm run prisma:generate` - Generate Prisma Client
-- `npm run prisma:migrate` - Run database migrations
-- `npm run prisma:studio` - Open Prisma Studio
-- `npm run prisma:seed` - Seed database with initial data
+- `pnpm dev` - Start development server with hot reloading
+- `pnpm build` - Build TypeScript to JavaScript
+- `pnpm start` - Start production server
+- `ppnpm test` - Run tests
+- `pppnpm test:watch` - Run tests in watch mode
+- `pppnpm test:coverage` - Run tests with coverage report
+- `pnpm lint` - Run ESLint
+- `pnpm lint:fix` - Fix ESLint errors
+- `pnpm format` - Format code with Prettier
+- `pnpm format:check` - Check code formatting
+- `pnpm prisma:generate` - Generate Prisma Client
+- `pnpm prisma:migrate` - Run database migrations
+- `pnpm prisma:studio` - Open Prisma Studio
+- `pnpm prisma:seed` - Seed database with initial data
 
 ## Project Structure
 
@@ -134,7 +134,7 @@ Once the server is running, API documentation is available at:
 View and edit database data using Prisma Studio:
 
 ```bash
-npm run prisma:studio
+pnpm prisma:studio
 ```
 
 ### Migrations
@@ -142,7 +142,7 @@ npm run prisma:studio
 Create a new migration:
 
 ```bash
-npm run prisma:migrate
+pnpm prisma:migrate
 ```
 
 ## Testing
@@ -150,13 +150,13 @@ npm run prisma:migrate
 Run all tests:
 
 ```bash
-npm test
+ppnpm test
 ```
 
 Run tests with coverage:
 
 ```bash
-npm run test:coverage
+pppnpm test:coverage
 ```
 
 ## Environment Variables
@@ -207,7 +207,7 @@ The CI pipeline:
 
 1. Create a feature branch
 2. Make your changes
-3. Run tests and linter: `npm test && npm run lint`
+3. Run tests and linter: `ppnpm test && pnpm lint`
 4. Commit and push
 5. Create a pull request
 

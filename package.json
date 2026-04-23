@@ -1,6 +1,7 @@
 {
   "name": "acbu-backend",
   "version": "1.0.0",
+  "packageManager": "pnpm@8.0.0",
   "description": "ACBU Backend API Server",
   "main": "dist/index.js",
   "scripts": {
