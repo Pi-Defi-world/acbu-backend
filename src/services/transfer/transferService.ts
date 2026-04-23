@@ -13,6 +13,7 @@ import { prisma } from "../../config/database";
 import { stellarClient } from "../stellar/client";
 import { getBaseFee } from "../stellar/feeManager";
 import { resolveRecipientToStellarAddress } from "../recipient/recipientResolver";
+
 import { logger } from "../../config/logger";
 import type {
   CreateTransferParams,
@@ -77,10 +78,13 @@ export async function createTransfer(
 
   const sender = await prisma.user.findUnique({
     where: { id: senderUserId },
-    select: { stellarAddress: true },
+    select: { stellarAddress: true, kycStatus: true },
   });
   if (!sender) {
     throw new Error("Sender user not found");
+  }
+  if (sender.kycStatus !== "verified") {
+    throw new Error("KYC required to make payments. Complete verification first.");
   }
 
   const recipientAddress = await resolveRecipientToStellarAddress(
