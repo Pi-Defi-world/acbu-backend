@@ -134,12 +134,43 @@ export const config = {
       process.env.STELLAR_NETWORK === "mainnet"
         ? "Public Global Stellar Network ; September 2015"
         : "Test SDF Network ; September 2015",
-    /** Minimum XLM sent to user wallet for activation (Stellar account creation). Default 1. */
-    minBalanceXlm: parseFloat(
-      process.env.WALLET_ACTIVATION_XLM ||
+    /** Network-native asset code shown to callers for wallet bootstrap (default XLM, or PI when bootstrap profile says so). */
+    nativeAssetCode: ((): string => {
+      const explicit = process.env.STELLAR_NATIVE_ASSET_CODE?.trim();
+      if (explicit) return explicit.toUpperCase();
+      const bootstrapProfile = (
+        process.env.TESTNET_CUSTODIAL_BOOTSTRAP || ""
+      ).trim()
+        .toLowerCase();
+      return bootstrapProfile.includes("pi") ? "PI" : "XLM";
+    })(),
+    /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */
+    activationStrategy: (
+      process.env.WALLET_ACTIVATION_STRATEGY || "create_account_native"
+    ) as "create_account_native" | "disabled",
+    /** Optional bootstrap profile from deployment docs/runbooks; used only for config alignment and diagnostics. */
+    bootstrapProfile: process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "",
+    /** Minimum network-native balance sent to user wallet for activation. */
+    activationAmount: ((): string => {
+      const raw =
+        process.env.WALLET_ACTIVATION_AMOUNT ||
+        process.env.WALLET_ACTIVATION_NATIVE ||
+        process.env.WALLET_ACTIVATION_XLM ||
         process.env.STELLAR_MIN_BALANCE ||
-        "1",
-    ),
+        "1";
+      return raw.trim() || "1";
+    })(),
+    /** Backwards-compatible numeric alias for older callers/tests that still reference minBalanceXlm. */
+    minBalanceXlm: (() => {
+      const parsed = Number.parseFloat(
+        process.env.WALLET_ACTIVATION_AMOUNT ||
+          process.env.WALLET_ACTIVATION_NATIVE ||
+          process.env.WALLET_ACTIVATION_XLM ||
+          process.env.STELLAR_MIN_BALANCE ||
+          "1",
+      );
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    })(),
     /** Base transaction fee in stroops used as fallback when dynamic fee fetch is disabled or fails. Default 100. */
     baseFeeStroops: parseInt(process.env.STELLAR_BASE_FEE_STROOPS || "100", 10),
     /** When true, fetches the current recommended base fee from Horizon before each transaction. Falls back to baseFeeStroops on failure. */

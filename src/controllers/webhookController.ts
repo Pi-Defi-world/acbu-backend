@@ -17,6 +17,8 @@ import crypto from "crypto";
 import { config } from "../config/env";
 import { logger } from "../config/logger";
 import { prisma } from "../config/database";
+import { AppError } from "../middleware/errorHandler";
+import { reconcileBillsWebhook } from "../services/bills";
 
 export function verifyFlutterwaveSignature(
   req: Request & { rawBody?: Buffer },
@@ -213,6 +215,77 @@ export async function handleFlutterwaveWebhook(
       status: "ok",
       deprecated: true,
       message: DEPRECATED_FIAT_WEBHOOK_NOTE,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Handle partner bill-payment webhooks and reconcile the existing bill payment transaction.
+ * This route is provider-agnostic for now; providers can be added behind the same normalizer.
+ */
+export async function handleBillsWebhook(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const provider = String(req.params.provider || "")
+      .trim()
+      .toLowerCase();
+    if (!provider) {
+      throw new AppError("Bills webhook provider is required", 400);
+    }
+
+    const body = (req.body || {}) as Record<string, unknown>;
+    const transactionId = String(
+      body.transaction_id ?? body.transactionId ?? "",
+    ).trim();
+    const providerReference = String(
+      body.provider_reference ?? body.providerReference ?? "",
+    ).trim();
+    const status = String(body.status ?? "")
+      .trim()
+      .toLowerCase();
+    const amount = Number(body.amount ?? 0);
+    const currency = String(body.currency ?? "NGN")
+      .trim()
+      .toUpperCase();
+    const reason =
+      body.reason == null ? undefined : String(body.reason).trim() || undefined;
+
+    if (!transactionId) {
+      throw new AppError("transaction_id is required", 400);
+    }
+    if (!providerReference) {
+      throw new AppError("provider_reference is required", 400);
+    }
+    if (!["completed", "failed", "refunded"].includes(status)) {
+      throw new AppError(
+        "status must be one of completed, failed, refunded",
+        400,
+      );
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new AppError("amount must be a non-negative number", 400);
+    }
+
+    const reconciled = await reconcileBillsWebhook({
+      provider,
+      transactionId,
+      providerReference,
+      status: status as "completed" | "failed" | "refunded",
+      amount,
+      currency,
+      reason,
+      rawPayload: body,
+    });
+
+    res.status(200).json({
+      ok: true,
+      transaction_id: reconciled.transactionId,
+      status: reconciled.status,
     });
   } catch (error) {
     next(error);

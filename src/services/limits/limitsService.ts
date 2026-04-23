@@ -123,7 +123,7 @@ export async function checkWithdrawalLimits(
   const whereActor = buildActorWhere(userId, organizationId);
   const burnedDaily = await prisma.transaction.aggregate({
     where: {
-      type: "burn",
+      type: { in: ["burn", "bill_payment"] },
       localCurrency: currency,
       status: { in: ["pending", "processing", "completed"] },
       createdAt: { gte: since24h },
@@ -133,7 +133,7 @@ export async function checkWithdrawalLimits(
   });
   const burnedMonthly = await prisma.transaction.aggregate({
     where: {
-      type: "burn",
+      type: { in: ["burn", "bill_payment"] },
       localCurrency: currency,
       status: { in: ["pending", "processing", "completed"] },
       createdAt: { gte: startOfMonth },
