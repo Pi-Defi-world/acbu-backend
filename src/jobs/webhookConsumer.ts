@@ -46,24 +46,29 @@ export async function startWebhookConsumer(): Promise<void> {
           return;
         }
 
-        const ok = await deliverWebhook(webhookId);
+        const result = await deliverWebhook(webhookId);
 
-        if (ok) {
+        if (result.success) {
           ch.ack(msg);
           return;
         }
 
         //  Failed delivery
-        if (retries >= MAX_RETRIES) {
+        if (result.terminal || retries >= MAX_RETRIES) {
           logger.error("Webhook failed permanently", {
             webhookId,
             retries,
           });
 
-          // send to DLQ
-          ch.nack(msg, false, false);
+          // send to DLQ explicitly
+          ch.sendToQueue(QUEUES.WEBHOOKS_DLQ, msg.content, { persistent: true });
+          ch.ack(msg);
           return;
         }
+
+        // Exponential backoff before requeuing
+        const backoffMs = Math.pow(2, retries) * 1000;
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
 
         // Retry with incremented header
         ch.sendToQueue(QUEUES.WEBHOOKS, msg.content, {
@@ -79,10 +84,15 @@ export async function startWebhookConsumer(): Promise<void> {
         logger.error("Webhook consumer error", { error });
 
         if (retries >= MAX_RETRIES) {
-          // send to DLQ
-          ch.nack(msg, false, false);
+          // send to DLQ explicitly
+          ch.sendToQueue(QUEUES.WEBHOOKS_DLQ, msg.content, { persistent: true });
+          ch.ack(msg);
           return;
         }
+
+        // Exponential backoff before requeuing
+        const backoffMs = Math.pow(2, retries) * 1000;
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
 
         // retry on processing error
         ch.sendToQueue(QUEUES.WEBHOOKS, msg.content, {
