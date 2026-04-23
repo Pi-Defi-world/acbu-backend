@@ -16,17 +16,15 @@ export const validate = (schema: ZodSchema) => {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        const errors = error.errors.map((err) => ({
-          path: err.path.join("."),
-          message: err.message,
-        }));
-
         throw new AppError(
-          `Validation error: ${errors.map((e) => e.message).join(", ")}`,
+          "Validation error",
           400,
+          "VALIDATION_ERROR",
+          error.flatten(),
         );
       }
       next(error);
+
     }
   };
 };

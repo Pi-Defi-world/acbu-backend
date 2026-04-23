@@ -48,15 +48,14 @@ export async function postSavingsWithdraw(
   try {
     if (isSavingsLockDate()) {
       const nextDate = getNextSavingsWithdrawalDate();
-      res.status(403).json({
-        error: "Savings locked",
-        code: "SAVINGS_LOCK_DATE",
-        message:
-          "Savings withdrawals are not allowed on this date. Next available withdrawal date below.",
-        next_available_withdrawal_date: nextDate.toISOString().slice(0, 10),
-      });
-      return;
+      throw new AppError(
+        "Savings withdrawals are not allowed on this date. Next available withdrawal date below.",
+        403,
+        "SAVINGS_LOCK_DATE",
+        { next_available_withdrawal_date: nextDate.toISOString().slice(0, 10) },
+      );
     }
+
     const authReq = req as AuthRequest;
     const userId = authReq.apiKey?.userId;
 

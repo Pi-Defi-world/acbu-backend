@@ -45,10 +45,7 @@ export async function postInvestmentWithdrawRequest(
     }
     const parsed = requestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: "Invalid request", details: parsed.error.flatten() });
-      return;
+      throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
     const { amount_acbu, audience, forced_removal } = parsed.data;
     const amountNum = Number(amount_acbu);
@@ -56,14 +53,12 @@ export async function postInvestmentWithdrawRequest(
     if (audience === "business") {
       const onAllowedDate = isBusinessWithdrawalAllowedDate();
       if (!onAllowedDate && !forced_removal) {
-        res.status(403).json({
-          error: "Withdrawal only on allowed dates",
-          code: "INVESTMENT_BUSINESS_CALENDAR",
-          message:
-            "Business investment withdrawals are only allowed on specific dates. Use forced_removal: true to withdraw with 1% fee (funds in 24h).",
-          allowed_days: process.env.INVESTMENT_BUSINESS_ALLOWED_DAYS || "1,15",
-        });
-        return;
+        throw new AppError(
+          "Business investment withdrawals are only allowed on specific dates. Use forced_removal: true to withdraw with 1% fee (funds in 24h).",
+          403,
+          "INVESTMENT_BUSINESS_CALENDAR",
+          { allowed_days: process.env.INVESTMENT_BUSINESS_ALLOWED_DAYS || "1,15" },
+        );
       }
     }
 

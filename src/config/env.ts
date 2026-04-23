@@ -327,6 +327,16 @@ export const config = {
     },
   },
 
+  // Auth Security
+  auth: {
+    bruteMaxAttempts: parseInt(process.env.AUTH_BRUTE_MAX_ATTEMPTS || "5", 10),
+    bruteLockoutMs: parseInt(
+      process.env.AUTH_BRUTE_LOCKOUT_MS || "900000",
+      10,
+    ), // 15 mins
+    captchaSecret: process.env.CAPTCHA_SECRET || "",
+  },
+
   // CORS
   corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["*"],
 };

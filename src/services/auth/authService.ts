@@ -14,6 +14,9 @@ import { getRabbitMQChannel } from "../../config/rabbitmq";
 import { QUEUES } from "../../config/rabbitmq";
 import { ensureWalletForUser } from "../wallet/walletService";
 import { logAudit } from "../audit";
+import { authBruteGuard } from "../../utils/authBruteGuard";
+
+const DUMMY_HASH = "$2a$10$CwTycUXWue0Thq9StjUM0uEnOTWj2XOTl0pypEQuA7y2h2H6jX.m2"; // hash for 'dummy'
 
 export interface SignupParams {
   username: string;
@@ -28,6 +31,8 @@ export interface SignupResult {
 export interface SigninParams {
   identifier: string; // username (with/without @), email, or E.164 phone
   passcode: string;
+  ip: string;
+  captchaToken?: string;
 }
 
 export type SigninResult =
@@ -44,6 +49,7 @@ export type SigninResult =
 export interface Verify2faParams {
   challenge_token: string;
   code: string;
+  ip: string;
 }
 
 export interface Verify2faResult {
@@ -90,7 +96,7 @@ export async function resolveUserByIdentifier(identifier: string) {
       : kind === "phone"
         ? { phoneE164: value }
         : { email: value };
-  return prisma.user.findFirst({
+  const user = await prisma.user.findFirst({
     where,
     select: {
       id: true,
@@ -98,6 +104,17 @@ export async function resolveUserByIdentifier(identifier: string) {
       twoFaMethod: true,
     },
   });
+
+  if (!user) {
+    return {
+      id: "dummy-id",
+      passcodeHash: DUMMY_HASH,
+      twoFaMethod: null,
+      isDummy: true,
+    };
+  }
+
+  return { ...user, isDummy: false };
 }
 
 /**
@@ -151,10 +168,26 @@ export async function signup(params: SignupParams): Promise<SignupResult> {
  * Signin: verify identifier + passcode. If 2FA on, return challenge_token (and send OTP via RabbitMQ when sms/email); else issue api_key.
  */
 export async function signin(params: SigninParams): Promise<SigninResult> {
-  const { identifier, passcode } = params;
+  const { identifier, passcode, ip, captchaToken } = params;
+
+  // 1. Check brute force status
+  const status = await authBruteGuard.getStatus(identifier, ip);
+  if (status.locked) {
+    throw new Error("Too many attempts. Please try again later.");
+  }
+  if (status.requiresCaptcha && !captchaToken) {
+    throw new Error("CAPTCHA required");
+  }
+
+  // TODO: Verify captchaToken here if provided
+
   const user = await resolveUserByIdentifier(identifier);
-  if (!user || !user.passcodeHash) {
-    logger.warn("Signin: user not found or no passcode", {
+  // passcodeHash is always present (real or dummy)
+  const match = await bcrypt.compare(passcode, user.passcodeHash!);
+
+  if (user.isDummy || !match) {
+    await authBruteGuard.recordFailure(identifier, ip);
+    logger.warn("Signin: invalid credentials", {
       identifier:
         identifier.includes("@") && identifier.includes(".")
           ? "***"
@@ -163,11 +196,8 @@ export async function signin(params: SigninParams): Promise<SigninResult> {
     throw new Error("Invalid credentials");
   }
 
-  const match = await bcrypt.compare(passcode, user.passcodeHash);
-  if (!match) {
-    logger.warn("Signin: invalid passcode", { userId: user.id });
-    throw new Error("Invalid credentials");
-  }
+  // 2. Reset brute guard on success
+  await authBruteGuard.reset(identifier, ip);
 
   if (user.twoFaMethod) {
     if (user.twoFaMethod === "sms" || user.twoFaMethod === "email") {
@@ -258,22 +288,26 @@ export async function signin(params: SigninParams): Promise<SigninResult> {
 export async function verify2fa(
   params: Verify2faParams,
 ): Promise<Verify2faResult> {
-  const { challenge_token, code } = params;
+  const { challenge_token, code, ip } = params;
   const payload = verifyChallengeToken(challenge_token);
+
+  // Check brute force for 2FA
+  const status = await authBruteGuard.getStatus(payload.userId, ip);
+  if (status.locked) {
+    throw new Error("Too many attempts. Please try again later.");
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
     select: { id: true, twoFaMethod: true, totpSecretEncrypted: true },
   });
   if (!user || !user.twoFaMethod)
-    throw new Error("Invalid or expired challenge");
+    throw new Error("Invalid credentials"); // Uniform message
 
+  let valid = false;
   if (user.twoFaMethod === "totp") {
     if (!user.totpSecretEncrypted) throw new Error("TOTP not configured");
-    const valid = totp.check(code, user.totpSecretEncrypted);
-    if (!valid) {
-      logger.warn("Verify2FA: invalid TOTP", { userId: user.id });
-      throw new Error("Invalid code");
-    }
+    valid = totp.check(code, user.totpSecretEncrypted);
   } else if (user.twoFaMethod === "sms" || user.twoFaMethod === "email") {
     const now = new Date();
     const challenge = await prisma.otpChallenge.findFirst({
@@ -285,19 +319,24 @@ export async function verify2fa(
       },
       orderBy: { createdAt: "desc" },
     });
-    if (!challenge) throw new Error("Invalid or expired code");
-    const match = await bcrypt.compare(code, challenge.codeHash);
-    if (!match) {
-      logger.warn("Verify2FA: invalid OTP", { userId: user.id });
-      throw new Error("Invalid code");
+    if (challenge) {
+      valid = await bcrypt.compare(code, challenge.codeHash);
+      if (valid) {
+        await prisma.otpChallenge.update({
+          where: { id: challenge.id },
+          data: { usedAt: now },
+        });
+      }
     }
-    await prisma.otpChallenge.update({
-      where: { id: challenge.id },
-      data: { usedAt: now },
-    });
-  } else {
-    throw new Error("Unsupported 2FA method");
   }
+
+  if (!valid) {
+    await authBruteGuard.recordFailure(user.id, ip);
+    logger.warn("Verify2FA: invalid code", { userId: user.id });
+    throw new Error("Invalid credentials"); // Uniform message
+  }
+
+  await authBruteGuard.reset(user.id, ip);
 
   const api_key = await generateApiKey(user.id, []);
   const wallet = await ensureWalletForUser(user.id);

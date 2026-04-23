@@ -72,11 +72,9 @@ export async function registerOnRampSwap(
     }
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: "Invalid request", details: parsed.error.flatten() });
-      return;
+      throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
+
     const { stellar_address, xlm_amount, usdc_amount } = parsed.data;
     const userWalletAddress = await assertUserWalletAddress(
       userId,

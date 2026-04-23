@@ -7,11 +7,12 @@ export async function postBulkTransfer(
 ): Promise<void> {
   try {
     // TODO: bulk transfer (many transfers); idempotency; enterprise limits
-    res.status(501).json({
-      error: "NOT_IMPLEMENTED",
-      message:
-        "Bulk transfer endpoint not yet implemented. Use /transfers for single transfers.",
-    });
+    throw new AppError(
+      "Bulk transfer endpoint not yet implemented. Use /transfers for single transfers.",
+      501,
+      "NOT_IMPLEMENTED",
+    );
+
   } catch (e) {
     next(e);
   }
