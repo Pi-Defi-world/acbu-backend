@@ -80,7 +80,7 @@ model Transaction {
   recipientAddress      String?                 @map("recipient_address") @db.VarChar(56)
   fee                   Decimal?                @db.Decimal(20, 8)
   rateSnapshot          Json?                   @map("rate_snapshot")
-  blockchainTxHash      String?                 @map("blockchain_tx_hash") @db.VarChar(255)
+  blockchainTxHash      String?                 @unique(map: "uq_transactions_blockchain_tx_hash") @map("blockchain_tx_hash") @db.VarChar(255)
   confirmations         Int                     @default(0)
   createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamp(6)
   completedAt           DateTime?               @map("completed_at") @db.Timestamp(6)
@@ -477,4 +477,3 @@ model KycValidatorReward {
   @@index([status], map: "idx_kyc_validator_reward_status")
   @@map("kyc_validator_rewards")
 }
-
