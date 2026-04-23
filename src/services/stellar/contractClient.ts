@@ -9,6 +9,9 @@ import { stellarClient } from "./client";
 import { getBaseFee } from "./feeManager";
 import { logger } from "../../config/logger";
 import { wrapSorobanInvokeError } from "./sorobanInvokeErrors";
+import { trace, SpanStatusCode } from "@opentelemetry/api";
+
+const sorobanTracer = trace.getTracer("soroban");
 
 function isRetryableSorobanNetworkError(message: string): boolean {
   return /ENOTFOUND|ECONNRESET|ETIMEDOUT|ECONNREFUSED|fetch failed|socket hang up/i.test(
@@ -82,6 +85,32 @@ export class ContractClient {
    * Invoke a contract function
    */
   async invokeContract(
+    options: ContractCallOptions,
+  ): Promise<ContractInvokeResult> {
+    return sorobanTracer.startActiveSpan(
+      `soroban.invoke.${options.functionName}`,
+      async (span) => {
+        span.setAttributes({
+          "soroban.contract_id": options.contractId,
+          "soroban.function": options.functionName,
+          "soroban.source_account": options.sourceAccount,
+        });
+        try {
+          const result = await this._invokeContractInner(options);
+          span.setAttributes({ "soroban.tx_hash": result.transactionHash, "soroban.ledger": result.ledger });
+          span.setStatus({ code: SpanStatusCode.OK });
+          return result;
+        } catch (err) {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+          throw err;
+        } finally {
+          span.end();
+        }
+      },
+    );
+  }
+
+  private async _invokeContractInner(
     options: ContractCallOptions,
   ): Promise<ContractInvokeResult> {
     try {
@@ -231,7 +260,7 @@ export class ContractClient {
         functionName: options.functionName,
       });
     }
-  }
+  } // end _invokeContractInner
 
   /**
    * Read contract data (simulate call without submitting)

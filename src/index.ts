@@ -1,3 +1,6 @@
+import { initTracing } from "./config/tracing";
+initTracing();
+
 import express from "express";
 import helmet from "helmet";
 import swaggerUi from "swagger-ui-express";
