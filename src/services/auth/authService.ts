@@ -14,6 +14,7 @@ import { getRabbitMQChannel } from "../../config/rabbitmq";
 import { QUEUES } from "../../config/rabbitmq";
 import { ensureWalletForUser } from "../wallet/walletService";
 import { logAudit } from "../audit";
+import { config } from "../../config/env";
 
 export interface SignupParams {
   username: string;
@@ -96,6 +97,8 @@ export async function resolveUserByIdentifier(identifier: string) {
       id: true,
       passcodeHash: true,
       twoFaMethod: true,
+      failedSigninAttempts: true,
+      lockoutUntil: true,
     },
   });
 }
@@ -153,6 +156,12 @@ export async function signup(params: SignupParams): Promise<SignupResult> {
 export async function signin(params: SigninParams): Promise<SigninResult> {
   const { identifier, passcode } = params;
   const user = await resolveUserByIdentifier(identifier);
+
+  if (user?.lockoutUntil && user.lockoutUntil > new Date()) {
+    logger.warn("Signin: account locked", { userId: user.id });
+    throw new Error("Account locked due to too many failed attempts. Please try again later.");
+  }
+
   if (!user || !user.passcodeHash) {
     logger.warn("Signin: user not found or no passcode", {
       identifier:
@@ -165,9 +174,35 @@ export async function signin(params: SigninParams): Promise<SigninResult> {
 
   const match = await bcrypt.compare(passcode, user.passcodeHash);
   if (!match) {
-    logger.warn("Signin: invalid passcode", { userId: user.id });
+    const failedAttempts = user.failedSigninAttempts + 1;
+    const isLockout = failedAttempts >= config.maxSigninAttempts;
+    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedSigninAttempts: failedAttempts,
+        lockoutUntil: isLockout 
+          ? new Date(Date.now() + config.signinLockoutDurationMs)
+          : null,
+      },
+    });
+
+    logger.warn("Signin: invalid passcode", { 
+      userId: user.id, 
+      failedAttempts,
+      isLockout 
+    });
     throw new Error("Invalid credentials");
   }
+
+  // Success: reset failed attempts
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      failedSigninAttempts: 0,
+      lockoutUntil: null,
+    },
+  });
 
   if (user.twoFaMethod) {
     if (user.twoFaMethod === "sms" || user.twoFaMethod === "email") {
@@ -262,16 +297,44 @@ export async function verify2fa(
   const payload = verifyChallengeToken(challenge_token);
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, twoFaMethod: true, totpSecretEncrypted: true },
+    select: { 
+      id: true, 
+      twoFaMethod: true, 
+      totpSecretEncrypted: true,
+      lockoutUntil: true,
+      failedSigninAttempts: true
+    },
   });
+
   if (!user || !user.twoFaMethod)
     throw new Error("Invalid or expired challenge");
+
+  if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+    logger.warn("Verify2FA: account locked", { userId: user.id });
+    throw new Error("Account locked due to too many failed attempts. Please try again later.");
+  }
+
+  const handleFailure = async () => {
+    const failedAttempts = user.failedSigninAttempts + 1;
+    const isLockout = failedAttempts >= config.maxSigninAttempts;
+    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedSigninAttempts: failedAttempts,
+        lockoutUntil: isLockout 
+          ? new Date(Date.now() + config.signinLockoutDurationMs)
+          : null,
+      },
+    });
+  };
 
   if (user.twoFaMethod === "totp") {
     if (!user.totpSecretEncrypted) throw new Error("TOTP not configured");
     const valid = totp.check(code, user.totpSecretEncrypted);
     if (!valid) {
       logger.warn("Verify2FA: invalid TOTP", { userId: user.id });
+      await handleFailure();
       throw new Error("Invalid code");
     }
   } else if (user.twoFaMethod === "sms" || user.twoFaMethod === "email") {
@@ -289,6 +352,7 @@ export async function verify2fa(
     const match = await bcrypt.compare(code, challenge.codeHash);
     if (!match) {
       logger.warn("Verify2FA: invalid OTP", { userId: user.id });
+      await handleFailure();
       throw new Error("Invalid code");
     }
     await prisma.otpChallenge.update({
@@ -298,6 +362,15 @@ export async function verify2fa(
   } else {
     throw new Error("Unsupported 2FA method");
   }
+
+  // Success: reset failed attempts
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      failedSigninAttempts: 0,
+      lockoutUntil: null,
+    },
+  });
 
   const api_key = await generateApiKey(user.id, []);
   const wallet = await ensureWalletForUser(user.id);

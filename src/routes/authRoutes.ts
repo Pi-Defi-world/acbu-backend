@@ -7,17 +7,15 @@ import {
 } from "../controllers/authController";
 import { validateApiKey } from "../middleware/auth";
 import {
-  standardRateLimiter,
+  authRateLimiter,
   apiKeyRateLimiter,
 } from "../middleware/rateLimiter";
 
 const router: ReturnType<typeof Router> = Router();
 
-router.use(standardRateLimiter);
-
-router.post("/signup", postSignup);
-router.post("/signin", postSignin);
-router.post("/signin/verify-2fa", postVerify2fa);
+router.post("/signup", authRateLimiter, postSignup);
+router.post("/signin", authRateLimiter, postSignin);
+router.post("/signin/verify-2fa", authRateLimiter, postVerify2fa);
 
 // Signout requires API key
 router.post("/signout", validateApiKey, apiKeyRateLimiter, postSignout);

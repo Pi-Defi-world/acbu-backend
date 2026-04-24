@@ -219,6 +219,14 @@ export const standardRateLimiter = createRateLimiter(
 );
 
 /**
+ * Stricter rate limiter for auth endpoints (signup, signin, verify-2fa)
+ */
+export const authRateLimiter = createRateLimiter(
+  config.authRateLimitWindowMs,
+  config.authRateLimitMaxRequests,
+);
+
+/**
  * Middleware to inject fallback state into request context for downstream logging
  */
 export const injectFallbackState = (

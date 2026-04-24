@@ -19,9 +19,6 @@ model Organization {
   users         User[]    @relation("UserOrganization")
   salaryBatches   SalaryBatch[]
   salarySchedules SalarySchedule[]
-
-  users        User[]        @relation("UserOrganization")
-  apiKeys      ApiKey[]      @relation("OrganizationApiKeys")
   transactions Transaction[] @relation("OrganizationTransactions")
 
   @@index([kycStatus], name: "idx_organization_kyc_status")
@@ -48,6 +45,8 @@ model User {
   actorType                String                     @default("retail") @map("actor_type") @db.VarChar(20)
   tier                     String                     @default("free") @db.VarChar(20)
   organizationId           String?                    @map("organization_id") @db.Uuid
+  failedSigninAttempts    Int                        @default(0) @map("failed_signin_attempts")
+  lockoutUntil           DateTime?                  @map("lockout_until") @db.Timestamp(6)
   createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt                DateTime                   @updatedAt @map("updated_at") @db.Timestamp(6)
   apiKeys                  ApiKey[]
@@ -94,9 +93,11 @@ model Transaction {
   createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamp(6)
   completedAt           DateTime?               @map("completed_at") @db.Timestamp(6)
   reserveHistory        ReserveHistory[]
+  organizationId        String?                 @map("organization_id") @db.Uuid
   user                  User?                   @relation(fields: [userId], references: [id])
+  organization          Organization?           @relation("OrganizationTransactions", fields: [organizationId], references: [id])
   webhooks              Webhook[]
-  salaryItem            SalaryItem?
+  salaryItems           SalaryItem[]
 
   // B-074: enforce idempotency for burn submissions only.
   // Allows the same hash to appear under other transaction types without forcing global changes.
@@ -539,4 +540,64 @@ model RecoveryAttempt {
   @@index([createdAt], map: "idx_recovery_attempt_created_at")
   @@index([success], map: "idx_recovery_attempt_success")
   @@map("recovery_attempts")
+}
+
+model SalaryItem {
+  id               String       @id @default(uuid()) @db.Uuid
+  batchId          String       @map("batch_id") @db.Uuid
+  recipientId      String?      @map("recipient_id") @db.Uuid
+  recipientAddress String       @map("recipient_address") @db.VarChar(56)
+  amount           Decimal      @db.Decimal(20, 8)
+  status           String       @default("pending") @db.VarChar(20)
+  transactionId    String?      @map("transaction_id") @db.Uuid
+  errorMessage     String?      @map("error_message") @db.VarChar(500)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  batch            SalaryBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  transaction      Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([batchId], map: "idx_salary_item_batch_id")
+  @@index([status], map: "idx_salary_item_status")
+  @@map("salary_items")
+}
+
+model SalarySchedule {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String?      @map("organization_id") @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  name            String       @db.VarChar(100)
+  cron            String       @db.VarChar(100)
+  amountConfig    Json         @map("amount_config")
+  currency        String       @default("ACBU") @db.VarChar(10)
+  status          String       @default("active") @db.VarChar(20)
+  lastRunAt       DateTime?    @map("last_run_at") @db.Timestamp(6)
+  nextRunAt       DateTime?    @map("next_run_at") @db.Timestamp(6)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  user            User         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId], map: "idx_salary_schedule_org_id")
+  @@index([userId], map: "idx_salary_schedule_user_id")
+  @@index([status], map: "idx_salary_schedule_status")
+  @@map("salary_schedules")
+}
+
+model UserDevice {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @map("user_id") @db.Uuid
+  fingerprint          String    @db.VarChar(255)
+  userAgent            String?   @db.VarChar(512)
+  lastIp               String?   @db.VarChar(45)
+  trusted              Boolean   @default(false)
+  lastSeenAt           DateTime  @default(now()) @map("last_seen_at") @db.Timestamp(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId], map: "idx_user_device_user_id")
+  @@map("user_devices")
 }
