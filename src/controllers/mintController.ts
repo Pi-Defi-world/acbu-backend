@@ -22,6 +22,7 @@ import {
 } from "../services/limits/limitsService";
 import { enqueueUsdcConvertAndMint } from "../jobs/usdcConvertAndMintJob";
 import { AppError } from "../middleware/errorHandler";
+import { assertUserWalletAddress } from "../services/wallet/walletService";
 
 const MINT_FEE_BPS = 30; // 0.3%
 const DECIMALS_7 = 1e7;
@@ -37,26 +38,6 @@ const usdcBodySchema = z.object({
   wallet_address: z.string().length(56).regex(/^G/),
   currency_preference: z.enum(["auto"]).optional(),
 });
-
-async function assertUserWalletAddress(
-  userId: string,
-  providedAddress: string,
-): Promise<string> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { stellarAddress: true },
-  });
-
-  if (!user?.stellarAddress) {
-    throw new AppError("User wallet address not set", 400);
-  }
-
-  if (user.stellarAddress !== providedAddress) {
-    throw new AppError("Wallet address does not match user", 403);
-  }
-
-  return user.stellarAddress;
-}
 
 /**
  * POST /v1/mint/usdc - Accept USDC deposit. We convert USDC→XLM in backend (pools/swaps independent); once conversion succeeds, mint is approved. User does not wait for LPs.
@@ -137,12 +118,14 @@ export async function mintFromUsdcInternal(
   usdcAmount: number,
   walletAddress: string,
   userId?: string,
+  organizationId?: string,
 ): Promise<{ transactionId: string; acbuAmount: number }> {
   const feeUsdc = (usdcAmount * MINT_FEE_BPS) / 10000;
   const usdcAmount7 = Math.round(usdcAmount * DECIMALS_7).toString();
   const tx = await prisma.transaction.create({
     data: {
       userId: userId ?? undefined,
+      organizationId: organizationId ?? undefined,
       type: "mint",
       status: "pending",
       usdcAmount: new Decimal(usdcAmount),
@@ -257,9 +240,11 @@ export async function depositFromBasketCurrency(
       return;
     }
     const amountNum = Number(amount);
-    if (req.apiKey?.userId) {
-      await assertUserWalletAddress(req.apiKey.userId, wallet_address);
+    const userId = req.apiKey?.userId;
+    if (!userId) {
+      throw new AppError("User context required for deposit", 401);
     }
+    await assertUserWalletAddress(userId, wallet_address);
     // SECURITY: Always enforce circuit breaker and deposit limits
     // Previously these checks were skipped when req.audience was undefined,
     // allowing bypass of critical financial controls via direct /mint/deposit route
@@ -280,12 +265,13 @@ export async function depositFromBasketCurrency(
     await checkDepositLimits(
       audience,
       amountUsdPlaceholder,
-      req.apiKey?.userId ?? null,
+      userId,
       req.apiKey?.organizationId ?? null,
     );
     const tx = await prisma.transaction.create({
       data: {
         userId: req.apiKey?.userId ?? undefined,
+        organizationId: req.apiKey?.organizationId ?? undefined,
         type: "mint",
         status: "pending",
         localCurrency: currency,
@@ -293,7 +279,6 @@ export async function depositFromBasketCurrency(
         rateSnapshot: {
           deposit_currency: currency,
           amount: amountNum,
-          organizationId: req.apiKey?.organizationId ?? null,
           timestamp: new Date().toISOString(),
         },
       },

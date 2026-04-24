@@ -10,26 +10,7 @@ import { Decimal } from "@prisma/client/runtime/library";
 import { enqueueXlmToAcbu } from "../jobs/xlmToAcbuJob";
 import { AppError } from "../middleware/errorHandler";
 import { isValidStellarAddress } from "../utils/stellar";
-
-async function assertUserWalletAddress(
-  userId: string,
-  providedAddress: string,
-): Promise<string> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { stellarAddress: true },
-  });
-
-  if (!user?.stellarAddress) {
-    throw new AppError("User wallet address not set", 400);
-  }
-
-  if (user.stellarAddress !== providedAddress) {
-    throw new AppError("Wallet address does not match user", 403);
-  }
-
-  return user.stellarAddress;
-}
+import { assertUserWalletAddress } from "../services/wallet/walletService";
 
 const bodySchema = z.object({
   stellar_address: z

@@ -357,7 +357,7 @@ export class ContractClient {
         if (/^[GC][A-Z2-7]{55}$/.test(value)) {
           return xdr.ScVal.scvAddress(Address.fromString(value).toScAddress());
         }
-      } catch (e) {
+      } catch {
         // Fallback to string if parsing fails
       }
       return xdr.ScVal.scvString(value);

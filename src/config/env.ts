@@ -1,55 +1,69 @@
 import dotenv from "dotenv";
+import { z } from "zod";
 
 dotenv.config();
 
-// ── Validate required env vars BEFORE building config ────────────────────────
-// This ensures the app fails fast with a clear message instead of starting
-// with empty strings and failing later in an unpredictable way.
-const requiredEnvVars = [
-  "DATABASE_URL",
-  "MONGODB_URI",
-  "RABBITMQ_URL",
-  "JWT_SECRET",
-];
+const envSchema = z.object({
+  NODE_ENV: z.string().default("development"),
+  PORT: z.coerce.number().default(5000),
+  API_VERSION: z.string().default("v1"),
+  DATABASE_URL: z.string().min(1),
+  MONGODB_URI: z.string().min(1),
+  RABBITMQ_URL: z.string().min(1),
+  JWT_SECRET: z.string().min(1),
+  PRISMA_ACCELERATE_URL: z.string().optional(),
+  JWT_EXPIRES_IN: z.string().default("7d"),
+  API_KEY_SALT: z.string().default(""),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
+});
 
-if (process.env.NODE_ENV === "production") {
-  requiredEnvVars.push("PRISMA_ACCELERATE_URL");
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  const messages = parsed.error.issues
+    .map((i) => `${i.path.join(".")}: ${i.message}`)
+    .join("\n");
+  throw new Error(`Invalid environment variables:\n${messages}`);
 }
 
-const missing = requiredEnvVars.filter((v) => !process.env[v]);
-if (missing.length > 0) {
+if (
+  parsed.data.NODE_ENV === "production" &&
+  !parsed.data.PRISMA_ACCELERATE_URL
+) {
   throw new Error(
-    `Missing required environment variable(s): ${missing.join(", ")}`,
+    "Missing required environment variable: PRISMA_ACCELERATE_URL",
   );
 }
 
+const env = parsed.data;
+
 export const config = {
-  // Server
-  nodeEnv: process.env.NODE_ENV || "development",
-  port: parseInt(process.env.PORT || "5000", 10),
-  apiVersion: process.env.API_VERSION || "v1",
+  nodeEnv: env.NODE_ENV,
+  port: env.PORT,
+  apiVersion: env.API_VERSION,
+  databaseUrl: env.DATABASE_URL,
+  prismaAccelerateUrl: env.PRISMA_ACCELERATE_URL,
+  mongodbUri: env.MONGODB_URI,
+  rabbitmqUrl: env.RABBITMQ_URL,
+  jwtSecret: env.JWT_SECRET,
+  challengeTokenSecret: process.env.CHALLENGE_TOKEN_SECRET || 'default_secret',
+  jwtExpiresIn: env.JWT_EXPIRES_IN,
+  apiKeySalt: env.API_KEY_SALT,
+  rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
+  rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
 
-  // Database
-  databaseUrl: process.env.DATABASE_URL || "",
-  prismaAccelerateUrl: process.env.PRISMA_ACCELERATE_URL || "",
-
-  // MongoDB
-  mongodbUri: process.env.MONGODB_URI || "",
-
-  // RabbitMQ
-  rabbitmqUrl: process.env.RABBITMQ_URL || "",
-
-  // JWT
-  jwtSecret: process.env.JWT_SECRET || "",
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
-
-  // API Security
-  apiKeySalt: process.env.API_KEY_SALT || "",
-
-  // Rate Limiting
-  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "60000", 10),
-  rateLimitMaxRequests: parseInt(
-    process.env.RATE_LIMIT_MAX_REQUESTS || "100",
+  // Rate Limiting Fallback (during cache outages)
+  rateLimitFallbackMaxRequests: parseInt(
+    process.env.RATE_LIMIT_FALLBACK_MAX_REQUESTS || "20",
+    10,
+  ),
+  rateLimitCircuitBreakerThreshold: parseInt(
+    process.env.RATE_LIMIT_CIRCUIT_BREAKER_THRESHOLD || "5",
+    10,
+  ),
+  rateLimitCircuitBreakerCooldownMs: parseInt(
+    process.env.RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN_MS || "60000",
     10,
   ),
 
@@ -134,12 +148,43 @@ export const config = {
       process.env.STELLAR_NETWORK === "mainnet"
         ? "Public Global Stellar Network ; September 2015"
         : "Test SDF Network ; September 2015",
-    /** Minimum XLM sent to user wallet for activation (Stellar account creation). Default 1. */
-    minBalanceXlm: parseFloat(
-      process.env.WALLET_ACTIVATION_XLM ||
+    /** Network-native asset code shown to callers for wallet bootstrap (default XLM, or PI when bootstrap profile says so). */
+    nativeAssetCode: ((): string => {
+      const explicit = process.env.STELLAR_NATIVE_ASSET_CODE?.trim();
+      if (explicit) return explicit.toUpperCase();
+      const bootstrapProfile = (
+        process.env.TESTNET_CUSTODIAL_BOOTSTRAP || ""
+      ).trim()
+        .toLowerCase();
+      return bootstrapProfile.includes("pi") ? "PI" : "XLM";
+    })(),
+    /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */
+    activationStrategy: (
+      process.env.WALLET_ACTIVATION_STRATEGY || "create_account_native"
+    ) as "create_account_native" | "disabled",
+    /** Optional bootstrap profile from deployment docs/runbooks; used only for config alignment and diagnostics. */
+    bootstrapProfile: process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "",
+    /** Minimum network-native balance sent to user wallet for activation. */
+    activationAmount: ((): string => {
+      const raw =
+        process.env.WALLET_ACTIVATION_AMOUNT ||
+        process.env.WALLET_ACTIVATION_NATIVE ||
+        process.env.WALLET_ACTIVATION_XLM ||
         process.env.STELLAR_MIN_BALANCE ||
-        "1",
-    ),
+        "1";
+      return raw.trim() || "1";
+    })(),
+    /** Backwards-compatible numeric alias for older callers/tests that still reference minBalanceXlm. */
+    minBalanceXlm: (() => {
+      const parsed = Number.parseFloat(
+        process.env.WALLET_ACTIVATION_AMOUNT ||
+          process.env.WALLET_ACTIVATION_NATIVE ||
+          process.env.WALLET_ACTIVATION_XLM ||
+          process.env.STELLAR_MIN_BALANCE ||
+          "1",
+      );
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    })(),
     /** Base transaction fee in stroops used as fallback when dynamic fee fetch is disabled or fails. Default 100. */
     baseFeeStroops: parseInt(process.env.STELLAR_BASE_FEE_STROOPS || "100", 10),
     /** When true, fetches the current recommended base fee from Horizon before each transaction. Falls back to baseFeeStroops on failure. */
@@ -208,10 +253,12 @@ export const config = {
       | "ses"
       | "log",
     emailFrom:
-      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.example.com",
+      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.io",
     sendgridApiKey: process.env.SENDGRID_API_KEY || "",
     sesRegion:
       process.env.AWS_REGION || process.env.AWS_SES_REGION || "us-east-1",
+    sesAccessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    sesSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
     smsProvider: (process.env.NOTIFICATION_SMS_PROVIDER || "log") as
       | "twilio"
       | "africas_talking"

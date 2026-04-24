@@ -74,6 +74,7 @@ describe("recoveryService", () => {
       const out = await unlockApp({
         identifier: "user@example.com",
         passcode: "1234",
+        deviceFingerprint: { os: "Android", browser: "Chrome" } as any,
       });
 
       expect(out).toEqual({
@@ -93,7 +94,7 @@ describe("recoveryService", () => {
       });
 
       await expect(
-        unlockApp({ identifier: "user@example.com", passcode: "9999" }),
+        unlockApp({ identifier: "user@example.com", passcode: "9999", deviceFingerprint: { os: "Android", browser: "Chrome" } as any }),
       ).rejects.toThrow("Invalid passcode");
     });
   });

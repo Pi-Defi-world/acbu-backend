@@ -43,7 +43,7 @@ export async function listMyTransactions(
     const list = await prisma.transaction.findMany({
       where: {
         userId,
-        type: { in: ["mint", "burn", "transfer"] },
+        type: { in: ["mint", "burn", "transfer", "bill_payment"] },
       },
       orderBy: { createdAt: "desc" },
       take: limit + 1,
