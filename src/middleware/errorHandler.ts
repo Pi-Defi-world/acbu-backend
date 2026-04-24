@@ -3,11 +3,15 @@ import { logger } from "../config/logger";
 
 export class AppError extends Error {
   statusCode: number;
+  code: string;
+  details?: any;
   isOperational: boolean;
+  details?: unknown;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, details?: unknown) {
     super(message);
     this.statusCode = statusCode;
+    this.details = details;
     this.isOperational = true;
     Error.captureStackTrace(this, this.constructor);
   }
@@ -37,9 +41,13 @@ export const errorHandler = (
 ): void => {
   if (err instanceof SyntaxError && "body" in err) {
     logger.warn("JSON Parse Error", { message: err.message, path: req.path });
-    res
-      .status(400)
-      .json({ error: { message: "Invalid JSON payload", statusCode: 400 } });
+    res.status(400).json({
+      error: {
+        code: "INVALID_JSON",
+        message: "Invalid JSON payload",
+        details: { message: err.message },
+      },
+    });
     return;
   }
 
@@ -47,14 +55,18 @@ export const errorHandler = (
     logger.error("Application error", {
       message: err.message,
       statusCode: err.statusCode,
+      code: err.code,
       path: req.path,
       method: req.method,
+      details: err.details,
     });
 
     res.status(err.statusCode).json({
       error: {
+        code: err.code,
         message: err.message,
         statusCode: err.statusCode,
+        ...(err.details ? { details: err.details } : {}),
       },
     });
     return;
@@ -65,8 +77,9 @@ export const errorHandler = (
 
   res.status(500).json({
     error: {
+      code: "INTERNAL_ERROR",
       message: "Internal server error",
-      statusCode: 500,
     },
   });
 };
+

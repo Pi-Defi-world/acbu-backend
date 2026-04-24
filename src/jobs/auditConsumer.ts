@@ -31,6 +31,10 @@ export async function startAuditConsumer() {
             oldValue: entry.oldValue ?? (undefined as any),
             newValue: entry.newValue ?? (undefined as any),
             performedBy: entry.performedBy ?? null,
+            actorType: entry.actorType ?? null,
+            keyType: entry.keyType ?? null,
+            organizationId: entry.organizationId ?? null,
+            reason: entry.reason ?? null,
             timestamp: entry.timestamp ? new Date(entry.timestamp) : undefined,
           },
         });

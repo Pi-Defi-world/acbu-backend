@@ -73,6 +73,20 @@ describe("auth middleware", () => {
       const err = (mockNext as jest.Mock).mock.calls[0][0] as AppError;
       expect(err.statusCode).toBe(401);
       expect(err.message).toBe("Invalid API key");
+      expect(prisma.apiKey.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            AND: expect.arrayContaining([
+              expect.objectContaining({
+                OR: [
+                  { keyType: { not: "BREAK_GLASS_KEY" } },
+                  { emergencyExpiresAt: { gt: expect.any(Date) } },
+                ],
+              }),
+            ]),
+          }),
+        }),
+      );
     });
 
     it("rejects when bcrypt compare fails — 401", async () => {

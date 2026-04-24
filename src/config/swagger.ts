@@ -31,7 +31,35 @@ const options: swaggerJsdoc.Options = {
           scheme: "bearer",
           bearerFormat: "JWT",
         },
+        ErrorResponse: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                code: {
+                  type: "string",
+                  description: "A machine-readable error code",
+                  example: "VALIDATION_ERROR",
+                },
+                message: {
+                  type: "string",
+                  description: "A human-readable error message",
+                  example: "Validation error",
+                },
+                details: {
+                  type: "object",
+                  description: "Additional structured information about the error",
+                  nullable: true,
+                },
+              },
+              required: ["code", "message"],
+            },
+          },
+          required: ["error"],
+        },
       },
+
     },
     security: [
       {

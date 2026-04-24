@@ -1,7 +1,7 @@
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../../config/database";
 import { AppError } from "../../middleware/errorHandler";
-import { logger } from "../../config/logger";
+import { logger, logFinancialEvent } from "../../config/logger";
 import { logAudit } from "../audit";
 import {
   checkWithdrawalLimits,
@@ -204,6 +204,21 @@ export async function payBill(
     performedBy: request.userId ?? undefined,
   });
 
+  const correlationId = crypto.randomUUID();
+
+  logFinancialEvent({
+    event: "bill.initiated",
+    status: "pending",
+    transactionId: transaction.id,
+    userId: request.userId ?? transaction.id,
+    accountId: request.userId ?? transaction.id,
+    idempotencyKey: transaction.id,
+    correlationId,
+    amount: Math.round(request.amount * 100),
+    currency: product.currency,
+    provider: provider.providerId,
+  });
+
   try {
     const providerResult = await provider.payBill({
       transactionId: transaction.id,
@@ -228,6 +243,20 @@ export async function payBill(
           provider_response: providerResult.rawResponse ?? null,
         },
       },
+    });
+
+    logFinancialEvent({
+      event: "bill.completed",
+      status: "success",
+      transactionId: transaction.id,
+      userId: request.userId ?? transaction.id,
+      accountId: request.userId ?? transaction.id,
+      idempotencyKey: transaction.id,
+      correlationId,
+      amount: Math.round(request.amount * 100),
+      currency: product.currency,
+      provider: provider.providerId,
+      providerRef: providerResult.providerReference,
     });
 
     let status: BillPaymentResult["status"] = providerResult.dispatchStatus;
@@ -389,6 +418,28 @@ export async function reconcileBillsWebhook(event: BillsWebhookEvent): Promise<{
     status: event.status,
   });
 
+  const reconcileStatusMap: Record<string, import("../../types/logging").FinancialEventStatus> = {
+    completed: "success",
+    failed: "failed",
+    refunded: "reversed",
+  };
+  const reconcileFinancialStatus =
+    reconcileStatusMap[event.status] ?? "pending";
+
+  logFinancialEvent({
+    event: "webhook.reconciled",
+    status: reconcileFinancialStatus,
+    transactionId: transaction.id,
+    userId: transaction.userId ?? transaction.id,
+    accountId: transaction.userId ?? transaction.id,
+    idempotencyKey: transaction.id,
+    correlationId: crypto.randomUUID(),
+    amount: Math.round((transaction.localAmount?.toNumber() ?? event.amount) * 100),
+    currency: transaction.localCurrency ?? event.currency,
+    provider: event.provider,
+    providerRef: event.providerReference,
+  });
+
   return {
     transactionId: transaction.id,
     status: nextStatus,
@@ -438,6 +489,20 @@ export async function refundBillPayment(
   });
 
   await reconcileBillsWebhook(refundResponse.reconciliationEvent);
+
+  logFinancialEvent({
+    event: "bill.refunded",
+    status: "reversed",
+    transactionId: transaction.id,
+    userId: transaction.userId ?? transaction.id,
+    accountId: transaction.userId ?? transaction.id,
+    idempotencyKey: transaction.id,
+    correlationId: crypto.randomUUID(),
+    amount: Math.round(localAmount * 100),
+    currency,
+    provider: refundResponse.provider,
+    providerRef: refundResponse.providerReference,
+  });
 
   return {
     transactionId: transaction.id,
