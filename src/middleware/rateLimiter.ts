@@ -11,6 +11,9 @@ type FallbackRateLimitEntry = {
   expiresAt: number;
 };
 
+/** Identifies which rate-limiting strategy produced a 429 response. */
+export type LimiterContext = "ip" | "api_key";
+
 const fallbackRateLimitStore = new Map<string, FallbackRateLimitEntry>();
 
 // Stricter fallback limits during cache outage (5x stricter than normal 100/min)
@@ -104,18 +107,27 @@ cleanupTimer.unref();
 /**
  * Create rate limiter based on API key or IP
  */
-export const createRateLimiter = (windowMs: number, maxRequests: number) => {
+export const createRateLimiter = (
+  windowMs: number,
+  maxRequests: number,
+  context: LimiterContext = "ip",
+) => {
+  const message =
+    context === "ip"
+      ? "Too many requests from this IP address, please try again later."
+      : "API key rate limit exceeded, please try again later.";
+
   return rateLimit({
     windowMs,
     max: maxRequests,
-    message: "Too many requests from this IP, please try again later.",
     standardHeaders: true,
     legacyHeaders: false,
     handler: (_req: Request, res: Response) => {
       res.status(429).json({
         error: {
           code: "RATE_LIMIT_EXCEEDED",
-          message: "Too many requests, please try again later.",
+          message,
+          limitType: context,
         },
       });
     },
@@ -173,7 +185,8 @@ export const apiKeyRateLimiter = async (
       res.status(429).json({
         error: {
           code: "RATE_LIMIT_EXCEEDED",
-          message: "API key rate limit exceeded",
+          message: "API key rate limit exceeded, please try again later.",
+          limitType: "api_key" as LimiterContext,
         },
       });
       return;
