@@ -6,7 +6,7 @@ import {
   rpc,
 } from "@stellar/stellar-sdk";
 import { stellarClient } from "./client";
-import { getBaseFee } from "./feeManager";
+import { getBaseFee, calculateSorobanFeeWithCap, getFeeCapConfig } from "./feeManager";
 import { logger } from "../../config/logger";
 import { wrapSorobanInvokeError } from "./sorobanInvokeErrors";
 
@@ -132,10 +132,37 @@ export class ContractClient {
         .setTimeout(0)
         .build();
 
+      // Apply Soroban fee caps (min/max) to ensure predictable confirmation under load
+      const { minFeeStroops, maxFeeStroops } = getFeeCapConfig();
+      const currentFee = parseInt(transaction.fee, 10);
+      if (
+        currentFee < minFeeStroops ||
+        currentFee > maxFeeStroops
+      ) {
+        const cappedFee = calculateSorobanFeeWithCap(currentFee);
+        transaction.fee = cappedFee;
+        logger.debug("Applied Soroban fee cap", {
+          contractId,
+          functionName,
+          originalFee: transaction.fee,
+          cappedFee,
+          min: minFeeStroops,
+          max: maxFeeStroops,
+        });
+      }
+
       const keypair = stellarClient.getKeypair();
       if (keypair) {
         transaction.sign(keypair);
       }
+
+      logger.debug("Soroban transaction prepared", {
+        contractId,
+        functionName,
+        fee: transaction.fee,
+        minFee: minFeeStroops,
+        maxFee: maxFeeStroops,
+      });
 
       // IMPORTANT: Soroban transactions should be submitted to the Soroban RPC,
       // not Horizon `/transactions` (which can 504 on long-running Soroban TXs).
@@ -357,7 +384,7 @@ export class ContractClient {
         if (/^[GC][A-Z2-7]{55}$/.test(value)) {
           return xdr.ScVal.scvAddress(Address.fromString(value).toScAddress());
         }
-      } catch (e) {
+      } catch {
         // Fallback to string if parsing fails
       }
       return xdr.ScVal.scvString(value);

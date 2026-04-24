@@ -9,6 +9,7 @@ import { corsMiddleware } from "./middleware/cors";
 import { requestLogger } from "./middleware/logger";
 import { errorHandler } from "./middleware/errorHandler";
 import { standardRateLimiter } from "./middleware/rateLimiter";
+import { versioningMiddleware } from "./middleware/versioning";
 import { swaggerSpec } from "./config/swagger";
 import routes from "./routes";
 import webhookRoutes from "./routes/webhookRoutes";
@@ -16,7 +17,18 @@ import webhookRoutes from "./routes/webhookRoutes";
 const app: express.Express = express();
 
 // Security middleware
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "img-src": ["'self'", "data:", "https://validator.swagger.io"],
+        "script-src": ["'self'", "'unsafe-inline'"],
+        "style-src": ["'self'", "https:", "'unsafe-inline'"],
+      },
+    },
+  }),
+);
 app.use(corsMiddleware);
 app.use(express.urlencoded({ extended: true }));
 
@@ -44,6 +56,9 @@ app.use(requestLogger);
 
 // Rate limiting
 app.use(standardRateLimiter);
+
+// Versioning headers (X-API-Version, Deprecation, Sunset)
+app.use(versioningMiddleware);
 
 // API Documentation
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

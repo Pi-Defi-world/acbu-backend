@@ -1,6 +1,7 @@
 import winston from "winston";
 import path from "path";
 import { config } from "./env";
+import { FinancialLogPayload, FinancialEventEnvironment } from "../types/logging";
 
 const logDir = path.dirname(config.logFile);
 
@@ -57,4 +58,55 @@ if (config.nodeEnv !== "production") {
       format: winston.format.simple(),
     }),
   );
+}
+
+// ── Structured Financial Logging ─────────────────────────────────────────────
+
+const REQUIRED_FIELDS: (keyof FinancialLogPayload)[] = [
+  "event", "amount", "currency", "userId", "accountId",
+  "idempotencyKey", "transactionId", "status", "correlationId",
+];
+
+const CARD_NUMBER_PATTERN = /\b\d{13,19}\b/g;
+
+function redactPii(value: string): string {
+  return value.replace(CARD_NUMBER_PATTERN, "[REDACTED]");
+}
+
+export function logFinancialEvent(payload: Omit<FinancialLogPayload, "timestamp" | "environment"> & Partial<Pick<FinancialLogPayload, "timestamp" | "environment">>): void {
+  // Apply defaults (caller-supplied values take precedence)
+  const entry: FinancialLogPayload = {
+    ...payload,
+    timestamp: payload.timestamp ?? new Date().toISOString(),
+    environment: payload.environment ?? (config.nodeEnv as FinancialEventEnvironment),
+  };
+
+  // Redact PII in string fields
+  const mutableEntry = entry as unknown as Record<string, unknown>;
+  for (const key of Object.keys(mutableEntry)) {
+    if (typeof mutableEntry[key] === "string") {
+      mutableEntry[key] = redactPii(mutableEntry[key] as string);
+    }
+  }
+
+  // Validate required fields
+  const missing = REQUIRED_FIELDS.filter(
+    (f) => entry[f] === undefined || entry[f] === null || entry[f] === "",
+  );
+  if (missing.length > 0) {
+    logger.warn("logFinancialEvent: missing required fields", { missing, partial: entry });
+    return;
+  }
+
+  // Select log level by status
+  switch (entry.status) {
+    case "failed":
+      logger.error("financial_event", entry);
+      break;
+    case "reversed":
+      logger.warn("financial_event", entry);
+      break;
+    default:
+      logger.info("financial_event", entry);
+  }
 }

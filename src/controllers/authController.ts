@@ -14,17 +14,18 @@ import {
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 
-const signinSchema = z.object({
+export const signinSchema = z.object({
   identifier: z.string().min(1, "identifier is required"),
   passcode: z.string().min(1, "passcode is required"),
+  captcha_token: z.string().optional(),
 });
 
-const signupSchema = z.object({
+export const signupSchema = z.object({
   username: z.string().min(1, "username is required").max(64),
   passcode: z.string().min(4, "passcode must be at least 4 characters").max(64),
 });
 
-const verify2faSchema = z.object({
+export const verify2faSchema = z.object({
   challenge_token: z.string().min(1, "challenge_token is required"),
   code: z.string().min(1, "code is required"),
 });
@@ -93,6 +94,8 @@ export async function postSignin(
     const result = await signin({
       identifier: body.identifier.trim(),
       passcode: body.passcode,
+      ip: req.ip || req.socket.remoteAddress || "unknown",
+      captchaToken: body.captcha_token,
     });
     if ("requires_2fa" in result) {
       res
@@ -116,10 +119,14 @@ export async function postSignin(
       return next(new AppError(msg, 400));
     }
     if (e instanceof Error) {
-      if (e.message === "Invalid credentials")
-        return next(new AppError(e.message, 401));
-      if (e.message === "2FA required for admin-tier users")
-        return next(new AppError(e.message, 403));
+      if (
+        e.message === "Invalid credentials" ||
+        e.message === "Too many attempts. Please try again later." ||
+        e.message === "CAPTCHA required"
+      ) {
+        const statusCode = e.message === "Invalid credentials" ? 401 : 403;
+        return next(new AppError(e.message, statusCode));
+      }
       if (e.message === "2FA channel not configured")
         return next(new AppError(e.message, 400));
       if (e.message === "OTP delivery unavailable")
@@ -166,6 +173,7 @@ export async function postVerify2fa(
     const result = await verify2fa({
       challenge_token: body.challenge_token,
       code: body.code,
+      ip: req.ip || req.socket.remoteAddress || "unknown",
     });
     const payload: Record<string, unknown> = {
       api_key: result.api_key,
@@ -183,6 +191,13 @@ export async function postVerify2fa(
       return next(new AppError(msg, 400));
     }
     if (e instanceof Error) {
+      if (
+        e.message === "Invalid credentials" ||
+        e.message === "Too many attempts. Please try again later."
+      ) {
+        const statusCode = e.message === "Invalid credentials" ? 401 : 403;
+        return next(new AppError(e.message, statusCode));
+      }
       if (e.message === "Invalid or expired challenge")
         return next(new AppError(e.message, 401));
       if (

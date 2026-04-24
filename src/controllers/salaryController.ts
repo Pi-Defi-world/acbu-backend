@@ -4,7 +4,7 @@ import { AuthRequest } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import * as salaryService from "../services/salary/salaryService";
 
-const salaryItemSchema = z.object({
+export const salaryItemSchema = z.object({
   recipient_id: z.string().uuid().optional(),
   recipient_address: z.string().min(56).max(56),
   amount: z.string().refine((s) => !isNaN(Number(s)) && Number(s) > 0, {
@@ -12,7 +12,7 @@ const salaryItemSchema = z.object({
   }),
 });
 
-const postSalaryDisburseSchema = z.object({
+export const postSalaryDisburseSchema = z.object({
   organization_id: z.string().uuid().optional(),
   total_amount: z.string().optional(),
   currency: z.string().default("ACBU"),
@@ -38,7 +38,8 @@ export async function postSalaryDisburse(
     const body = postSalaryDisburseSchema.parse(req.body);
     const result = await salaryService.createSalaryBatch({
       userId,
-      organizationId: body.organization_id || req.apiKey?.organizationId || undefined,
+      organizationId:
+        body.organization_id || req.apiKey?.organizationId || undefined,
       totalAmount: body.total_amount,
       currency: body.currency,
       idempotencyKey: body.idempotency_key,
@@ -56,10 +57,11 @@ export async function postSalaryDisburse(
     });
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return next(new AppError(e.errors.map((x) => x.message).join("; "), 400));
+      throw new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten());
     }
     next(e);
   }
+
 }
 
 /**
@@ -104,12 +106,14 @@ export async function getSalaryBatches(
   }
 }
 
-const postSalaryScheduleSchema = z.object({
+export const postSalaryScheduleSchema = z.object({
   organization_id: z.string().uuid().optional(),
   name: z.string().min(1, "Name is required"),
   cron: z.string().min(1, "Cron expression is required"),
   currency: z.string().default("ACBU"),
-  amount_config: z.array(salaryItemSchema).min(1, "At least one item is required"),
+  amount_config: z
+    .array(salaryItemSchema)
+    .min(1, "At least one item is required"),
 });
 
 /**
@@ -130,7 +134,8 @@ export async function postSalarySchedule(
     const body = postSalaryScheduleSchema.parse(req.body);
     const schedule = await salaryService.createSalarySchedule({
       userId,
-      organizationId: body.organization_id || req.apiKey?.organizationId || undefined,
+      organizationId:
+        body.organization_id || req.apiKey?.organizationId || undefined,
       name: body.name,
       cron: body.cron,
       currency: body.currency,
@@ -144,10 +149,11 @@ export async function postSalarySchedule(
     });
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return next(new AppError(e.errors.map((x) => x.message).join("; "), 400));
+      throw new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten());
     }
     next(e);
   }
+
 }
 
 /**

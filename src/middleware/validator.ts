@@ -21,12 +21,10 @@ export const validate = (schema: ZodSchema) => {
           message: err.message,
         }));
 
-        throw new AppError(
-          `Validation error: ${errors.map((e) => e.message).join(", ")}`,
-          400,
-        );
+        throw new AppError("Validation error", 400, { errors });
       }
       next(error);
+
     }
   };
 };
