@@ -167,6 +167,12 @@ pnpm test:coverage
 
 **Stellar:** `STELLAR_NETWORK`, `STELLAR_SECRET_KEY`, and after deploy: `CONTRACT_ORACLE`, `CONTRACT_RESERVE_TRACKER`, `CONTRACT_MINTING`, `CONTRACT_BURNING`. Optional for segment features: `CONTRACT_SAVINGS_VAULT`, `CONTRACT_LENDING_POOL`, `CONTRACT_ESCROW`.
 
+**Stellar Fee Configuration:** Control transaction fees under varying network congestion:
+- `STELLAR_USE_DYNAMIC_FEES=true` - Fetch live base fee from Horizon before each transaction (recommended for production)
+- `STELLAR_BASE_FEE_STROOPS=100` - Fallback base fee when dynamic fetch unavailable (default: 100)
+- `STELLAR_SOROBAN_MIN_FEE_STROOPS=5000` - Minimum total fee for Soroban transactions to prevent underpricing (default: 5000)
+- `STELLAR_SOROBAN_MAX_FEE_STROOPS=10000000` - Maximum total fee for Soroban transactions to prevent overpaying (~50 XLM at base=100; default: 10M stroops)
+
 ## Docker Services
 
 With **Prisma Accelerate** and **MongoDB Atlas**, the app does not use local PostgreSQL or MongoDB. Only RabbitMQ is required from Docker (or use a managed RabbitMQ). The compose file also defines optional `postgres` and `mongodb` services for migrations or local development.
