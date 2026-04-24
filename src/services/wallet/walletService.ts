@@ -5,10 +5,31 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { prisma } from "../../config/database";
 import { logger } from "../../config/logger";
 import { assertValidStellarAddress } from "../../utils/stellar";
+import { AppError } from "../../middleware/errorHandler";
 
 export interface EnsureWalletResult {
   wallet_created: boolean;
   passphrase?: string;
+}
+
+export async function assertUserWalletAddress(
+  userId: string,
+  providedAddress: string,
+): Promise<string> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { stellarAddress: true },
+  });
+
+  if (!user?.stellarAddress) {
+    throw new AppError("User wallet address not set", 400);
+  }
+
+  if (user.stellarAddress !== providedAddress) {
+    throw new AppError("Wallet address does not match user", 403);
+  }
+
+  return user.stellarAddress;
 }
 
 /**

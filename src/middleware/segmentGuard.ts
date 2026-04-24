@@ -1,6 +1,6 @@
 import { Response, NextFunction } from "express";
 import { AppError } from "./errorHandler";
-import type { AuthRequest, UserTier } from "./auth";
+import type { ApiKeyType, AuthRequest, UserTier } from "./auth";
 
 /**
  * Segment scopes: p2p, sme, international, salary, enterprise, savings, lending, bills, gateway, payroll.
@@ -66,6 +66,8 @@ export function requireSegmentScope(...scopes: SegmentScope[]) {
  */
 export const TIER_ORDER = ["free", "verified", "sme", "enterprise"] as const;
 
+const ADMIN_KEY_TYPES: ApiKeyType[] = ["ADMIN_KEY", "BREAK_GLASS_KEY"];
+
 export function requireMinTier(minTier: UserTier) {
   return (req: AuthRequest, _res: Response, next: NextFunction): void => {
     const tier = req.userTier;
@@ -85,6 +87,25 @@ export function requireMinTier(minTier: UserTier) {
       );
       return;
     }
+    next();
+  };
+}
+
+/**
+ * Require an admin-capable key type for privileged operations.
+ */
+export function requireAdminKeyType() {
+  return (req: AuthRequest, _res: Response, next: NextFunction): void => {
+    if (!req.apiKey) {
+      next(new AppError("API key required", 401));
+      return;
+    }
+
+    if (!ADMIN_KEY_TYPES.includes(req.apiKey.keyType)) {
+      next(new AppError("Admin key required for this operation", 403));
+      return;
+    }
+
     next();
   };
 }

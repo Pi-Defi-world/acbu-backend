@@ -3,9 +3,11 @@ import { prisma } from "../config/database";
 import bcrypt from "bcryptjs";
 import { AppError } from "./errorHandler";
 import { logger } from "../config/logger";
+import jwt from "jsonwebtoken";
 
 export type Audience = "retail" | "business" | "government";
 export type UserTier = "free" | "verified" | "sme" | "enterprise";
+export type ApiKeyType = "USER_KEY" | "ADMIN_KEY" | "BREAK_GLASS_KEY";
 export type PermissionScope =
   | "p2p:read"
   | "p2p:write"
@@ -32,6 +34,10 @@ export interface AuthRequest extends Request {
     id: string;
     userId: string | null;
     organizationId: string | null;
+    keyType: ApiKeyType;
+    createdByUserId: string | null;
+    emergencyReason: string | null;
+    emergencyExpiresAt: Date | null;
     permissions: string[];
     rateLimit: number;
   };
@@ -75,6 +81,37 @@ function parseApiKey(
 }
 
 /**
+ * Detect if a string appears to be a JWT token and reject challenge tokens.
+ * Challenge tokens CANNOT be used for API access.
+ */
+function rejectIfJwtToken(token: string): void {
+  // JWT tokens have 3 parts separated by dots (header.payload.signature)
+  const parts = token.split(".");
+  if (parts.length === 3) {
+    try {
+      // Decode without verification to check claims
+      const decoded = jwt.decode(token) as Record<string, unknown> | null;
+      if (decoded) {
+        // Check if this is a challenge token (has 2fa_challenge audience)
+        if (decoded.aud === "2fa_challenge" && decoded.iss === "acbu/auth") {
+          logger.error("Attempted to use 2FA challenge token for API access");
+          throw new AppError(
+            "Challenge tokens cannot be used for API access",
+            401,
+          );
+        }
+        // Reject any JWT-like token that isn't a standard API key
+        logger.warn("Non-API-key JWT token rejected for API access");
+        throw new AppError("Invalid credentials format", 401);
+      }
+    } catch (err) {
+      // If jwt.decode fails, it's not a valid JWT, continue with normal validation
+      if (err instanceof AppError) throw err;
+    }
+  }
+}
+
+/**
  * Middleware to validate API key
  */
 export const validateApiKey = async (
@@ -91,6 +128,9 @@ export const validateApiKey = async (
       throw new AppError("API key is required", 401);
     }
 
+    // Reject JWT tokens, especially 2FA challenge tokens
+    rejectIfJwtToken(apiKey);
+
     const parsedApiKey = parseApiKey(apiKey);
     if (!parsedApiKey) {
       throw new AppError("Invalid API key format", 401);
@@ -101,7 +141,17 @@ export const validateApiKey = async (
       where: {
         lookupKey: parsedApiKey.lookupKey,
         revokedAt: null,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        AND: [
+          {
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          {
+            OR: [
+              { keyType: { not: "BREAK_GLASS_KEY" } },
+              { emergencyExpiresAt: { gt: new Date() } },
+            ],
+          },
+        ],
       },
       include: {
         user: true,
@@ -136,6 +186,10 @@ export const validateApiKey = async (
       id: apiKeyRecord.id,
       userId: apiKeyRecord.userId ?? null,
       organizationId: apiKeyRecord.organizationId ?? null,
+      keyType: apiKeyRecord.keyType,
+      createdByUserId: apiKeyRecord.createdByUserId ?? null,
+      emergencyReason: apiKeyRecord.emergencyReason ?? null,
+      emergencyExpiresAt: apiKeyRecord.emergencyExpiresAt ?? null,
       permissions: validatePermissions(apiKeyRecord.permissions),
       rateLimit: apiKeyRecord.rateLimit,
     };
@@ -163,6 +217,15 @@ export async function hashApiKey(secret: string): Promise<string> {
 export async function generateApiKey(
   userId?: string,
   permissions: string[] = [],
+  options?: {
+    organizationId?: string | null;
+    keyType?: ApiKeyType;
+    expiresAt?: Date;
+    emergencyReason?: string;
+    emergencyExpiresAt?: Date;
+    createdByUserId?: string;
+    rateLimit?: number;
+  },
 ): Promise<string> {
   const crypto = await import("crypto");
   const lookupKey = crypto.randomBytes(6).toString("hex");
@@ -173,14 +236,22 @@ export async function generateApiKey(
   await prisma.apiKey.create({
     data: {
       userId: userId ?? null,
+      organizationId: options?.organizationId ?? null,
+      keyType: options?.keyType ?? "USER_KEY",
+      createdByUserId: options?.createdByUserId ?? null,
+      emergencyReason: options?.emergencyReason ?? null,
+      emergencyExpiresAt: options?.emergencyExpiresAt,
       lookupKey,
       keyHash,
       permissions,
+      expiresAt: options?.expiresAt,
+      rateLimit: options?.rateLimit,
     },
   });
 
   logger.info("API key generated", {
     userId,
+    keyType: options?.keyType ?? "USER_KEY",
     hasPermissions: permissions.length > 0,
   });
   return apiKey;

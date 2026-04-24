@@ -105,6 +105,8 @@ export const QUEUES = {
   ACBU_LENDING_POOL_EVENTS_DLQ: "acbu_lending_pool_events_dlq",
   ACBU_ESCROW_EVENTS: "acbu_escrow_events",
   ACBU_ESCROW_EVENTS_DLQ: "acbu_escrow_events_dlq",
+  STELLAR_EVENT_FAILURES: "stellar_event_failures",
+  STELLAR_EVENT_FAILURES_DLQ: "stellar_event_failures_dlq",
   XLM_TO_ACBU: "xlm_to_acbu", // XLM deposit: sell XLM and mint ACBU to user
   XLM_TO_ACBU_DLQ: "xlm_to_acbu_dlq",
   USDC_CONVERT_AND_MINT: "usdc_convert_and_mint", // USDC deposit: convert USDC→XLM (backend), then mint

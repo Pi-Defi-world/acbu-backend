@@ -24,6 +24,7 @@ export const validate = (schema: ZodSchema) => {
         throw new AppError("Validation error", 400, { errors });
       }
       next(error);
+
     }
   };
 };
