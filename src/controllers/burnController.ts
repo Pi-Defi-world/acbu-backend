@@ -164,32 +164,10 @@ export async function burnAcbu(
           acbu_ngn: null,
           timestamp: new Date().toISOString(),
         },
+        blockchainTxHash: burningEnabled && blockchain_tx_hash ? blockchain_tx_hash : undefined,
       },
-      blockchainTxHash:
-        burningEnabled && blockchain_tx_hash ? blockchain_tx_hash : undefined,
-    };
+    });
 
-    let tx: Transaction;
-    try {
-      tx = await prisma.transaction.create({ data: createData });
-    } catch (err) {
-      // Idempotency: if another request created the same hash concurrently, return the original record.
-      if (
-        burningEnabled &&
-        blockchain_tx_hash &&
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === "P2002"
-      ) {
-        const existing = await prisma.transaction.findFirst({
-          where: { type: "burn", blockchainTxHash: blockchain_tx_hash },
-        });
-        if (existing) {
-          respondFromExistingBurnTx(res, existing, blockchain_tx_hash);
-          return;
-        }
-      }
-      throw err;
-    }
     await logAudit({
       eventType: "transaction",
       entityType: "transaction",

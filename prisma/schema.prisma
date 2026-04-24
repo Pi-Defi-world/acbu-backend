@@ -8,63 +8,60 @@ datasource db {
 }
 
 model Organization {
-  id            String    @id @default(uuid()) @db.Uuid
-  name          String?   @db.VarChar(255)
-  kycStatus     String    @default("pending") @map("kyc_status") @db.VarChar(20)
-  kycVerifiedAt DateTime? @map("kyc_verified_at") @db.Timestamp(6)
-  actorType     String    @default("sme") @map("actor_type") @db.VarChar(20) // 'sme' | 'enterprise' | 'merchant' | 'government'
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
-  apiKeys       ApiKey[]  @relation("OrganizationApiKeys")
-  users         User[]    @relation("UserOrganization")
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String?          @db.VarChar(255)
+  kycStatus       String           @default("pending") @map("kyc_status") @db.VarChar(20)
+  kycVerifiedAt   DateTime?        @map("kyc_verified_at") @db.Timestamp(6)
+  actorType       String           @default("sme") @map("actor_type") @db.VarChar(20) // 'sme' | 'enterprise' | 'merchant' | 'government'
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamp(6)
+  apiKeys         ApiKey[]         @relation("OrganizationApiKeys")
+  users           User[]           @relation("UserOrganization")
   salaryBatches   SalaryBatch[]
   salarySchedules SalarySchedule[]
-
-  users        User[]        @relation("UserOrganization")
-  apiKeys      ApiKey[]      @relation("OrganizationApiKeys")
-  transactions Transaction[] @relation("OrganizationTransactions")
+  transactions    Transaction[]    @relation("OrganizationTransactions")
 
   @@index([kycStatus], name: "idx_organization_kyc_status")
   @@map("organizations")
 }
 
 model User {
-  id                       String                     @id @default(uuid()) @db.Uuid
-  stellarAddress           String?                    @unique @db.VarChar(56)
-  kycStatus                String                     @default("pending") @db.VarChar(20)
-  kycVerifiedAt            DateTime?                  @map("kyc_verified_at") @db.Timestamp(6)
-  countryCode              String?                    @map("country_code") @db.VarChar(3)
-  username                 String?                    @unique @db.VarChar(64)
-  phoneE164                String?                    @unique @map("phone_e164") @db.VarChar(20)
-  email                    String?                    @unique @db.VarChar(255)
-  emailVerifiedAt          DateTime?                  @map("email_verified_at") @db.Timestamp(6)
-  phoneVerifiedAt          DateTime?                  @map("phone_verified_at") @db.Timestamp(6)
-  privacyHideFromSearch    Boolean                    @default(true) @map("privacy_hide_from_search")
-  passcodeHash             String?                    @map("passcode_hash") @db.VarChar(255)
-  encryptedStellarSecret   String?                    @map("encrypted_stellar_secret") @db.VarChar(512)
-  keyEncryptionHint        String?                    @map("key_encryption_hint") @db.VarChar(50)
-  twoFaMethod              String?                    @map("two_fa_method") @db.VarChar(20)
-  totpSecretEncrypted      String?                    @map("totp_secret_encrypted") @db.VarChar(512)
-  actorType                String                     @default("retail") @map("actor_type") @db.VarChar(20)
-  tier                     String                     @default("free") @db.VarChar(20)
-  organizationId           String?                    @map("organization_id") @db.Uuid
-  createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt                DateTime                   @updatedAt @map("updated_at") @db.Timestamp(6)
-  apiKeys                  ApiKey[]
-  wardGuardians            Guardian[]                 @relation("GuardianWard")
-  guardians                Guardian[]                 @relation("UserGuardians")
-  kycApplications          KycApplication[]
-  kycValidators            KycValidator[]
-  onRampSwaps              OnRampSwap[]
-  otpChallenges            OtpChallenge[]
-  transactions             Transaction[]
-  contactOf                UserContact[]              @relation("ContactOf")
-  contacts                 UserContact[]              @relation("UserContacts")
-  passkeys                 UserPasskey[]
-  userDevices              UserDevice[]
-  organization             Organization?              @relation("UserOrganization", fields: [organizationId], references: [id])
-  salaryBatches            SalaryBatch[]
-  salarySchedules          SalarySchedule[]
+  id                     String           @id @default(uuid()) @db.Uuid
+  stellarAddress         String?          @unique @db.VarChar(56)
+  kycStatus              String           @default("pending") @db.VarChar(20)
+  kycVerifiedAt          DateTime?        @map("kyc_verified_at") @db.Timestamp(6)
+  countryCode            String?          @map("country_code") @db.VarChar(3)
+  username               String?          @unique @db.VarChar(64)
+  phoneE164              String?          @unique @map("phone_e164") @db.VarChar(20)
+  email                  String?          @unique @db.VarChar(255)
+  emailVerifiedAt        DateTime?        @map("email_verified_at") @db.Timestamp(6)
+  phoneVerifiedAt        DateTime?        @map("phone_verified_at") @db.Timestamp(6)
+  privacyHideFromSearch  Boolean          @default(true) @map("privacy_hide_from_search")
+  passcodeHash           String?          @map("passcode_hash") @db.VarChar(255)
+  encryptedStellarSecret String?          @map("encrypted_stellar_secret") @db.VarChar(512)
+  keyEncryptionHint      String?          @map("key_encryption_hint") @db.VarChar(50)
+  twoFaMethod            String?          @map("two_fa_method") @db.VarChar(20)
+  totpSecretEncrypted    String?          @map("totp_secret_encrypted") @db.VarChar(512)
+  actorType              String           @default("retail") @map("actor_type") @db.VarChar(20)
+  tier                   String           @default("free") @db.VarChar(20)
+  organizationId         String?          @map("organization_id") @db.Uuid
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt              DateTime         @updatedAt @map("updated_at") @db.Timestamp(6)
+  apiKeys                ApiKey[]
+  wardGuardians          Guardian[]       @relation("GuardianWard")
+  guardians              Guardian[]       @relation("UserGuardians")
+  kycApplications        KycApplication[]
+  kycValidators          KycValidator[]
+  onRampSwaps            OnRampSwap[]
+  otpChallenges          OtpChallenge[]
+  transactions           Transaction[]
+  contactOf              UserContact[]    @relation("ContactOf")
+  contacts               UserContact[]    @relation("UserContacts")
+  passkeys               UserPasskey[]
+  userDevices            UserDevice[]
+  organization           Organization?    @relation("UserOrganization", fields: [organizationId], references: [id])
+  salaryBatches          SalaryBatch[]
+  salarySchedules        SalarySchedule[]
 
   @@index([stellarAddress], map: "idx_stellar_address")
   @@index([username], map: "idx_username")
@@ -76,27 +73,29 @@ model User {
 }
 
 model Transaction {
-  id                    String                  @id @default(uuid()) @db.Uuid
-  userId                String?                 @map("user_id") @db.Uuid
-  type                  String                  @db.VarChar(20)
-  status                String                  @default("pending") @db.VarChar(20)
-  usdcAmount            Decimal?                @map("usdc_amount") @db.Decimal(20, 8)
-  acbuAmount            Decimal?                @map("acbu_amount") @db.Decimal(20, 8)
-  acbuAmountBurned      Decimal?                @map("acbu_amount_burned") @db.Decimal(20, 8)
-  localCurrency         String?                 @map("local_currency") @db.VarChar(3)
-  localAmount           Decimal?                @map("local_amount") @db.Decimal(20, 2)
-  recipientAccount      Json?                   @map("recipient_account")
-  recipientAddress      String?                 @map("recipient_address") @db.VarChar(56)
-  fee                   Decimal?                @db.Decimal(20, 8)
-  rateSnapshot          Json?                   @map("rate_snapshot")
-  blockchainTxHash      String?                 @map("blockchain_tx_hash") @db.VarChar(255)
-  confirmations         Int                     @default(0)
-  createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamp(6)
-  completedAt           DateTime?               @map("completed_at") @db.Timestamp(6)
-  reserveHistory        ReserveHistory[]
-  user                  User?                   @relation(fields: [userId], references: [id])
-  webhooks              Webhook[]
-  salaryItem            SalaryItem?
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String?          @map("user_id") @db.Uuid
+  organizationId   String?          @map("organization_id") @db.Uuid
+  type             String           @db.VarChar(20)
+  status           String           @default("pending") @db.VarChar(20)
+  usdcAmount       Decimal?         @map("usdc_amount") @db.Decimal(20, 8)
+  acbuAmount       Decimal?         @map("acbu_amount") @db.Decimal(20, 8)
+  acbuAmountBurned Decimal?         @map("acbu_amount_burned") @db.Decimal(20, 8)
+  localCurrency    String?          @map("local_currency") @db.VarChar(3)
+  localAmount      Decimal?         @map("local_amount") @db.Decimal(20, 2)
+  recipientAccount Json?            @map("recipient_account")
+  recipientAddress String?          @map("recipient_address") @db.VarChar(56)
+  fee              Decimal?         @db.Decimal(20, 8)
+  rateSnapshot     Json?            @map("rate_snapshot")
+  blockchainTxHash String?          @map("blockchain_tx_hash") @db.VarChar(255)
+  confirmations    Int              @default(0)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+  completedAt      DateTime?        @map("completed_at") @db.Timestamp(6)
+  reserveHistory   ReserveHistory[]
+  user             User?            @relation(fields: [userId], references: [id])
+  organization     Organization?    @relation("OrganizationTransactions", fields: [organizationId], references: [id])
+  webhooks         Webhook[]
+  salaryItem       SalaryItem?
 
   // B-074: enforce idempotency for burn submissions only.
   // Allows the same hash to appear under other transaction types without forcing global changes.
@@ -111,14 +110,14 @@ model Transaction {
 }
 
 model Reserve {
-  id              String    @id @default(uuid()) @db.Uuid
-  currency        String    @db.VarChar(3)
-  segment         String    @default("transactions") @db.VarChar(20) // 'transactions' | 'investment_savings'
-  targetWeight    Decimal   @map("target_weight") @db.Decimal(5, 2)
-  actualWeight    Decimal   @map("actual_weight") @db.Decimal(5, 2)
-  reserveAmount   Decimal   @map("reserve_amount") @db.Decimal(20, 2)
-  reserveValueUsd Decimal   @map("reserve_value_usd") @db.Decimal(20, 2)
-  timestamp       DateTime  @default(now()) @db.Timestamp(6)
+  id              String   @id @default(uuid()) @db.Uuid
+  currency        String   @db.VarChar(3)
+  segment         String   @default("transactions") @db.VarChar(20) // 'transactions' | 'investment_savings'
+  targetWeight    Decimal  @map("target_weight") @db.Decimal(5, 2)
+  actualWeight    Decimal  @map("actual_weight") @db.Decimal(5, 2)
+  reserveAmount   Decimal  @map("reserve_amount") @db.Decimal(20, 2)
+  reserveValueUsd Decimal  @map("reserve_value_usd") @db.Decimal(20, 2)
+  timestamp       DateTime @default(now()) @db.Timestamp(6)
 
   @@unique([currency, segment, timestamp])
   @@index([currency], map: "idx_reserves_currency")
@@ -129,16 +128,16 @@ model Reserve {
 }
 
 model ReserveHistory {
-  id            String      @id @default(uuid()) @db.Uuid
-  currency      String      @db.VarChar(3)
-  amountChange  Decimal     @map("amount_change") @db.Decimal(20, 2)
-  reason        String?     @db.VarChar(100) // 'mint', 'burn', 'rebalance', 'conversion'
-  transactionId String?     @map("transaction_id") @db.Uuid
-  previousAmount Decimal?   @map("previous_amount") @db.Decimal(20, 2)
-  newAmount     Decimal?    @map("new_amount") @db.Decimal(20, 2)
-  timestamp     DateTime    @default(now()) @db.Timestamp(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  currency       String   @db.VarChar(3)
+  amountChange   Decimal  @map("amount_change") @db.Decimal(20, 2)
+  reason         String?  @db.VarChar(100) // 'mint', 'burn', 'rebalance', 'conversion'
+  transactionId  String?  @map("transaction_id") @db.Uuid
+  previousAmount Decimal? @map("previous_amount") @db.Decimal(20, 2)
+  newAmount      Decimal? @map("new_amount") @db.Decimal(20, 2)
+  timestamp      DateTime @default(now()) @db.Timestamp(6)
 
-  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
 
   @@index([currency], name: "idx_reserve_history_currency")
   @@index([timestamp], name: "idx_reserve_history_timestamp")
@@ -147,17 +146,17 @@ model ReserveHistory {
 }
 
 model OracleRate {
-  id                  String    @id @default(uuid()) @db.Uuid
-  currency            String    @db.VarChar(3)
-  rateUsd            Decimal   @map("rate_usd") @db.Decimal(20, 8)
+  id       String  @id @default(uuid()) @db.Uuid
+  currency String  @db.VarChar(3)
+  rateUsd  Decimal @map("rate_usd") @db.Decimal(20, 8)
 
-  centralBankRate     Decimal?  @map("central_bank_rate") @db.Decimal(20, 8)
-  fintechRate         Decimal?  @map("fintech_rate") @db.Decimal(20, 8)
-  forexRate           Decimal?  @map("forex_rate") @db.Decimal(20, 8)
-  medianRate          Decimal   @map("median_rate") @db.Decimal(20, 8)
-  twap24h             Decimal?  @map("twap_24h") @db.Decimal(20, 8)
-  validatorSignatures Json?     @map("validator_signatures")
-  timestamp           DateTime  @default(now()) @db.Timestamp(6)
+  centralBankRate     Decimal? @map("central_bank_rate") @db.Decimal(20, 8)
+  fintechRate         Decimal? @map("fintech_rate") @db.Decimal(20, 8)
+  forexRate           Decimal? @map("forex_rate") @db.Decimal(20, 8)
+  medianRate          Decimal  @map("median_rate") @db.Decimal(20, 8)
+  twap24h             Decimal? @map("twap_24h") @db.Decimal(20, 8)
+  validatorSignatures Json?    @map("validator_signatures")
+  timestamp           DateTime @default(now()) @db.Timestamp(6)
 
   @@unique([currency, timestamp])
   @@index([currency], map: "idx_oracle_rates_currency")
@@ -181,7 +180,7 @@ model AcbuRate {
   acbuUgx      Decimal? @map("acbu_ugx") @db.Decimal(20, 2)
   acbuXof      Decimal? @map("acbu_xof") @db.Decimal(20, 2)
   change24hUsd Decimal? @map("change_24h_usd") @db.Decimal(5, 2)
-  timestamp   DateTime  @default(now()) @db.Timestamp(6)
+  timestamp    DateTime @default(now()) @db.Timestamp(6)
 
   @@index([timestamp], map: "idx_acbu_rates_timestamp")
   @@map("acbu_rates")
@@ -189,15 +188,15 @@ model AcbuRate {
 
 /// Metrics for basket weight calculation (GDP, trade, liquidity). External APIs + internal data.
 model BasketMetrics {
-  id             String    @id @default(uuid()) @db.Uuid
-  currency       String    @db.VarChar(3)
-  period         String    @db.VarChar(20)
-  gdpScore       Decimal?  @map("gdp_score") @db.Decimal(10, 4)
-  tradeScore     Decimal?  @map("trade_score") @db.Decimal(10, 4)
-  liquidityScore Decimal?  @map("liquidity_score") @db.Decimal(10, 4)
-  rawValues      Json?     @map("raw_values") @db.JsonB
-  source         String?   @db.VarChar(100)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  currency       String   @db.VarChar(3)
+  period         String   @db.VarChar(20)
+  gdpScore       Decimal? @map("gdp_score") @db.Decimal(10, 4)
+  tradeScore     Decimal? @map("trade_score") @db.Decimal(10, 4)
+  liquidityScore Decimal? @map("liquidity_score") @db.Decimal(10, 4)
+  rawValues      Json?    @map("raw_values") @db.JsonB
+  source         String?  @db.VarChar(100)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   @@unique([currency, period])
   @@index([currency], map: "idx_basket_metrics_currency")
@@ -208,12 +207,12 @@ model BasketMetrics {
 /// Current basket composition (currencies + weights). Source of truth for reserve/oracle/rebalancing.
 /// One row per currency per version; weights from stats + DAO, not hardcoded.
 model BasketConfig {
-  id            String    @id @default(uuid()) @db.Uuid
-  effectiveFrom DateTime  @map("effective_from") @db.Timestamp(6)
-  currency      String    @db.VarChar(3)
-  weight        Decimal   @db.Decimal(5, 2)
-  proposalId    String?   @map("proposal_id") @db.Uuid
-  status        String    @db.VarChar(20) // proposed | approved | active
+  id            String   @id @default(uuid()) @db.Uuid
+  effectiveFrom DateTime @map("effective_from") @db.Timestamp(6)
+  currency      String   @db.VarChar(3)
+  weight        Decimal  @db.Decimal(5, 2)
+  proposalId    String?  @map("proposal_id") @db.Uuid
+  status        String   @db.VarChar(20) // proposed | approved | active
 
   @@unique([effectiveFrom, currency])
   @@index([status], map: "idx_basket_config_status")
@@ -245,7 +244,7 @@ model AuditTrail {
   oldValue    Json?    @map("old_value")
   newValue    Json?    @map("new_value")
   performedBy String?  @map("performed_by") @db.Uuid
-  timestamp   DateTime  @default(now()) @db.Timestamp(6)
+  timestamp   DateTime @default(now()) @db.Timestamp(6)
 
   @@index([eventType], map: "idx_audit_trail_event_type")
   @@index([entityType], map: "idx_audit_trail_entity_type")
@@ -255,17 +254,17 @@ model AuditTrail {
 }
 
 model Webhook {
-  id            String       @id @default(uuid()) @db.Uuid
-  transactionId String?      @map("transaction_id") @db.Uuid
-  eventType     String       @map("event_type") @db.VarChar(50)
+  id            String    @id @default(uuid()) @db.Uuid
+  transactionId String?   @map("transaction_id") @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(50)
   payload       Json
-  signature     String?     @db.VarChar(255)
-  status        String      @default("pending") @db.VarChar(20)
-  attempts      Int         @default(0)
-  lastAttemptAt DateTime?   @map("last_attempt_at") @db.Timestamp(6)
-  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamp(6)
+  signature     String?   @db.VarChar(255)
+  status        String    @default("pending") @db.VarChar(20)
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime? @map("last_attempt_at") @db.Timestamp(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
-  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
 
   @@index([transactionId], map: "idx_webhooks_transaction_id")
   @@index([status], map: "idx_webhooks_status")
@@ -274,16 +273,16 @@ model Webhook {
 
 /// Deposit USDC or XLM: we run conversion (USDC→XLM) and/or LP/swap in backend; mint is approved once conversion succeeds. Pools/swaps run independently.
 model OnRampSwap {
-  id              String    @id @default(uuid()) @db.Uuid
-  userId          String    @map("user_id") @db.Uuid
-  stellarAddress  String    @map("stellar_address") @db.VarChar(56)
-  source          String    @default("xlm_deposit") @db.VarChar(20) // 'usdc_deposit' | 'xlm_deposit'
-  xlmAmount       Decimal?  @map("xlm_amount") @db.Decimal(20, 7)
-  usdcAmount      Decimal?  @map("usdc_amount") @db.Decimal(20, 8)
-  status          String    @db.VarChar(20) // pending_convert | processing | completed | failed
-  transactionId   String?   @map("transaction_id") @db.Uuid
-  completedAt     DateTime? @map("completed_at") @db.Timestamp(6)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  stellarAddress String    @map("stellar_address") @db.VarChar(56)
+  source         String    @default("xlm_deposit") @db.VarChar(20) // 'usdc_deposit' | 'xlm_deposit'
+  xlmAmount      Decimal?  @map("xlm_amount") @db.Decimal(20, 7)
+  usdcAmount     Decimal?  @map("usdc_amount") @db.Decimal(20, 8)
+  status         String    @db.VarChar(20) // pending_convert | processing | completed | failed
+  transactionId  String?   @map("transaction_id") @db.Uuid
+  completedAt    DateTime? @map("completed_at") @db.Timestamp(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -297,17 +296,17 @@ model OnRampSwap {
 
 /// Investment withdrawal request: retail (24h + message when ready) or business (calendar or 1% early fee).
 model InvestmentWithdrawalRequest {
-  id              String    @id @default(uuid()) @db.Uuid
-  userId          String?   @map("user_id") @db.Uuid
-  organizationId  String?   @map("organization_id") @db.Uuid
-  audience        String    @db.VarChar(20) // 'retail' | 'business'
-  amountAcbu      Decimal   @map("amount_acbu") @db.Decimal(20, 8)
-  status          String    @db.VarChar(20) // 'requested' | 'processing' | 'available' | 'completed' | 'failed'
-  forcedRemoval   Boolean   @default(false) @map("forced_removal") @db.Boolean
-  feePercent      Decimal?  @map("fee_percent") @db.Decimal(5, 2)
-  availableAt     DateTime  @map("available_at") @db.Timestamp(6)
-  notifiedAt      DateTime? @map("notified_at") @db.Timestamp(6)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String?   @map("user_id") @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  audience       String    @db.VarChar(20) // 'retail' | 'business'
+  amountAcbu     Decimal   @map("amount_acbu") @db.Decimal(20, 8)
+  status         String    @db.VarChar(20) // 'requested' | 'processing' | 'available' | 'completed' | 'failed'
+  forcedRemoval  Boolean   @default(false) @map("forced_removal") @db.Boolean
+  feePercent     Decimal?  @map("fee_percent") @db.Decimal(5, 2)
+  availableAt    DateTime  @map("available_at") @db.Timestamp(6)
+  notifiedAt     DateTime? @map("notified_at") @db.Timestamp(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
   @@index([status], name: "idx_inv_withdrawal_status")
   @@index([availableAt], name: "idx_inv_withdrawal_available_at")
@@ -321,7 +320,7 @@ model ApiKey {
   organizationId String?   @map("organization_id") @db.Uuid
   lookupKey      String?   @unique @map("lookup_key") @db.VarChar(24)
   keyHash        String    @unique @map("key_hash") @db.VarChar(255)
-  permissions    Json?     // segment scopes: e.g. ["p2p:read", "p2p:write", "sme:write", "gateway:write"]
+  permissions    Json? // segment scopes: e.g. ["p2p:read", "p2p:write", "sme:write", "gateway:write"]
   rateLimit      Int       @default(100) @map("rate_limit")
   lastUsedAt     DateTime? @map("last_used_at") @db.Timestamp(6)
   expiresAt      DateTime? @map("expires_at") @db.Timestamp(6)
@@ -352,17 +351,17 @@ model UserPasskey {
 }
 
 model Guardian {
-  id              String    @id @default(uuid()) @db.Uuid
-  userId          String    @map("user_id") @db.Uuid
-  guardianUserId  String?   @map("guardian_user_id") @db.Uuid
-  guardianEmail   String?   @map("guardian_email") @db.VarChar(255)
-  guardianPhone   String?   @map("guardian_phone") @db.VarChar(20)
-  status          String    @default("pending") @db.VarChar(20)
-  order           Int       @default(0) @db.SmallInt
-  invitedAt       DateTime  @default(now()) @map("invited_at") @db.Timestamp(6)
-  approvedAt      DateTime? @map("approved_at") @db.Timestamp(6)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  guardianUserId String?   @map("guardian_user_id") @db.Uuid
+  guardianEmail  String?   @map("guardian_email") @db.VarChar(255)
+  guardianPhone  String?   @map("guardian_phone") @db.VarChar(20)
+  status         String    @default("pending") @db.VarChar(20)
+  order          Int       @default(0) @db.SmallInt
+  invitedAt      DateTime  @default(now()) @map("invited_at") @db.Timestamp(6)
+  approvedAt     DateTime? @map("approved_at") @db.Timestamp(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
 
   user         User  @relation("UserGuardians", fields: [userId], references: [id], onDelete: Cascade)
   guardianUser User? @relation("GuardianWard", fields: [guardianUserId], references: [id], onDelete: SetNull)
@@ -373,12 +372,12 @@ model Guardian {
 }
 
 model UserContact {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String   @map("user_id") @db.Uuid
-  contactUserId  String?  @map("contact_user_id") @db.Uuid
-  contactUsername String? @map("contact_username") @db.VarChar(64)
-  contactPhoneE164 String? @map("contact_phone_e164") @db.VarChar(20)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  contactUserId    String?  @map("contact_user_id") @db.Uuid
+  contactUsername  String?  @map("contact_username") @db.VarChar(64)
+  contactPhoneE164 String?  @map("contact_phone_e164") @db.VarChar(20)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   user        User  @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
   contactUser User? @relation("ContactOf", fields: [contactUserId], references: [id], onDelete: SetNull)
@@ -390,13 +389,13 @@ model UserContact {
 }
 
 model OtpChallenge {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  codeHash  String   @map("code_hash") @db.VarChar(255)
-  channel   String   @db.VarChar(20) // 'sms' | 'email'
-  expiresAt DateTime @map("expires_at") @db.Timestamp(6)
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash") @db.VarChar(255)
+  channel   String    @db.VarChar(20) // 'sms' | 'email'
+  expiresAt DateTime  @map("expires_at") @db.Timestamp(6)
   usedAt    DateTime? @map("used_at") @db.Timestamp(6)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -406,25 +405,25 @@ model OtpChallenge {
 }
 
 model KycApplication {
-  id                    String    @id @default(uuid()) @db.Uuid
-  userId                String    @map("user_id") @db.Uuid
-  countryCode           String    @map("country_code") @db.VarChar(3)
-  status                String    @db.VarChar(20)
-  feePaidAcbu           Decimal   @map("fee_paid_acbu") @db.Decimal(20, 8)
-  feeTxHash             String?   @map("fee_tx_hash") @db.VarChar(255)
-  feeMintTransactionId  String?   @map("fee_mint_transaction_id") @db.Uuid
-  machineConfidence     Decimal?  @map("machine_confidence") @db.Decimal(3, 2)
-  machineRedactedPayload Json?    @map("machine_redacted_payload")
-  machineExtractedPayload Json?   @map("machine_extracted_payload")
-  rejectionReason       String?   @map("rejection_reason") @db.VarChar(500)
-  resolvedAt            DateTime? @map("resolved_at") @db.Timestamp(6)
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  id                      String    @id @default(uuid()) @db.Uuid
+  userId                  String    @map("user_id") @db.Uuid
+  countryCode             String    @map("country_code") @db.VarChar(3)
+  status                  String    @db.VarChar(20)
+  feePaidAcbu             Decimal   @map("fee_paid_acbu") @db.Decimal(20, 8)
+  feeTxHash               String?   @map("fee_tx_hash") @db.VarChar(255)
+  feeMintTransactionId    String?   @map("fee_mint_transaction_id") @db.Uuid
+  machineConfidence       Decimal?  @map("machine_confidence") @db.Decimal(3, 2)
+  machineRedactedPayload  Json?     @map("machine_redacted_payload")
+  machineExtractedPayload Json?     @map("machine_extracted_payload")
+  rejectionReason         String?   @map("rejection_reason") @db.VarChar(500)
+  resolvedAt              DateTime? @map("resolved_at") @db.Timestamp(6)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  documents    KycDocument[]
-  validations  KycValidation[]
-  rewards      KycValidatorReward[]
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents   KycDocument[]
+  validations KycValidation[]
+  rewards     KycValidatorReward[]
 
   @@index([userId], name: "idx_kyc_application_user_id")
   @@index([status], name: "idx_kyc_application_status")
@@ -449,20 +448,20 @@ model KycDocument {
 }
 
 model KycValidator {
-  id                   String    @id @default(uuid()) @db.Uuid
-  userId               String    @map("user_id") @db.Uuid
-  countryCode          String    @map("country_code") @db.VarChar(3)
-  status               String    @db.VarChar(20)
-  accuracyScore        Decimal   @default(1) @map("accuracy_score") @db.Decimal(3, 2)
-  completedCount       Int       @default(0) @map("completed_count")
-  agreementAcceptedAt  DateTime? @map("agreement_accepted_at") @db.Timestamp(6)
-  trainingCompletedAt  DateTime? @map("training_completed_at") @db.Timestamp(6)
-  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  countryCode         String    @map("country_code") @db.VarChar(3)
+  status              String    @db.VarChar(20)
+  accuracyScore       Decimal   @default(1) @map("accuracy_score") @db.Decimal(3, 2)
+  completedCount      Int       @default(0) @map("completed_count")
+  agreementAcceptedAt DateTime? @map("agreement_accepted_at") @db.Timestamp(6)
+  trainingCompletedAt DateTime? @map("training_completed_at") @db.Timestamp(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  validations  KycValidation[]
-  rewards      KycValidatorReward[]
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  validations KycValidation[]
+  rewards     KycValidatorReward[]
 
   @@unique([userId, countryCode])
   @@index([countryCode], map: "idx_kyc_validator_country")
@@ -487,13 +486,13 @@ model KycValidation {
 }
 
 model KycValidatorReward {
-  id           String   @id @default(uuid()) @db.Uuid
-  validatorId  String   @map("validator_id") @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  validatorId   String   @map("validator_id") @db.Uuid
   applicationId String   @map("application_id") @db.Uuid
-  acbuAmount   Decimal  @map("acbu_amount") @db.Decimal(20, 8)
-  txHash       String?  @map("tx_hash") @db.VarChar(255)
-  status       String   @db.VarChar(20)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  acbuAmount    Decimal  @map("acbu_amount") @db.Decimal(20, 8)
+  txHash        String?  @map("tx_hash") @db.VarChar(255)
+  status        String   @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   validator   KycValidator   @relation(fields: [validatorId], references: [id], onDelete: Cascade)
   application KycApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
@@ -503,20 +502,21 @@ model KycValidatorReward {
   @@index([status], name: "idx_kyc_validator_reward_status")
   @@map("kyc_validator_rewards")
 }
+
 model SalaryBatch {
-  id              String       @id @default(uuid()) @db.Uuid
-  organizationId  String?      @map("organization_id") @db.Uuid
-  userId          String       @map("user_id") @db.Uuid
-  status          String       @default("pending") @db.VarChar(20)
-  totalAmount     Decimal      @map("total_amount") @db.Decimal(20, 8)
-  currency        String       @default("ACBU") @db.VarChar(10)
-  idempotencyKey  String?      @unique @map("idempotency_key") @db.VarChar(100)
-  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamp(6)
-  completedAt     DateTime?    @map("completed_at") @db.Timestamp(6)
-  items           SalaryItem[]
-  organization    Organization? @relation(fields: [organizationId], references: [id])
-  user            User         @relation(fields: [userId], references: [id])
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String?       @map("organization_id") @db.Uuid
+  userId         String        @map("user_id") @db.Uuid
+  status         String        @default("pending") @db.VarChar(20)
+  totalAmount    Decimal       @map("total_amount") @db.Decimal(20, 8)
+  currency       String        @default("ACBU") @db.VarChar(10)
+  idempotencyKey String?       @unique @map("idempotency_key") @db.VarChar(100)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamp(6)
+  completedAt    DateTime?     @map("completed_at") @db.Timestamp(6)
+  items          SalaryItem[]
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  user           User          @relation(fields: [userId], references: [id])
 
   @@index([organizationId], map: "idx_salary_batch_org_id")
   @@index([userId], map: "idx_salary_batch_user_id")
@@ -525,14 +525,14 @@ model SalaryBatch {
 }
 
 model RecoveryAttempt {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @map("user_id") @db.Uuid
-  identifier  String   @db.VarChar(255)
-  ip          String?  @db.VarChar(45)
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  identifier String   @db.VarChar(255)
+  ip         String?  @db.VarChar(45)
   userAgent  String?  @db.VarChar(512)
-  success     Boolean  @default(false)
-  reason      String?  @db.VarChar(255)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  success    Boolean  @default(false)
+  reason     String?  @db.VarChar(255)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   @@index([userId], map: "idx_recovery_attempt_user_id")
   @@index([identifier], map: "idx_recovery_attempt_identifier")
