@@ -21,20 +21,10 @@ function buildActorWhere(userId: string | null, organizationId: string | null) {
   if (organizationId) {
     return {
       OR: [
-        // User-scoped transactions under this organization.
+        // Org API-key transactions (userId=null, organizationId set on row).
+        { organizationId },
+        // Transactions from users belonging to this organization.
         { user: { organizationId } },
-        // Org API-key transactions can be created without a user relation.
-        {
-          AND: [
-            { userId: null },
-            {
-              rateSnapshot: {
-                path: ["organizationId"],
-                equals: organizationId,
-              },
-            },
-          ],
-        },
       ],
     };
   }

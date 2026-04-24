@@ -1,55 +1,68 @@
 import dotenv from "dotenv";
+import { z } from "zod";
 
 dotenv.config();
 
-// ── Validate required env vars BEFORE building config ────────────────────────
-// This ensures the app fails fast with a clear message instead of starting
-// with empty strings and failing later in an unpredictable way.
-const requiredEnvVars = [
-  "DATABASE_URL",
-  "MONGODB_URI",
-  "RABBITMQ_URL",
-  "JWT_SECRET",
-];
+const envSchema = z.object({
+  NODE_ENV: z.string().default("development"),
+  PORT: z.coerce.number().default(5000),
+  API_VERSION: z.string().default("v1"),
+  DATABASE_URL: z.string().min(1),
+  MONGODB_URI: z.string().min(1),
+  RABBITMQ_URL: z.string().min(1),
+  JWT_SECRET: z.string().min(1),
+  PRISMA_ACCELERATE_URL: z.string().optional(),
+  JWT_EXPIRES_IN: z.string().default("7d"),
+  API_KEY_SALT: z.string().default(""),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
+});
 
-if (process.env.NODE_ENV === "production") {
-  requiredEnvVars.push("PRISMA_ACCELERATE_URL");
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  const messages = parsed.error.issues
+    .map((i) => `${i.path.join(".")}: ${i.message}`)
+    .join("\n");
+  throw new Error(`Invalid environment variables:\n${messages}`);
 }
 
-const missing = requiredEnvVars.filter((v) => !process.env[v]);
-if (missing.length > 0) {
+if (
+  parsed.data.NODE_ENV === "production" &&
+  !parsed.data.PRISMA_ACCELERATE_URL
+) {
   throw new Error(
-    `Missing required environment variable(s): ${missing.join(", ")}`,
+    "Missing required environment variable: PRISMA_ACCELERATE_URL",
   );
 }
 
+const env = parsed.data;
+
 export const config = {
-  // Server
-  nodeEnv: process.env.NODE_ENV || "development",
-  port: parseInt(process.env.PORT || "5000", 10),
-  apiVersion: process.env.API_VERSION || "v1",
+  nodeEnv: env.NODE_ENV,
+  port: env.PORT,
+  apiVersion: env.API_VERSION,
+  databaseUrl: env.DATABASE_URL,
+  prismaAccelerateUrl: env.PRISMA_ACCELERATE_URL,
+  mongodbUri: env.MONGODB_URI,
+  rabbitmqUrl: env.RABBITMQ_URL,
+  jwtSecret: env.JWT_SECRET,
+  jwtExpiresIn: env.JWT_EXPIRES_IN,
+  apiKeySalt: env.API_KEY_SALT,
+  rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
+  rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
 
-  // Database
-  databaseUrl: process.env.DATABASE_URL || "",
-  prismaAccelerateUrl: process.env.PRISMA_ACCELERATE_URL || "",
-
-  // MongoDB
-  mongodbUri: process.env.MONGODB_URI || "",
-
-  // RabbitMQ
-  rabbitmqUrl: process.env.RABBITMQ_URL || "",
-
-  // JWT
-  jwtSecret: process.env.JWT_SECRET || "",
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
-
-  // API Security
-  apiKeySalt: process.env.API_KEY_SALT || "",
-
-  // Rate Limiting
-  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "60000", 10),
-  rateLimitMaxRequests: parseInt(
-    process.env.RATE_LIMIT_MAX_REQUESTS || "100",
+  // Rate Limiting Fallback (during cache outages)
+  rateLimitFallbackMaxRequests: parseInt(
+    process.env.RATE_LIMIT_FALLBACK_MAX_REQUESTS || "20",
+    10,
+  ),
+  rateLimitCircuitBreakerThreshold: parseInt(
+    process.env.RATE_LIMIT_CIRCUIT_BREAKER_THRESHOLD || "5",
+    10,
+  ),
+  rateLimitCircuitBreakerCooldownMs: parseInt(
+    process.env.RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN_MS || "60000",
     10,
   ),
 

@@ -740,17 +740,13 @@ export async function getMeBalance(
       return;
     }
 
-    const server = new StellarSdk.Horizon.Server(
-      horizonUrl,
-    );
+    const server = new StellarSdk.Horizon.Server(horizonUrl);
 
     try {
       const account = await server.loadAccount(user.stellarAddress);
       const acbuBalance = account.balances.find((b: any) => {
         if (b.asset_type === "native") return false;
-        return (
-          b.asset_code === assetCode && b.asset_issuer === assetIssuer
-        );
+        return b.asset_code === assetCode && b.asset_issuer === assetIssuer;
       });
 
       const stellarNum = acbuBalance ? parseFloat(acbuBalance.balance) : 0;

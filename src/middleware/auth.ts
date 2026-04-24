@@ -3,6 +3,7 @@ import { prisma } from "../config/database";
 import bcrypt from "bcryptjs";
 import { AppError } from "./errorHandler";
 import { logger } from "../config/logger";
+import jwt from "jsonwebtoken";
 
 export type Audience = "retail" | "business" | "government";
 export type UserTier = "free" | "verified" | "sme" | "enterprise";
@@ -75,6 +76,37 @@ function parseApiKey(
 }
 
 /**
+ * Detect if a string appears to be a JWT token and reject challenge tokens.
+ * Challenge tokens CANNOT be used for API access.
+ */
+function rejectIfJwtToken(token: string): void {
+  // JWT tokens have 3 parts separated by dots (header.payload.signature)
+  const parts = token.split(".");
+  if (parts.length === 3) {
+    try {
+      // Decode without verification to check claims
+      const decoded = jwt.decode(token) as Record<string, unknown> | null;
+      if (decoded) {
+        // Check if this is a challenge token (has 2fa_challenge audience)
+        if (decoded.aud === "2fa_challenge" && decoded.iss === "acbu/auth") {
+          logger.error("Attempted to use 2FA challenge token for API access");
+          throw new AppError(
+            "Challenge tokens cannot be used for API access",
+            401,
+          );
+        }
+        // Reject any JWT-like token that isn't a standard API key
+        logger.warn("Non-API-key JWT token rejected for API access");
+        throw new AppError("Invalid credentials format", 401);
+      }
+    } catch (err) {
+      // If jwt.decode fails, it's not a valid JWT, continue with normal validation
+      if (err instanceof AppError) throw err;
+    }
+  }
+}
+
+/**
  * Middleware to validate API key
  */
 export const validateApiKey = async (
@@ -90,6 +122,9 @@ export const validateApiKey = async (
     if (!apiKey || typeof apiKey !== "string") {
       throw new AppError("API key is required", 401);
     }
+
+    // Reject JWT tokens, especially 2FA challenge tokens
+    rejectIfJwtToken(apiKey);
 
     const parsedApiKey = parseApiKey(apiKey);
     if (!parsedApiKey) {
