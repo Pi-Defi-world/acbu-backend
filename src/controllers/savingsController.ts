@@ -8,6 +8,11 @@ import {
   getNextSavingsWithdrawalDate,
   getApyForTerm,
 } from "../config/savings";
+import {
+  savingsDepositSchema,
+  savingsWithdrawSchema,
+  savingsPositionsSchema,
+} from "../validators/savingsValidator";
 
 export async function postSavingsDeposit(
   req: Request,
@@ -22,8 +27,9 @@ export async function postSavingsDeposit(
       throw new AppError("Authenticated user ID required for savings", 401);
     }
 
-    const amount = authReq.body.amount as string;
-    const termSeconds = Number(authReq.body.term_seconds);
+    const parsed = savingsDepositSchema.parse({ body: authReq.body });
+    const amount = parsed.body.amount;
+    const termSeconds = parsed.body.term_seconds;
     if (!contractAddresses.savingsVault) {
       throw new AppError("Savings vault contract not configured", 503);
     }
@@ -65,8 +71,9 @@ export async function postSavingsWithdraw(
       throw new AppError("Authenticated user ID required for savings", 401);
     }
 
-    const amount = authReq.body.amount as string;
-    const termSeconds = Number(authReq.body.term_seconds);
+    const parsed = savingsWithdrawSchema.parse({ body: authReq.body });
+    const amount = parsed.body.amount;
+    const termSeconds = parsed.body.term_seconds;
     if (!contractAddresses.savingsVault) {
       throw new AppError("Savings vault contract not configured", 503);
     }
@@ -94,15 +101,16 @@ export async function getSavingsPositions(
       throw new AppError("Authenticated user ID required for savings", 401);
     }
 
-    const termSeconds = authReq.query.term_seconds as string;
+    const parsed = savingsPositionsSchema.parse({ query: authReq.query });
+    const termSeconds = parsed.query.term_seconds;
     if (!contractAddresses.savingsVault) {
       throw new AppError("Savings vault contract not configured", 503);
     }
     const balance = await acbuSavingsVaultService.getBalance(
       userId,
-      termSeconds != null ? Number(termSeconds) : 0,
+      termSeconds != null ? termSeconds : 0,
     );
-    const termSec = termSeconds != null ? Number(termSeconds) : 0;
+    const termSec = termSeconds != null ? termSeconds : 0;
     const apy = getApyForTerm(termSec);
     const nextDate = getNextSavingsWithdrawalDate();
     res.status(200).json({
