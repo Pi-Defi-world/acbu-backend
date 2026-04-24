@@ -4,6 +4,7 @@
  */
 import { Response, NextFunction } from "express";
 import { z } from "zod";
+import { Prisma, Transaction } from "@prisma/client";
 import { prisma } from "../config/database";
 import { getContractAddresses } from "../config/contracts";
 import { acbuBurningService } from "../services/contracts";
@@ -19,6 +20,38 @@ import { getBurnFeeBps } from "../services/feePolicy/feePolicyService";
 
 const DECIMALS_7 = 1e7;
 
+/** Best-effort stringify for Decimal-like values in Prisma models. */
+function toNullableStringDecimal(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  if (typeof v === "object" && v !== null && "toString" in v) {
+    return String((v as { toString: () => string }).toString());
+  }
+  return null;
+}
+
+/** Formats an idempotent response using the existing burn transaction record. */
+function respondFromExistingBurnTx(
+  res: Response,
+  tx: Transaction,
+  blockchainTxHash: string,
+): void {
+  res.status(200).json({
+    transaction_id: tx.id,
+    acbu_amount: toNullableStringDecimal(tx.acbuAmountBurned),
+    local_amount: toNullableStringDecimal(tx.localAmount),
+    currency: tx.localCurrency,
+    fee: toNullableStringDecimal(tx.fee),
+    rate:
+      tx.rateSnapshot ??
+      ({ acbu_ngn: null, timestamp: tx.createdAt.toISOString() } as const),
+    status: tx.status,
+    estimated_completion: null,
+    blockchain_tx_hash: blockchainTxHash,
+  });
+}
+
 const recipientAccountSchema = z.object({
   type: z.enum(["bank", "mobile_money"]).optional(),
   account_number: z.string().min(1),
@@ -26,7 +59,7 @@ const recipientAccountSchema = z.object({
   account_name: z.string().min(1),
 });
 
-const bodySchema = z.object({
+export const bodySchema = z.object({
   acbu_amount: z
     .string()
     .min(1)
@@ -50,13 +83,23 @@ export async function burnAcbu(
   try {
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: "Invalid request", details: parsed.error.flatten() });
-      return;
+      throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
     const { acbu_amount, currency, recipient_account, blockchain_tx_hash } =
       parsed.data;
+
+    const addresses = getContractAddresses();
+    const burningEnabled = Boolean(addresses.burning);
+    if (burningEnabled && blockchain_tx_hash) {
+      const existing = await prisma.transaction.findFirst({
+        where: { type: "burn", blockchainTxHash: blockchain_tx_hash },
+      });
+      if (existing) {
+        respondFromExistingBurnTx(res, existing, blockchain_tx_hash);
+        return;
+      }
+    }
+
     const acbuNum = Number(acbu_amount);
     const burnFeeBps = await getBurnFeeBps(currency);
     const feeAcbu = (acbuNum * burnFeeBps) / 10000;
@@ -85,12 +128,11 @@ export async function burnAcbu(
     // allowing bypass of critical financial controls via direct /burn/acbu route
     const paused = await isCurrencyWithdrawalPaused(currency);
     if (paused) {
-      res.status(503).json({
-        error: "Withdrawal paused for currency",
-        code: "CIRCUIT_BREAKER",
-        message: `Single-currency withdrawals for ${currency} are temporarily paused (reserve below threshold). Basket withdrawals continue.`,
-      });
-      return;
+      throw new AppError(
+        `Single-currency withdrawals for ${currency} are temporarily paused (reserve below threshold). Basket withdrawals continue.`,
+        503,
+        "CIRCUIT_BREAKER",
+      );
     }
 
     // Apply withdrawal limits - use retail as default if no audience is set
@@ -106,6 +148,7 @@ export async function burnAcbu(
     const tx = await prisma.transaction.create({
       data: {
         userId: req.apiKey?.userId ?? undefined,
+        organizationId: req.apiKey?.organizationId ?? undefined,
         type: "burn",
         status: "pending",
         acbuAmountBurned: new Decimal(acbuNum),
@@ -115,11 +158,34 @@ export async function burnAcbu(
         fee: new Decimal(feeAcbu),
         rateSnapshot: {
           acbu_ngn: null,
-          organizationId: req.apiKey?.organizationId ?? null,
           timestamp: new Date().toISOString(),
         },
       },
-    });
+      blockchainTxHash:
+        burningEnabled && blockchain_tx_hash ? blockchain_tx_hash : undefined,
+    };
+
+    let tx: Transaction;
+    try {
+      tx = await prisma.transaction.create({ data: createData });
+    } catch (err) {
+      // Idempotency: if another request created the same hash concurrently, return the original record.
+      if (
+        burningEnabled &&
+        blockchain_tx_hash &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        const existing = await prisma.transaction.findFirst({
+          where: { type: "burn", blockchainTxHash: blockchain_tx_hash },
+        });
+        if (existing) {
+          respondFromExistingBurnTx(res, existing, blockchain_tx_hash);
+          return;
+        }
+      }
+      throw err;
+    }
     await logAudit({
       eventType: "transaction",
       entityType: "transaction",
@@ -129,27 +195,9 @@ export async function burnAcbu(
       performedBy: req.apiKey?.userId ?? undefined,
     });
 
-    const addresses = getContractAddresses();
-    if (addresses.burning) {
+    if (burningEnabled) {
       if (blockchain_tx_hash) {
-        await prisma.transaction.update({
-          where: { id: tx.id },
-          data: {
-            status: "processing",
-            blockchainTxHash: blockchain_tx_hash,
-          },
-        });
-        res.status(200).json({
-          transaction_id: tx.id,
-          acbu_amount: String(acbuNum),
-          local_amount: String(localNum),
-          currency,
-          fee: String(feeAcbu),
-          rate: { acbu_ngn: null, timestamp: new Date().toISOString() },
-          status: "processing",
-          estimated_completion: null,
-          blockchain_tx_hash,
-        });
+        respondFromExistingBurnTx(res, tx, blockchain_tx_hash);
         return;
       }
       try {

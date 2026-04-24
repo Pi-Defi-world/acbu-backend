@@ -21,20 +21,10 @@ function buildActorWhere(userId: string | null, organizationId: string | null) {
   if (organizationId) {
     return {
       OR: [
-        // User-scoped transactions under this organization.
+        // Org API-key transactions (userId=null, organizationId set on row).
+        { organizationId },
+        // Transactions from users belonging to this organization.
         { user: { organizationId } },
-        // Org API-key transactions can be created without a user relation.
-        {
-          AND: [
-            { userId: null },
-            {
-              rateSnapshot: {
-                path: ["organizationId"],
-                equals: organizationId,
-              },
-            },
-          ],
-        },
       ],
     };
   }
@@ -123,7 +113,7 @@ export async function checkWithdrawalLimits(
   const whereActor = buildActorWhere(userId, organizationId);
   const burnedDaily = await prisma.transaction.aggregate({
     where: {
-      type: "burn",
+      type: { in: ["burn", "bill_payment"] },
       localCurrency: currency,
       status: { in: ["pending", "processing", "completed"] },
       createdAt: { gte: since24h },
@@ -133,7 +123,7 @@ export async function checkWithdrawalLimits(
   });
   const burnedMonthly = await prisma.transaction.aggregate({
     where: {
-      type: "burn",
+      type: { in: ["burn", "bill_payment"] },
       localCurrency: currency,
       status: { in: ["pending", "processing", "completed"] },
       createdAt: { gte: startOfMonth },

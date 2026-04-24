@@ -2,13 +2,14 @@
  * Consumes WITHDRAWAL_PROCESSING queue: after BurnEvent, validate withdrawal and recipient,
  * disburse via fintech, update transaction status, optionally publish user notification.
  */
+import { randomUUID } from "crypto";
 import type { ConsumeMessage } from "amqplib";
 import {
   connectRabbitMQ,
   QUEUES,
   assertQueueWithDLQ,
 } from "../config/rabbitmq";
-import { logger } from "../config/logger";
+import { logger, logFinancialEvent } from "../config/logger";
 import { prisma } from "../config/database";
 import { getFintechRouter } from "../services/fintech";
 import type { DisburseRecipient } from "../services/fintech/types";
@@ -27,6 +28,7 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
     queue,
     async (msg: ConsumeMessage | null) => {
       if (!msg) return;
+      const correlationId = randomUUID();
       try {
         const body = JSON.parse(msg.content.toString()) as WithdrawalPayload;
         const { transactionId, txHash } = body;
@@ -108,6 +110,22 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
           return;
         }
 
+        const providerName =
+          { NGN: "paystack", RWF: "mtn_momo" }[currency] ?? "flutterwave";
+
+        logFinancialEvent({
+          event: "withdrawal.processing",
+          status: "pending",
+          transactionId,
+          userId: tx.userId ?? "",
+          accountId: tx.userId ?? "",
+          idempotencyKey: transactionId,
+          amount: Math.round(amount * 100),
+          currency,
+          provider: providerName,
+          correlationId,
+        });
+
         try {
           const router = getFintechRouter();
           const provider = router.getProvider(currency);
@@ -130,6 +148,18 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
             amount,
             fintechTxId: result.transactionId,
           });
+          logFinancialEvent({
+            event: "withdrawal.completed",
+            status: "success",
+            transactionId,
+            userId: tx.userId ?? "",
+            accountId: tx.userId ?? "",
+            idempotencyKey: transactionId,
+            amount: Math.round(amount * 100),
+            currency,
+            provider: providerName,
+            correlationId,
+          });
           // Optional: publish to NOTIFICATIONS for email/SMS (handled by NotificationService when implemented)
           await publishWithdrawalNotification(
             transactionId,
@@ -142,6 +172,19 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
           logger.error("Withdrawal disbursement failed", {
             transactionId,
             error: err,
+          });
+          logFinancialEvent({
+            event: "withdrawal.failed",
+            status: "failed",
+            transactionId,
+            userId: tx.userId ?? "",
+            accountId: tx.userId ?? "",
+            idempotencyKey: transactionId,
+            amount: Math.round(amount * 100),
+            currency,
+            provider: providerName,
+            correlationId,
+            errorMessage: err instanceof Error ? err.message : String(err),
           });
           await prisma.transaction.update({
             where: { id: transactionId },

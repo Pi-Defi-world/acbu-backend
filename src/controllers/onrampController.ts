@@ -10,28 +10,9 @@ import { Decimal } from "@prisma/client/runtime/library";
 import { enqueueXlmToAcbu } from "../jobs/xlmToAcbuJob";
 import { AppError } from "../middleware/errorHandler";
 import { isValidStellarAddress } from "../utils/stellar";
+import { assertUserWalletAddress } from "../services/wallet/walletService";
 
-async function assertUserWalletAddress(
-  userId: string,
-  providedAddress: string,
-): Promise<string> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { stellarAddress: true },
-  });
-
-  if (!user?.stellarAddress) {
-    throw new AppError("User wallet address not set", 400);
-  }
-
-  if (user.stellarAddress !== providedAddress) {
-    throw new AppError("Wallet address does not match user", 403);
-  }
-
-  return user.stellarAddress;
-}
-
-const bodySchema = z.object({
+export const bodySchema = z.object({
   stellar_address: z
     .string()
     .length(56)
@@ -72,11 +53,9 @@ export async function registerOnRampSwap(
     }
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: "Invalid request", details: parsed.error.flatten() });
-      return;
+      throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
+
     const { stellar_address, xlm_amount, usdc_amount } = parsed.data;
     const userWalletAddress = await assertUserWalletAddress(
       userId,
@@ -93,6 +72,22 @@ export async function registerOnRampSwap(
           usdc_amount != null ? new Decimal(Number(usdc_amount)) : null,
         status: "pending_convert",
       },
+    });
+    const correlationId =
+      (req.headers["x-request-id"] as string | undefined) ??
+      crypto.randomUUID();
+    logFinancialEvent({
+      event: "onramp.registered",
+      status: "pending",
+      transactionId: swap.id,
+      userId,
+      accountId: userWalletAddress,
+      idempotencyKey: swap.id,
+      amount: Math.round(xlmNum * 1e7), // XLM in stroops (7 decimal places)
+      currency: "XLM",
+      correlationId,
+      timestamp: new Date().toISOString(),
+      environment: (process.env.NODE_ENV ?? "development") as "production" | "staging" | "development",
     });
     await enqueueXlmToAcbu({
       onRampSwapId: swap.id,

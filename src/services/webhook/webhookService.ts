@@ -76,23 +76,23 @@ export async function enqueueWebhook(
   return webhook.id;
 }
 
-export async function deliverWebhook(webhookId: string): Promise<boolean> {
+export async function deliverWebhook(webhookId: string): Promise<{ success: boolean; terminal: boolean }> {
   const webhook = await prisma.webhook.findUnique({
     where: { id: webhookId },
   });
   if (!webhook) {
     logger.warn("Webhook not found", { webhookId });
-    return false;
+    return { success: false, terminal: true };
   }
   if (webhook.status === "completed") {
     logger.debug("Webhook already completed", { webhookId });
-    return true;
+    return { success: true, terminal: false };
   }
   if (webhook.status === "failed") {
     logger.debug("Webhook already marked failed; skipping redelivery", {
       webhookId,
     });
-    return true;
+    return { success: false, terminal: true };
   }
 
   const url = config.webhook.url;
@@ -101,7 +101,7 @@ export async function deliverWebhook(webhookId: string): Promise<boolean> {
       where: { id: webhookId },
       data: { status: "failed" },
     });
-    return false;
+    return { success: false, terminal: true };
   }
 
   const payloadStr = JSON.stringify(webhook.payload);
@@ -115,6 +115,7 @@ export async function deliverWebhook(webhookId: string): Promise<boolean> {
     await axios.post(url, webhook.payload, {
       headers: {
         "Content-Type": "application/json",
+        "Idempotency-Key": webhookId,
         ...(signature && { [WEBHOOK_HEADER_SIGNATURE]: signature }),
       },
       timeout: 10000,
@@ -131,7 +132,7 @@ export async function deliverWebhook(webhookId: string): Promise<boolean> {
       webhookId,
       url: url ? "***" : undefined,
     });
-    return true;
+    return { success: true, terminal: false };
   } catch (e) {
     const attempts = webhook.attempts + 1;
     const terminalFailure = attempts >= MAX_ATTEMPTS;
@@ -149,7 +150,6 @@ export async function deliverWebhook(webhookId: string): Promise<boolean> {
       terminalFailure,
       error: e,
     });
-    // Return true for terminal failures so consumer can ack and stop requeueing.
-    return terminalFailure;
+    return { success: false, terminal: terminalFailure };
   }
 }

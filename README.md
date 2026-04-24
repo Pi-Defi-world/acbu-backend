@@ -17,7 +17,7 @@ Backend API server for the ACBU (African Currency Basket Unit) platform.
 
 - Node.js 20 or higher
 - Docker and Docker Compose
-- npm or yarn
+- pnpm 10+ (Required package manager)
 
 ## Setup Instructions
 
@@ -25,7 +25,7 @@ Backend API server for the ACBU (African Currency Basket Unit) platform.
 
 ```bash
 cd backend
-npm install
+pnpm install
 ```
 
 ### 2. Environment Configuration
@@ -64,19 +64,19 @@ Initialize Prisma and run migrations:
 
 ```bash
 # Generate Prisma Client
-npm run prisma:generate
+pnpm prisma:generate
 
 # Run database migrations
-npm run prisma:migrate
+pnpm prisma:migrate
 
 # (Optional) Seed database
-npm run prisma:seed
+pnpm prisma:seed
 ```
 
 ### 5. Start Development Server
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 The server will start on `http://localhost:3000` (or the port specified in `.env`).
@@ -85,20 +85,18 @@ Nodemon will automatically restart the server when you make changes to the code.
 
 ## Available Scripts
 
-- `npm run dev` - Start development server with hot reloading
-- `npm run build` - Build TypeScript to JavaScript
-- `npm start` - Start production server
-- `npm test` - Run tests
-- `npm run test:watch` - Run tests in watch mode
-- `npm run test:coverage` - Run tests with coverage report
-- `npm run lint` - Run ESLint
-- `npm run lint:fix` - Fix ESLint errors
-- `npm run format` - Format code with Prettier
-- `npm run format:check` - Check code formatting
-- `npm run prisma:generate` - Generate Prisma Client
-- `npm run prisma:migrate` - Run database migrations
-- `npm run prisma:studio` - Open Prisma Studio
-- `npm run prisma:seed` - Seed database with initial data
+- `pnpm dev` - Start development server with hot reloading
+- `pnpm build` - Build TypeScript to JavaScript
+- `pnpm start` - Start production server
+- `pnpm test` - Run tests
+- `pnpm lint` - Run ESLint
+- `pnpm lint:fix` - Fix ESLint errors
+- `pnpm format` - Format code with Prettier
+- `pnpm format:check` - Check code formatting
+- `pnpm prisma:generate` - Generate Prisma Client
+- `pnpm prisma:migrate` - Run database migrations
+- `pnpm prisma:studio` - Open Prisma Studio
+- `pnpm prisma:seed` - Seed database with initial data
 
 ## Project Structure
 
@@ -134,7 +132,7 @@ Once the server is running, API documentation is available at:
 View and edit database data using Prisma Studio:
 
 ```bash
-npm run prisma:studio
+pnpm prisma:studio
 ```
 
 ### Migrations
@@ -142,7 +140,7 @@ npm run prisma:studio
 Create a new migration:
 
 ```bash
-npm run prisma:migrate
+pnpm prisma:migrate
 ```
 
 ## Testing
@@ -150,13 +148,13 @@ npm run prisma:migrate
 Run all tests:
 
 ```bash
-npm test
+pnpm test
 ```
 
 Run tests with coverage:
 
 ```bash
-npm run test:coverage
+pnpm test:coverage
 ```
 
 ## Environment Variables
@@ -168,6 +166,12 @@ npm run test:coverage
 **Fintech:** Flutterwave (`FLUTTERWAVE_SECRET_KEY`, etc.), Paystack (`PAYSTACK_SECRET_KEY`), MTN MoMo (`MTN_MOMO_SUBSCRIPTION_KEY`, `MTN_MOMO_API_USER_ID`, `MTN_MOMO_API_KEY`). Optional: `FINTECH_CURRENCY_PROVIDERS`.
 
 **Stellar:** `STELLAR_NETWORK`, `STELLAR_SECRET_KEY`, and after deploy: `CONTRACT_ORACLE`, `CONTRACT_RESERVE_TRACKER`, `CONTRACT_MINTING`, `CONTRACT_BURNING`. Optional for segment features: `CONTRACT_SAVINGS_VAULT`, `CONTRACT_LENDING_POOL`, `CONTRACT_ESCROW`.
+
+**Stellar Fee Configuration:** Control transaction fees under varying network congestion:
+- `STELLAR_USE_DYNAMIC_FEES=true` - Fetch live base fee from Horizon before each transaction (recommended for production)
+- `STELLAR_BASE_FEE_STROOPS=100` - Fallback base fee when dynamic fetch unavailable (default: 100)
+- `STELLAR_SOROBAN_MIN_FEE_STROOPS=5000` - Minimum total fee for Soroban transactions to prevent underpricing (default: 5000)
+- `STELLAR_SOROBAN_MAX_FEE_STROOPS=10000000` - Maximum total fee for Soroban transactions to prevent overpaying (~50 XLM at base=100; default: 10M stroops)
 
 ## Docker Services
 
@@ -191,6 +195,52 @@ docker-compose down
 docker-compose logs -f
 ```
 
+## Health Check Endpoints
+
+The API provides three health check endpoints with different purposes:
+
+### `/health` - Shallow Liveness Check
+- **Path:** `GET /api/v1/health`
+- **Status:** Always returns `200 OK`
+- **Purpose:** For load balancers to verify the process is alive
+- **Response:** `{ status: "ok", timestamp, uptime, version }`
+- **Note:** Does not probe dependencies; fast and reliable
+
+### `/health/ready` - Kubernetes Readiness Probe
+- **Path:** `GET /api/v1/health/ready`
+- **Status:** Returns `200` if all dependencies up, `503` if any down
+- **Purpose:** For Kubernetes readinessProbe configurations
+- **Probes:** PostgreSQL, MongoDB, RabbitMQ
+- **Recommendation:** Use this endpoint in K8s deployment readinessProbe
+
+### `/health/deep` - Deep Health Check
+- **Path:** `GET /api/v1/health/deep`
+- **Status:** Returns `200` if all dependencies up, `503` if any down
+- **Purpose:** Detailed dependency status for monitoring dashboards
+- **Response:** Full report with status of each dependency
+
+### Kubernetes Configuration Example
+
+```yaml
+readinessProbe:
+  httpGet:
+    path: /api/v1/health/ready
+    port: 5000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: 5000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+```
+
 ## CI/CD
 
 GitHub Actions CI pipeline runs on:
@@ -207,7 +257,7 @@ The CI pipeline:
 
 1. Create a feature branch
 2. Make your changes
-3. Run tests and linter: `npm test && npm run lint`
+3. Run tests and linter: `pnpm test && pnpm lint`
 4. Commit and push
 5. Create a pull request
 

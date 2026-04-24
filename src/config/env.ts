@@ -1,55 +1,72 @@
 import dotenv from "dotenv";
+import { z } from "zod";
 
 dotenv.config();
 
-// ── Validate required env vars BEFORE building config ────────────────────────
-// This ensures the app fails fast with a clear message instead of starting
-// with empty strings and failing later in an unpredictable way.
-const requiredEnvVars = [
-  "DATABASE_URL",
-  "MONGODB_URI",
-  "RABBITMQ_URL",
-  "JWT_SECRET",
-];
+const envSchema = z.object({
+  NODE_ENV: z.string().default("development"),
+  PORT: z.coerce.number().default(5000),
+  API_VERSION: z.string().default("v1"),
+  DATABASE_URL: z.string().min(1),
+  MONGODB_URI: z.string().min(1),
+  RABBITMQ_URL: z.string().min(1),
+  JWT_SECRET: z.string().min(1),
+  CHALLENGE_TOKEN_SECRET: z.string().optional(),
+  PRISMA_ACCELERATE_URL: z.string().optional(),
+  JWT_EXPIRES_IN: z.string().default("7d"),
+  JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().default(30),
+  API_KEY_SALT: z.string().default(""),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
+});
 
-if (process.env.NODE_ENV === "production") {
-  requiredEnvVars.push("PRISMA_ACCELERATE_URL");
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  const messages = parsed.error.issues
+    .map((i) => `${i.path.join(".")}: ${i.message}`)
+    .join("\n");
+  throw new Error(`Invalid environment variables:\n${messages}`);
 }
 
-const missing = requiredEnvVars.filter((v) => !process.env[v]);
-if (missing.length > 0) {
+if (
+  parsed.data.NODE_ENV === "production" &&
+  !parsed.data.PRISMA_ACCELERATE_URL
+) {
   throw new Error(
-    `Missing required environment variable(s): ${missing.join(", ")}`,
+    "Missing required environment variable: PRISMA_ACCELERATE_URL",
   );
 }
 
+const env = parsed.data;
+
 export const config = {
-  // Server
-  nodeEnv: process.env.NODE_ENV || "development",
-  port: parseInt(process.env.PORT || "5000", 10),
-  apiVersion: process.env.API_VERSION || "v1",
+  nodeEnv: env.NODE_ENV,
+  port: env.PORT,
+  apiVersion: env.API_VERSION,
+  databaseUrl: env.DATABASE_URL,
+  prismaAccelerateUrl: env.PRISMA_ACCELERATE_URL,
+  mongodbUri: env.MONGODB_URI,
+  rabbitmqUrl: env.RABBITMQ_URL,
+  jwtSecret: env.JWT_SECRET,
+  jwtExpiresIn: env.JWT_EXPIRES_IN,
+  jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
+  challengeTokenSecret: env.CHALLENGE_TOKEN_SECRET || env.JWT_SECRET,
+  apiKeySalt: env.API_KEY_SALT,
+  rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
+  rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
 
-  // Database
-  databaseUrl: process.env.DATABASE_URL || "",
-  prismaAccelerateUrl: process.env.PRISMA_ACCELERATE_URL || "",
-
-  // MongoDB
-  mongodbUri: process.env.MONGODB_URI || "",
-
-  // RabbitMQ
-  rabbitmqUrl: process.env.RABBITMQ_URL || "",
-
-  // JWT
-  jwtSecret: process.env.JWT_SECRET || "",
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
-
-  // API Security
-  apiKeySalt: process.env.API_KEY_SALT || "",
-
-  // Rate Limiting
-  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "60000", 10),
-  rateLimitMaxRequests: parseInt(
-    process.env.RATE_LIMIT_MAX_REQUESTS || "100",
+  // Rate Limiting Fallback (during cache outages)
+  rateLimitFallbackMaxRequests: parseInt(
+    process.env.RATE_LIMIT_FALLBACK_MAX_REQUESTS || "20",
+    10,
+  ),
+  rateLimitCircuitBreakerThreshold: parseInt(
+    process.env.RATE_LIMIT_CIRCUIT_BREAKER_THRESHOLD || "5",
+    10,
+  ),
+  rateLimitCircuitBreakerCooldownMs: parseInt(
+    process.env.RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN_MS || "60000",
     10,
   ),
 
@@ -134,16 +151,57 @@ export const config = {
       process.env.STELLAR_NETWORK === "mainnet"
         ? "Public Global Stellar Network ; September 2015"
         : "Test SDF Network ; September 2015",
-    /** Minimum XLM sent to user wallet for activation (Stellar account creation). Default 1. */
-    minBalanceXlm: parseFloat(
-      process.env.WALLET_ACTIVATION_XLM ||
+    /** Network-native asset code shown to callers for wallet bootstrap (default XLM, or PI when bootstrap profile says so). */
+    nativeAssetCode: ((): string => {
+      const explicit = process.env.STELLAR_NATIVE_ASSET_CODE?.trim();
+      if (explicit) return explicit.toUpperCase();
+      const bootstrapProfile = (
+        process.env.TESTNET_CUSTODIAL_BOOTSTRAP || ""
+      ).trim()
+        .toLowerCase();
+      return bootstrapProfile.includes("pi") ? "PI" : "XLM";
+    })(),
+    /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */
+    activationStrategy: (
+      process.env.WALLET_ACTIVATION_STRATEGY || "create_account_native"
+    ) as "create_account_native" | "disabled",
+    /** Optional bootstrap profile from deployment docs/runbooks; used only for config alignment and diagnostics. */
+    bootstrapProfile: process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "",
+    /** Minimum network-native balance sent to user wallet for activation. */
+    activationAmount: ((): string => {
+      const raw =
+        process.env.WALLET_ACTIVATION_AMOUNT ||
+        process.env.WALLET_ACTIVATION_NATIVE ||
+        process.env.WALLET_ACTIVATION_XLM ||
         process.env.STELLAR_MIN_BALANCE ||
-        "1",
-    ),
+        "1";
+      return raw.trim() || "1";
+    })(),
+    /** Backwards-compatible numeric alias for older callers/tests that still reference minBalanceXlm. */
+    minBalanceXlm: (() => {
+      const parsed = Number.parseFloat(
+        process.env.WALLET_ACTIVATION_AMOUNT ||
+          process.env.WALLET_ACTIVATION_NATIVE ||
+          process.env.WALLET_ACTIVATION_XLM ||
+          process.env.STELLAR_MIN_BALANCE ||
+          "1",
+      );
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    })(),
     /** Base transaction fee in stroops used as fallback when dynamic fee fetch is disabled or fails. Default 100. */
     baseFeeStroops: parseInt(process.env.STELLAR_BASE_FEE_STROOPS || "100", 10),
     /** When true, fetches the current recommended base fee from Horizon before each transaction. Falls back to baseFeeStroops on failure. */
     useDynamicFees: process.env.STELLAR_USE_DYNAMIC_FEES === "true",
+    /** Maximum total fee per Soroban transaction in stroops (base + resource fees). Default 10M stroops (~50 XLM at base fee 100). */
+    sorobanMaxFeeStroops: parseInt(
+      process.env.STELLAR_SOROBAN_MAX_FEE_STROOPS || "10000000",
+      10,
+    ),
+    /** Minimum total fee per Soroban transaction in stroops to prevent underpricing. Default 5000 stroops. */
+    sorobanMinFeeStroops: parseInt(
+      process.env.STELLAR_SOROBAN_MIN_FEE_STROOPS || "5000",
+      10,
+    ),
     /** Circle USDC issuer on Stellar testnet. Default is the well-known Circle testnet issuer. */
     usdcIssuerTestnet:
       process.env.USDC_ISSUER_TESTNET ??
@@ -296,6 +354,48 @@ export const config = {
     },
   },
 
+  // Auth Security
+  auth: {
+    bruteMaxAttempts: parseInt(process.env.AUTH_BRUTE_MAX_ATTEMPTS || "5", 10),
+    bruteLockoutMs: parseInt(
+      process.env.AUTH_BRUTE_LOCKOUT_MS || "900000",
+      10,
+    ), // 15 mins
+    captchaSecret: process.env.CAPTCHA_SECRET || "",
+  },
+
   // CORS
   corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["*"],
+
+  // S3 / KYC document storage (B-062)
+  s3: {
+    bucket: process.env.AWS_S3_KYC_BUCKET || "",
+    region: process.env.AWS_REGION || process.env.AWS_S3_REGION || "us-east-1",
+    /** Optional: override endpoint for local MinIO / S3-compatible stores. */
+    endpoint: process.env.AWS_S3_ENDPOINT || "",
+    /** Explicit credentials — falls back to IAM role / env chain if not set. */
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+    /**
+     * Upload URL TTL in seconds. Default 900 (15 min).
+     * Keep short to limit the window for presigned URL abuse.
+     */
+    uploadUrlTtlSeconds: parseInt(
+      process.env.S3_UPLOAD_URL_TTL_SECONDS || "900",
+      10,
+    ),
+    /**
+     * Download URL TTL in seconds. Default 300 (5 min).
+     * Shorter than upload — read-once pattern recommended.
+     */
+    downloadUrlTtlSeconds: parseInt(
+      process.env.S3_DOWNLOAD_URL_TTL_SECONDS || "300",
+      10,
+    ),
+    /**
+     * Shared secret used to authenticate the virus-scan webhook callback.
+     * Must be set in production.
+     */
+    scanWebhookSecret: process.env.S3_SCAN_WEBHOOK_SECRET || "",
+  },
 };

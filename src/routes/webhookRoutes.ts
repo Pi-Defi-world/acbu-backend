@@ -4,6 +4,7 @@ import {
   verifyFlutterwaveSignature,
   handlePaystackWebhook,
   verifyPaystackSignature,
+  handleBillsWebhook,
 } from "../controllers/webhookController";
 
 const router: IRouter = Router();
@@ -14,5 +15,6 @@ router.post(
   handleFlutterwaveWebhook,
 );
 router.post("/paystack", verifyPaystackSignature, handlePaystackWebhook);
+router.post("/bills/:provider", handleBillsWebhook);
 
 export default router;
