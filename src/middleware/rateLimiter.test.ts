@@ -319,19 +319,19 @@ describe("Rate Limiter with Circuit Breaker", () => {
 
       // Send 20 requests from IP1 - should all pass
       for (let i = 0; i < 20; i++) {
-        await apiKeyRateLimiter(ip1Req, ip1Res, ip1Next);
+        await apiKeyRateLimiter(ip1Req as any, ip1Res as any, ip1Next as any);
       }
 
       // Send 20 requests from IP2 - should all pass
       for (let i = 0; i < 20; i++) {
-        await apiKeyRateLimiter(ip2Req, ip2Res, ip2Next);
+        await apiKeyRateLimiter(ip2Req as any, ip2Res as any, ip2Next as any);
       }
 
       expect(ip1Next).toHaveBeenCalledTimes(20);
       expect(ip2Next).toHaveBeenCalledTimes(20);
 
       // Send 1 more from IP1 - should be rejected (21st)
-      await apiKeyRateLimiter(ip1Req, ip1Res, ip1Next);
+      await apiKeyRateLimiter(ip1Req as any, ip1Res as any, ip1Next as any);
       expect(ip1Res.status).toHaveBeenCalledWith(429);
 
       // IP2 should still have its own counter (not affected by IP1)

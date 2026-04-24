@@ -47,6 +47,7 @@ export const config = {
   mongodbUri: env.MONGODB_URI,
   rabbitmqUrl: env.RABBITMQ_URL,
   jwtSecret: env.JWT_SECRET,
+  challengeTokenSecret: process.env.CHALLENGE_TOKEN_SECRET || 'default_secret',
   jwtExpiresIn: env.JWT_EXPIRES_IN,
   apiKeySalt: env.API_KEY_SALT,
   rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
