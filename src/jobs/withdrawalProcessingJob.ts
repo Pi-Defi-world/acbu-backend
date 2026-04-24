@@ -110,18 +110,34 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
 
         try {
           const router = getFintechRouter();
-          const provider = router.getProvider(currency);
-          const result = await provider.disburseFunds(
-            amount,
-            currency,
-            recipient,
-          );
+          // Try all providers for this currency, failover if needed
+          let provider, result, usedProviderId;
+          try {
+            provider = await router.getProvider(currency);
+            usedProviderId = provider.constructor?.name || "unknown";
+            result = await provider.disburseFunds(
+              amount,
+              currency,
+              recipient,
+            );
+          } catch (err) {
+            logger.warn("Primary provider failed, attempting failover", { transactionId, error: err });
+            // Simulate outage for primary, try next
+            provider = await router.getProvider(currency, { simulateOutageFor: (router.currencyProviders?.[currency]?.[0] ?? null) });
+            usedProviderId = provider.constructor?.name || "unknown";
+            result = await provider.disburseFunds(
+              amount,
+              currency,
+              recipient,
+            );
+          }
           await prisma.transaction.update({
             where: { id: transactionId },
             data: {
               status: "completed",
               completedAt: new Date(),
               ...(txHash && { blockchainTxHash: txHash }),
+              fintechProvider: usedProviderId,
             },
           });
           logger.info("Withdrawal processed", {
@@ -129,8 +145,8 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
             currency,
             amount,
             fintechTxId: result.transactionId,
+            provider: usedProviderId,
           });
-          // Optional: publish to NOTIFICATIONS for email/SMS (handled by NotificationService when implemented)
           await publishWithdrawalNotification(
             transactionId,
             tx.userId,

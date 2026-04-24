@@ -6,25 +6,29 @@
 
 import type { FintechProvider, FintechProviderId } from "./types";
 
-/** Default currency → provider id (plan Part C). Overridable via config. */
-const DEFAULT_CURRENCY_PROVIDERS: Record<string, FintechProviderId> = {
-  NGN: "paystack",
-  KES: "flutterwave",
-  RWF: "mtn_momo",
-  ZAR: "flutterwave",
-  GHS: "flutterwave",
-  EGP: "flutterwave",
-  MAD: "flutterwave",
-  TZS: "flutterwave",
-  UGX: "flutterwave",
-  XOF: "flutterwave",
+
+/**
+ * Default currency → provider id array (priority order). Overridable via config.
+ * Example: NGN: ["paystack", "flutterwave"]
+ */
+const DEFAULT_CURRENCY_PROVIDERS: Record<string, FintechProviderId[]> = {
+  NGN: ["paystack", "flutterwave"],
+  KES: ["flutterwave"],
+  RWF: ["mtn_momo", "flutterwave"],
+  ZAR: ["flutterwave"],
+  GHS: ["flutterwave"],
+  EGP: ["flutterwave"],
+  MAD: ["flutterwave"],
+  TZS: ["flutterwave"],
+  UGX: ["flutterwave"],
+  XOF: ["flutterwave"],
 };
 
 export class FintechProviderRouter {
   private providers: Map<FintechProviderId, FintechProvider> = new Map();
-  private currencyProviders: Record<string, FintechProviderId>;
+  private currencyProviders: Record<string, FintechProviderId[]>;
 
-  constructor(currencyProviders?: Record<string, FintechProviderId>) {
+  constructor(currencyProviders?: Record<string, FintechProviderId[]>) {
     this.currencyProviders = currencyProviders ?? DEFAULT_CURRENCY_PROVIDERS;
   }
 
@@ -32,14 +36,39 @@ export class FintechProviderRouter {
     this.providers.set(id, provider);
   }
 
-  getProvider(currency: string): FintechProvider {
-    const id = this.currencyProviders[currency] ?? "flutterwave";
-    const provider = this.providers.get(id);
-    if (provider) return provider;
-    const fallback = this.providers.get("flutterwave");
-    if (fallback) return fallback;
+  /**
+   * Selects the best provider for a currency based on health and fees.
+   * If all fail, throws an error.
+   * @param currency
+   * @param opts Optionally pass {simulateOutageFor?: FintechProviderId}
+   */
+  async getProvider(currency: string, opts?: { simulateOutageFor?: FintechProviderId }): Promise<FintechProvider> {
+    const providerIds = this.currencyProviders[currency] ?? ["flutterwave"];
+    let lastError: Error | null = null;
+    for (const id of providerIds) {
+      if (opts?.simulateOutageFor && id === opts.simulateOutageFor) {
+        // Simulate outage for this provider
+        continue;
+      }
+      const provider = this.providers.get(id);
+      if (!provider) continue;
+      // Health check: try getBalance (could be replaced with a real health endpoint)
+      try {
+        await provider.getBalance(currency);
+        // TODO: Add fee comparison logic here if needed
+        return provider;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        continue;
+      }
+    }
+    // Fallback: try flutterwave if not already tried
+    if (!providerIds.includes("flutterwave")) {
+      const fallback = this.providers.get("flutterwave");
+      if (fallback) return fallback;
+    }
     throw new Error(
-      `No fintech provider for currency ${currency}; flutterwave not registered`,
+      `No healthy fintech provider for currency ${currency}` + (lastError ? ": " + lastError.message : "")
     );
   }
 
