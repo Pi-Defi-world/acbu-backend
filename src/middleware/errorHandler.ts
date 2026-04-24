@@ -4,10 +4,12 @@ import { logger } from "../config/logger";
 export class AppError extends Error {
   statusCode: number;
   isOperational: boolean;
+  details?: unknown;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, details?: unknown) {
     super(message);
     this.statusCode = statusCode;
+    this.details = details;
     this.isOperational = true;
     Error.captureStackTrace(this, this.constructor);
   }
@@ -49,12 +51,14 @@ export const errorHandler = (
       statusCode: err.statusCode,
       path: req.path,
       method: req.method,
+      details: err.details,
     });
 
     res.status(err.statusCode).json({
       error: {
         message: err.message,
         statusCode: err.statusCode,
+        ...(err.details ? { details: err.details } : {}),
       },
     });
     return;

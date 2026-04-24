@@ -22,11 +22,16 @@ export async function processInvestmentWithdrawalAvailability(): Promise<void> {
       });
       const amountAcbu = r.amountAcbu.toNumber();
       if (r.userId || r.organizationId) {
-        await publishInvestmentWithdrawalReady(r.userId, amountAcbu);
+        await publishInvestmentWithdrawalReady(
+          r.userId,
+          amountAcbu,
+          r.organizationId,
+        );
       }
       logger.info("Investment withdrawal marked available and notified", {
         requestId: r.id,
         userId: r.userId,
+        organizationId: r.organizationId,
         amountAcbu,
       });
     } catch (e) {

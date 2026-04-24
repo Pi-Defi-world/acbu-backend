@@ -1,0 +1,99 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ACBU API",
+    "version": "1.0.0",
+    "description": "API documentation for ACBU (African Currency Basket Unit) platform",
+    "contact": {
+      "name": "ACBU Support"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Development server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/reserves": {
+      "get": {
+        "summary": "Get current reserve status",
+        "tags": [
+          "Reserves"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reserve status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalAcbuSupply": {
+                      "type": "number"
+                    },
+                    "totalReserveValueUsd": {
+                      "type": "number"
+                    },
+                    "overcollateralizationRatio": {
+                      "type": "number"
+                    },
+                    "reserveHealth": {
+                      "type": "string"
+                    },
+                    "currencies": {
+                      "type": "array"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reserves/track": {
+      "post": {
+        "summary": "Manually trigger reserve tracking",
+        "tags": [
+          "Reserves"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reserve tracking initiated"
+          }
+        }
+      }
+    }
+  },
+  "tags": []
+}

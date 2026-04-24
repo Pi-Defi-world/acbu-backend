@@ -5,7 +5,7 @@ import { createTransfer } from "../services/transfer/transferService";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 
-const createTransferSchema = z.object({
+export const createTransferSchema = z.object({
   to: z.string().min(1, "to is required"),
   amount_acbu: z
     .string()
@@ -70,7 +70,7 @@ export async function postTransfers(
   }
 }
 
-const getTransfersQuerySchema = z.object({
+export const getTransfersQuerySchema = z.object({
   limit: z
     .string()
     .optional()

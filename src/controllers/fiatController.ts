@@ -10,20 +10,20 @@ import {
 } from "../services/fiat/fiatService";
 import { AppError } from "../middleware/errorHandler";
 
-const faucetSchema = z.object({
+export const faucetSchema = z.object({
   currency: z.string().min(3).max(3),
   amount: z.number().positive(),
   recipient: z.string().optional(),
   passcode: z.string().optional(),
 });
 
-const onRampSchema = z.object({
+export const onRampSchema = z.object({
   currency: z.string().min(3).max(3),
   amount: z.number().positive(),
   passcode: z.string().optional(),
 });
 
-const offRampSchema = z.object({
+export const offRampSchema = z.object({
   currency: z.string().min(3).max(3),
   amount: z.number().positive(),
   blockchain_tx_hash: z
