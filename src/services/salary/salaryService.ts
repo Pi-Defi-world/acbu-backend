@@ -8,8 +8,17 @@ import { AppError } from "../../middleware/errorHandler";
 /**
  * Creates a new salary batch with items. Supports idempotency via idempotencyKey.
  */
-export async function createSalaryBatch(params: CreateSalaryBatchParams): Promise<CreateSalaryBatchResult> {
-  const { organizationId, userId, totalAmount, currency, idempotencyKey, items } = params;
+export async function createSalaryBatch(
+  params: CreateSalaryBatchParams,
+): Promise<CreateSalaryBatchResult> {
+  const {
+    organizationId,
+    userId,
+    totalAmount,
+    currency,
+    idempotencyKey,
+    items,
+  } = params;
 
   // Idempotency check
   if (idempotencyKey) {
@@ -17,15 +26,24 @@ export async function createSalaryBatch(params: CreateSalaryBatchParams): Promis
       where: { idempotencyKey },
     });
     if (existing) {
-      logger.info("Salary batch idempotency hit", { idempotencyKey, batchId: existing.id });
+      logger.info("Salary batch idempotency hit", {
+        idempotencyKey,
+        batchId: existing.id,
+      });
       return { batchId: existing.id, status: existing.status };
     }
   }
 
   // Calculate total amount if not provided or to verify
-  const calculatedTotal = items.reduce((acc, item) => acc.add(new Decimal(item.amount)), new Decimal(0));
+  const calculatedTotal = items.reduce(
+    (acc, item) => acc.add(new Decimal(item.amount)),
+    new Decimal(0),
+  );
   if (totalAmount && !new Decimal(totalAmount).equals(calculatedTotal)) {
-    throw new AppError(`Total amount mismatch. Expected ${calculatedTotal.toString()}, got ${totalAmount}`, 400);
+    throw new AppError(
+      `Total amount mismatch. Expected ${calculatedTotal.toString()}, got ${totalAmount}`,
+      400,
+    );
   }
 
   // Create batch and items in a transaction
@@ -48,12 +66,21 @@ export async function createSalaryBatch(params: CreateSalaryBatchParams): Promis
     },
   });
 
-  logger.info("Salary batch created", { batchId: batch.id, userId, organizationId });
+  logger.info("Salary batch created", {
+    batchId: batch.id,
+    userId,
+    organizationId,
+  });
 
   // Trigger asynchronous processing
-  setImmediate(() => processSalaryBatch(batch.id).catch((err) => {
-    logger.error("Salary batch background processing failed", { batchId: batch.id, error: err });
-  }));
+  setImmediate(() =>
+    processSalaryBatch(batch.id).catch((err) => {
+      logger.error("Salary batch background processing failed", {
+        batchId: batch.id,
+        error: err,
+      });
+    }),
+  );
 
   return { batchId: batch.id, status: batch.status };
 }
@@ -76,7 +103,10 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
     data: { status: "processing" },
   });
 
-  logger.info("Processing salary batch", { batchId, itemCount: batch.items.length });
+  logger.info("Processing salary batch", {
+    batchId,
+    itemCount: batch.items.length,
+  });
 
   let allSucceeded = true;
   let anySucceeded = false;
@@ -92,7 +122,7 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
       // For now, we'll use the transferService which might be configured with a system key
       // or we might need to pass a specialized getSenderSigningKey.
       // Since this is a salary disbursement, it's often from a corporate wallet.
-      
+
       const result = await createTransfer({
         senderUserId: batch.userId,
         to: item.recipientAddress,
@@ -104,7 +134,8 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
         data: {
           status: result.status,
           transactionId: result.transactionId,
-          errorMessage: result.status === "failed" ? "Transfer payment failed" : null,
+          errorMessage:
+            result.status === "failed" ? "Transfer payment failed" : null,
         },
       });
 
@@ -119,7 +150,10 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
       }
     } catch (err) {
       allSucceeded = false;
-      logger.error("Salary item transfer failed", { itemId: item.id, error: err });
+      logger.error("Salary item transfer failed", {
+        itemId: item.id,
+        error: err,
+      });
       await prisma.salaryItem.update({
         where: { id: item.id },
         data: {
@@ -130,8 +164,12 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
     }
   }
 
-  const finalStatus = allSucceeded ? "completed" : (anySucceeded ? "partially_completed" : "failed");
-  
+  const finalStatus = allSucceeded
+    ? "completed"
+    : anySucceeded
+      ? "partially_completed"
+      : "failed";
+
   await prisma.salaryBatch.update({
     where: { id: batchId },
     data: {
@@ -140,13 +178,21 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
     },
   });
 
-  logger.info("Salary batch processing finished", { batchId, status: finalStatus });
+  logger.info("Salary batch processing finished", {
+    batchId,
+    status: finalStatus,
+  });
 }
 
 /**
  * Lists salary batches for an organization or user.
  */
-export async function getSalaryBatches(params: { organizationId?: string; userId?: string; limit?: number; offset?: number }) {
+export async function getSalaryBatches(params: {
+  organizationId?: string;
+  userId?: string;
+  limit?: number;
+  offset?: number;
+}) {
   const { organizationId, userId, limit = 20, offset = 0 } = params;
 
   return prisma.salaryBatch.findMany({
@@ -154,7 +200,7 @@ export async function getSalaryBatches(params: { organizationId?: string; userId
       OR: [
         organizationId ? { organizationId } : {},
         userId ? { userId } : {},
-      ].filter(o => Object.keys(o).length > 0),
+      ].filter((o) => Object.keys(o).length > 0),
     },
     orderBy: { createdAt: "desc" },
     take: limit,
@@ -186,7 +232,10 @@ export async function triggerSchedule(scheduleId: string): Promise<void> {
   if (!schedule || schedule.status !== "active") return;
 
   const amountConfig = schedule.amountConfig as any[];
-  const totalAmount = amountConfig.reduce((acc, item) => acc.add(new Decimal(item.amount)), new Decimal(0));
+  const totalAmount = amountConfig.reduce(
+    (acc, item) => acc.add(new Decimal(item.amount)),
+    new Decimal(0),
+  );
 
   await createSalaryBatch({
     organizationId: schedule.organizationId || undefined,
@@ -229,7 +278,14 @@ export async function createSalarySchedule(params: {
   amountConfig: any;
   currency?: string;
 }) {
-  const { organizationId, userId, name, cron, amountConfig, currency = "ACBU" } = params;
+  const {
+    organizationId,
+    userId,
+    name,
+    cron,
+    amountConfig,
+    currency = "ACBU",
+  } = params;
 
   // Simple validation for cron
   if (!cron || cron.split(" ").length < 5) {
@@ -258,14 +314,22 @@ export async function createSalarySchedule(params: {
     },
   });
 
-  logger.info("Salary schedule created", { scheduleId: schedule.id, userId, name, nextRunAt: nextRun });
+  logger.info("Salary schedule created", {
+    scheduleId: schedule.id,
+    userId,
+    name,
+    nextRunAt: nextRun,
+  });
   return schedule;
 }
 
 /**
  * Lists salary schedules for an organization or user.
  */
-export async function getSalarySchedules(params: { organizationId?: string; userId?: string }) {
+export async function getSalarySchedules(params: {
+  organizationId?: string;
+  userId?: string;
+}) {
   const { organizationId, userId } = params;
 
   return prisma.salarySchedule.findMany({
@@ -273,7 +337,7 @@ export async function getSalarySchedules(params: { organizationId?: string; user
       OR: [
         organizationId ? { organizationId } : {},
         userId ? { userId } : {},
-      ].filter(o => Object.keys(o).length > 0),
+      ].filter((o) => Object.keys(o).length > 0),
     },
     orderBy: { createdAt: "desc" },
   });

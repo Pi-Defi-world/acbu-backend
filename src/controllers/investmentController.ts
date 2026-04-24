@@ -105,18 +105,21 @@ export async function postInvestmentWithdrawRequest(
   }
 }
 
-export const getWithdrawRequestsQuerySchema = z.object({
+const WITHDRAWAL_STATUSES = ["requested", "available", "completed", "cancelled"] as const;
+
+const getWithdrawRequestsQuerySchema = z.object({
   limit: z
     .string()
     .optional()
     .transform((v) => (v ? parseInt(v, 10) : 20))
     .pipe(z.number().int().min(1).max(100)),
-  cursor: z.string().optional(), // last request id from previous page
+  cursor: z.string().optional(),
+  status: z.enum(WITHDRAWAL_STATUSES).optional(),
 });
 
 /**
- * GET /v1/investment/withdraw/requests?limit=20&cursor=<last_id>
- * List user's investment withdrawal requests with cursor-based pagination.
+ * GET /v1/investment/withdraw/requests?limit=20&cursor=<last_id>&status=<status>
+ * List user's investment withdrawal requests with cursor-based pagination and optional status filter.
  * Returns { requests, next_cursor } — pass next_cursor as cursor on the next request.
  */
 export async function getInvestmentWithdrawRequests(
@@ -133,10 +136,15 @@ export async function getInvestmentWithdrawRequests(
       const msg = query.error.errors.map((x) => x.message).join("; ");
       throw new AppError(msg, 400);
     }
-    const { limit, cursor } = query.data;
+    const { limit, cursor, status } = query.data;
+
+    const where = {
+      ...(userId ? { userId } : { organizationId }),
+      ...(status ? { status } : {}),
+    };
 
     const list = await prisma.investmentWithdrawalRequest.findMany({
-      where: userId ? { userId } : { organizationId },
+      where,
       orderBy: { createdAt: "desc" },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -169,6 +177,7 @@ export async function getInvestmentWithdrawRequests(
 export async function publishInvestmentWithdrawalReady(
   userId: string | null,
   amountAcbu: number,
+  organizationId?: string | null,
 ): Promise<void> {
   const ch = getRabbitMQChannel();
   await ch.assertQueue(QUEUES.NOTIFICATIONS, { durable: true });
@@ -178,6 +187,7 @@ export async function publishInvestmentWithdrawalReady(
       JSON.stringify({
         type: "investment_withdrawal_ready",
         userId,
+        organizationId: organizationId ?? null,
         amountAcbu,
         timestamp: new Date().toISOString(),
       }),

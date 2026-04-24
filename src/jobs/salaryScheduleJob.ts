@@ -7,7 +7,7 @@ import { logger } from "../config/logger";
  */
 export async function processSalarySchedules(): Promise<void> {
   const now = new Date();
-  
+
   const dueSchedules = await prisma.salarySchedule.findMany({
     where: {
       status: "active",
@@ -25,7 +25,10 @@ export async function processSalarySchedules(): Promise<void> {
       await triggerSchedule(schedule.id);
       logger.info("Triggered salary schedule", { scheduleId: schedule.id });
     } catch (err) {
-      logger.error("Failed to trigger salary schedule", { scheduleId: schedule.id, error: err });
+      logger.error("Failed to trigger salary schedule", {
+        scheduleId: schedule.id,
+        error: err,
+      });
     }
   }
 }
@@ -35,7 +38,7 @@ export async function processSalarySchedules(): Promise<void> {
  */
 export async function startSalaryScheduleScheduler(): Promise<void> {
   const intervalMs = 60 * 1000; // Run every minute
-  
+
   setInterval(() => {
     processSalarySchedules().catch((err) => {
       logger.error("Salary schedule job error", { error: err });
