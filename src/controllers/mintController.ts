@@ -256,7 +256,16 @@ export async function depositFromBasketCurrency(
 
     // Apply deposit limits - use retail as default if no audience is set
     const audience = req.audience || "retail";
-    const amountUsdPlaceholder = amountNum; // TODO: convert via rate to USD for accurate limit
+    
+    // CRITICAL: Convert local currency amount to USD for accurate limit checking.
+    // Previously, the raw local amount was passed directly to checkDepositLimits,
+    // treating 100,000 NGN as if it were 100,000 USD.
+    // Now we fetch the current exchange rates and properly convert:
+    // 1. Get the rate: how many local currency units per 1 ACBU
+    // 2. Calculate ACBU equivalent: localAmount / localRate
+    // 3. Convert to USD: acbuAmount * acbuUsdRate
+    const amountUsd = await convertLocalToUsd(amountNum, currency);
+    
     await checkDepositLimits(
       audience,
       amountUsdPlaceholder,
