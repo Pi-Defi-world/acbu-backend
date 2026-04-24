@@ -41,6 +41,21 @@ router.get("/health", (_req, res) => {
   });
 });
 
+// Changelog / version history — lists current and past API versions with status
+router.get("/changelog", (_req, res) => {
+  res.json({
+    currentVersion: config.apiVersion,
+    versions: [
+      {
+        version: "v1",
+        status: "current",
+        releasedAt: "2024-01-01",
+        description: "Initial public release of the ACBU API.",
+      },
+    ],
+  });
+});
+
 // Kubernetes readiness check — probes all critical dependencies; returns 503 if any are down
 // Use this endpoint for K8s readinessProbe configurations
 router.get("/health/ready", deepHealthCheck);

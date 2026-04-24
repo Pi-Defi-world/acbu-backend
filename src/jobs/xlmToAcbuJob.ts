@@ -64,18 +64,27 @@ export async function processXlmToAcbu(
     usdcAmount = xlmNum * rate;
   }
 
-  const swap = await prisma.onRampSwap.findUnique({
-    where: { id: onRampSwapId },
+  // Atomically claim the swap: only one worker wins when status=pending_convert.
+  // updateMany returns { count: 0 } if another worker already transitioned it.
+  const claimed = await prisma.onRampSwap.updateMany({
+    where: { id: onRampSwapId, status: "pending_convert" },
+    data: { status: "processing" },
   });
-  if (!swap || swap.status !== "pending_convert") {
-    logger.warn("OnRampSwap not found or not pending", { onRampSwapId });
+  if (claimed.count === 0) {
+    logger.warn(
+      "OnRampSwap not found, not pending, or already claimed by another worker",
+      { onRampSwapId },
+    );
     return;
   }
 
-  await prisma.onRampSwap.update({
+  const swap = await prisma.onRampSwap.findUnique({
     where: { id: onRampSwapId },
-    data: { status: "processing" },
   });
+  if (!swap) {
+    logger.error("OnRampSwap disappeared after atomic claim", { onRampSwapId });
+    return;
+  }
 
   try {
     const { transactionId, acbuAmount } = await mintFromUsdcInternal(

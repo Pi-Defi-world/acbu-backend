@@ -70,6 +70,7 @@ export function verifyChallengeToken(token: string): ChallengePayload {
     const decoded = jwt.verify(token, secret, {
       audience: CHALLENGE_AUDIENCE,
       issuer: CHALLENGE_ISSUER,
+      clockTolerance: config.jwtClockToleranceSeconds,
     }) as ChallengePayload;
 
     // Additional explicit checks
