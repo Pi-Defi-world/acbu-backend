@@ -72,7 +72,7 @@ export function requireMinTier(minTier: UserTier) {
   return (req: AuthRequest, _res: Response, next: NextFunction): void => {
     const tier = req.userTier;
     if (tier === undefined) {
-      next();
+      next(new AppError("Insufficient tier. Required at least: " + minTier, 403));
       return;
     }
     const tierIdx = TIER_ORDER.indexOf(tier);
