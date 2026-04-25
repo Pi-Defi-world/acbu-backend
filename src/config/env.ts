@@ -18,6 +18,17 @@ const envSchema = z.object({
   API_KEY_SALT: z.string().default(""),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
+  // B-058: 64-char hex key (32 bytes) for AES-256-GCM PII field encryption.
+  // Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  PII_ENCRYPTION_KEY: z
+    .string()
+    .length(64, "PII_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)")
+    .regex(/^[0-9a-fA-F]+$/, "PII_ENCRYPTION_KEY must be a hex string")
+    .optional(),
+  // B-063: OpenAI integration config.
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_ORG_MONTHLY_BUDGET_USD: z.coerce.number().default(50),
+  OPENAI_MAX_TOKENS_PER_REQUEST: z.coerce.number().default(2000),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -395,5 +406,15 @@ export const config = {
      * Must be set in production.
      */
     scanWebhookSecret: process.env.S3_SCAN_WEBHOOK_SECRET || "",
+  },
+
+  // B-058: PII field-level encryption (AES-256-GCM)
+  piiEncryptionKey: env.PII_ENCRYPTION_KEY,
+
+  // B-063: OpenAI guardrails
+  openai: {
+    apiKey: env.OPENAI_API_KEY,
+    orgMonthlyBudgetUsd: env.OPENAI_ORG_MONTHLY_BUDGET_USD,
+    maxTokensPerRequest: env.OPENAI_MAX_TOKENS_PER_REQUEST,
   },
 };

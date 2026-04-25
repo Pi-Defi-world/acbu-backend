@@ -44,6 +44,21 @@ Edit `.env` and configure:
 - JWT secrets
 - Other service configurations
 
+### Database URL Matrix
+
+Two separate environment variables serve distinct purposes — using the wrong one for the wrong purpose causes silent failures or boot errors.
+
+| Variable | Protocol | Used by | Must NOT be used for |
+|---|---|---|---|
+| `DATABASE_URL` | `postgresql://` or `postgres://` | `prisma migrate` (schema migrations) | Runtime app server; Prisma Accelerate |
+| `PRISMA_ACCELERATE_URL` | `prisma://` or `prisma+postgres://` | App server at runtime (connection pooling, caching) | Migrations (`prisma migrate` will fail with this URL) |
+
+**Rules:**
+- `DATABASE_URL` must always be a **direct** PostgreSQL connection string. The server asserts this at boot and will refuse to start if it detects a `prisma://` protocol here.
+- `PRISMA_ACCELERATE_URL` is optional. When set, the app uses it for all runtime queries. When absent, the app falls back to `DATABASE_URL` directly (suitable for local dev).
+- Never run `pnpm prisma:migrate` pointing at `PRISMA_ACCELERATE_URL`. Always run migrations against the direct `DATABASE_URL`.
+- The boot log prints which URL type is active: `Runtime connection: Prisma Accelerate (pooled)` or `Runtime connection: direct PostgreSQL`.
+
 ### 3. Message queue and optional local services
 
 The app uses **Prisma Accelerate** and **MongoDB Atlas**; it does not require local PostgreSQL or MongoDB. You need a RabbitMQ instance (e.g. from Docker or a managed provider).
