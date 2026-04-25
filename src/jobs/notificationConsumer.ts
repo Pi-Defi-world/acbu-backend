@@ -76,8 +76,10 @@ async function processNotification(
   }
   if (type === "investment_withdrawal_ready") {
     const userId = payload.userId as string | null;
+    const organizationId = payload.organizationId as string | null;
     const amountAcbu = (payload.amountAcbu as number) ?? 0;
     const body = renderInvestmentWithdrawalReadyTemplate(amountAcbu);
+
     if (userId) {
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -90,6 +92,22 @@ async function processNotification(
           body,
         );
       if (user?.phoneE164) await sendSms(user.phoneE164, body);
+    }
+
+    if (organizationId) {
+      const orgUsers = await prisma.user.findMany({
+        where: { organizationId },
+        select: { email: true, phoneE164: true },
+      });
+      for (const user of orgUsers) {
+        if (user.email)
+          await sendEmail(
+            user.email,
+            "Organization investment withdrawal is ready",
+            body,
+          );
+        if (user.phoneE164) await sendSms(user.phoneE164, body);
+      }
     }
     return;
   }

@@ -15,10 +15,11 @@ function setFiatWebhookDeprecationHeaders(res: Response): void {
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import { config } from "../config/env";
-import { logger } from "../config/logger";
+import { logger, logFinancialEvent } from "../config/logger";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 import { reconcileBillsWebhook } from "../services/bills";
+import type { FinancialEventStatus } from "../types/logging";
 
 export function verifyFlutterwaveSignature(
   req: Request & { rawBody?: Buffer },
@@ -140,6 +141,30 @@ export async function handlePaystackWebhook(
       note: DEPRECATED_FIAT_WEBHOOK_NOTE,
     });
 
+    const paystackStatusMap: Record<string, FinancialEventStatus> = {
+      success: "success",
+      failed: "failed",
+      reversed: "reversed",
+    };
+    const paystackFinancialStatus: FinancialEventStatus =
+      paystackStatusMap[data.status ?? ""] ?? "pending";
+    const paystackCorrelationId =
+      (req.headers["x-request-id"] as string | undefined) ??
+      crypto.randomUUID();
+
+    logFinancialEvent({
+      event: "webhook.received",
+      provider: "paystack",
+      status: paystackFinancialStatus,
+      transactionId: data.reference ?? paystackCorrelationId,
+      userId: paystackCorrelationId,
+      accountId: paystackCorrelationId,
+      idempotencyKey: data.reference ?? paystackCorrelationId,
+      correlationId: paystackCorrelationId,
+      amount: data.amount ?? 0,
+      currency: data.currency ?? "NGN",
+    });
+
     await prisma.webhook.create({
       data: {
         eventType: `paystack:${String(eventType)}`,
@@ -194,6 +219,32 @@ export async function handleFlutterwaveWebhook(
       tx_ref: data.tx_ref,
       status: data.status,
       note: DEPRECATED_FIAT_WEBHOOK_NOTE,
+    });
+
+    const flwStatusMap: Record<string, FinancialEventStatus> = {
+      successful: "success",
+      success: "success",
+      failed: "failed",
+      reversed: "reversed",
+    };
+    const flwFinancialStatus: FinancialEventStatus =
+      flwStatusMap[data.status ?? ""] ?? "pending";
+    const flwCorrelationId =
+      (req.headers["x-request-id"] as string | undefined) ??
+      crypto.randomUUID();
+
+    logFinancialEvent({
+      event: "webhook.received",
+      provider: "flutterwave",
+      status: flwFinancialStatus,
+      transactionId: data.tx_ref ?? flwCorrelationId,
+      userId: flwCorrelationId,
+      accountId: flwCorrelationId,
+      idempotencyKey: data.tx_ref ?? flwCorrelationId,
+      correlationId: flwCorrelationId,
+      amount: data.amount ?? 0,
+      currency: data.currency ?? "NGN",
+      providerRef: data.flw_ref,
     });
 
     await prisma.webhook.create({

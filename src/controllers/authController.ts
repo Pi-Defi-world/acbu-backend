@@ -5,17 +5,17 @@ import { signin, signup, verify2fa } from "../services/auth";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 
-const signinSchema = z.object({
+export const signinSchema = z.object({
   identifier: z.string().min(1, "identifier is required"),
   passcode: z.string().min(1, "passcode is required"),
 });
 
-const signupSchema = z.object({
+export const signupSchema = z.object({
   username: z.string().min(1, "username is required").max(64),
   passcode: z.string().min(4, "passcode must be at least 4 characters").max(64),
 });
 
-const verify2faSchema = z.object({
+export const verify2faSchema = z.object({
   challenge_token: z.string().min(1, "challenge_token is required"),
   code: z.string().min(1, "code is required"),
 });

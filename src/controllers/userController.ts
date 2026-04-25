@@ -40,7 +40,7 @@ function normalizeUsername(s: string): string {
   return s.trim().toLowerCase().replace(/\s/g, "");
 }
 
-const patchMeSchema = z.object({
+export const patchMeSchema = z.object({
   username: z.string().min(1).max(64).transform(normalizeUsername).optional(),
   email: z
     .string()
@@ -293,7 +293,7 @@ export async function deleteWallet(
   }
 }
 
-const addContactSchema = z.object({
+export const addContactSchema = z.object({
   contact_user_id: z.string().uuid(),
 });
 
@@ -395,7 +395,7 @@ export async function deleteContact(
   }
 }
 
-const addGuardianSchema = z
+export const addGuardianSchema = z
   .object({
     guardian_user_id: z.string().uuid().optional(),
     guardian_email: z.string().email().max(255).optional(),
@@ -566,7 +566,7 @@ export async function deleteMe(
   }
 }
 
-const walletConfirmSchema = z.object({
+export const walletConfirmSchema = z.object({
   encryption_method: z.enum(["passcode"]),
   passcode: z
     .string()

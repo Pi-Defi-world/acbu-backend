@@ -120,19 +120,28 @@ export class CacheService {
   }
 
   /**
-   * Increment a value in cache atomically
+   * Increment a field in cache atomically with an optional cap.
+   * If max is provided, the increment only applies when the current
+   * value is below max. Returns null when the cap is reached.
    */
   async increment<T>(
     key: string,
     field: string,
     amount: number,
-    options: { ttl: number; setOnInsert?: Record<string, any> },
+    options: { ttl: number; max?: number; setOnInsert?: Record<string, any> },
   ): Promise<T | null> {
     try {
       const db = getMongoDB();
       const collection = db.collection(CACHE_COLLECTION);
       const ttl = options.ttl || DEFAULT_TTL;
       const expiresAt = new Date(Date.now() + ttl * 1000);
+
+      // If max is set, only match documents where field is below the cap.
+      // MongoDB won't touch the document if the condition fails — atomic rejection.
+      const filter: Record<string, any> = { key };
+      if (options.max !== undefined) {
+        filter[`value.${field}`] = { $lt: options.max };
+      }
 
       const update: any = {
         $inc: { [`value.${field}`]: amount },
@@ -146,12 +155,13 @@ export class CacheService {
         });
       }
 
-      const result = await collection.findOneAndUpdate({ key }, update, {
+      const result = await collection.findOneAndUpdate(filter, update, {
         upsert: true,
         returnDocument: "after",
       });
 
-      return result?.value as T;
+      if (!result) return null;
+      return result.value as T;
     } catch (error) {
       logger.error("Cache increment error", { key, error });
       return null;

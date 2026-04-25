@@ -135,7 +135,8 @@ export const createRateLimiter = (
 };
 
 /**
- * Rate limiter for API key-based requests with circuit breaker fallback
+ * Rate limiter for API key-based requests with circuit breaker fallback.
+ * Uses atomic MongoDB $inc with a cap to prevent race conditions.
  */
 export const apiKeyRateLimiter = async (
   req: AuthRequest,
@@ -163,25 +164,20 @@ export const apiKeyRateLimiter = async (
   }
 
   try {
+    // Atomic increment with cap — MongoDB only increments when count < max.
+    // Returns null when the cap is reached, no separate count check needed.
     const cached = await cacheService.increment<{ count: number }>(
       cacheKey,
       "count",
       1,
-      { ttl: windowMs / 1000 },
+      { ttl: windowMs / 1000, max: maxRequests },
     );
 
     // Success - record for circuit breaker
     circuitBreaker.recordSuccess();
 
-    if (!cached) {
-      // Cache returned null but didn't throw - use fallback
-      fallbackMetrics.fallbackActivations++;
-      logger.warn("Cache returned null, using fallback", { cacheKey });
-      enforceFallbackLimit(req, res, next, FALLBACK_MAX_REQUESTS_PER_IP);
-      return;
-    }
-
-    if (cached.count > maxRequests) {
+    if (cached === null) {
+      // null means cap was hit — return 429 directly
       res.status(429).json({
         error: {
           code: "RATE_LIMIT_EXCEEDED",
@@ -235,4 +231,4 @@ export const injectFallbackState = (
 };
 
 // Export for testing
-export { circuitBreaker, fallbackMetrics, FALLBACK_MAX_REQUESTS_PER_IP };
+export { circuitBreaker, fallbackMetrics, FALLBACK_MAX_REQUESTS_PER_IP, fallbackRateLimitStore };

@@ -4,7 +4,7 @@ import { AuthRequest } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import * as salaryService from "../services/salary/salaryService";
 
-const salaryItemSchema = z.object({
+export const salaryItemSchema = z.object({
   recipient_id: z.string().uuid().optional(),
   recipient_address: z.string().min(56).max(56),
   amount: z.string().refine((s) => !isNaN(Number(s)) && Number(s) > 0, {
@@ -12,7 +12,7 @@ const salaryItemSchema = z.object({
   }),
 });
 
-const postSalaryDisburseSchema = z.object({
+export const postSalaryDisburseSchema = z.object({
   organization_id: z.string().uuid().optional(),
   total_amount: z.string().optional(),
   currency: z.string().default("ACBU"),
@@ -105,7 +105,7 @@ export async function getSalaryBatches(
   }
 }
 
-const postSalaryScheduleSchema = z.object({
+export const postSalaryScheduleSchema = z.object({
   organization_id: z.string().uuid().optional(),
   name: z.string().min(1, "Name is required"),
   cron: z.string().min(1, "Cron expression is required"),

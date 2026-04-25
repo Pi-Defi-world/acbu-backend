@@ -189,6 +189,52 @@ docker-compose down
 docker-compose logs -f
 ```
 
+## Health Check Endpoints
+
+The API provides three health check endpoints with different purposes:
+
+### `/health` - Shallow Liveness Check
+- **Path:** `GET /api/v1/health`
+- **Status:** Always returns `200 OK`
+- **Purpose:** For load balancers to verify the process is alive
+- **Response:** `{ status: "ok", timestamp, uptime, version }`
+- **Note:** Does not probe dependencies; fast and reliable
+
+### `/health/ready` - Kubernetes Readiness Probe
+- **Path:** `GET /api/v1/health/ready`
+- **Status:** Returns `200` if all dependencies up, `503` if any down
+- **Purpose:** For Kubernetes readinessProbe configurations
+- **Probes:** PostgreSQL, MongoDB, RabbitMQ
+- **Recommendation:** Use this endpoint in K8s deployment readinessProbe
+
+### `/health/deep` - Deep Health Check
+- **Path:** `GET /api/v1/health/deep`
+- **Status:** Returns `200` if all dependencies up, `503` if any down
+- **Purpose:** Detailed dependency status for monitoring dashboards
+- **Response:** Full report with status of each dependency
+
+### Kubernetes Configuration Example
+
+```yaml
+readinessProbe:
+  httpGet:
+    path: /api/v1/health/ready
+    port: 5000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: 5000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+```
+
 ## CI/CD
 
 GitHub Actions CI pipeline runs on:

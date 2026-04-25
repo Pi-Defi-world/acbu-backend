@@ -14,6 +14,8 @@ export interface CreateTransferOptions {
   getSenderSigningKey?: (userId: string) => Promise<string | null>;
   /** When provided, transfer is recorded as already submitted by the client. */
   submittedBlockchainTxHash?: string;
+  /** Trace/request ID for distributed tracing. Generated via crypto.randomUUID() if not supplied. */
+  correlationId?: string;
 }
 
 export interface CreateTransferResult {

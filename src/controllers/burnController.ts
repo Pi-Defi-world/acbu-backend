@@ -66,7 +66,7 @@ const recipientAccountSchema = z.object({
   account_name: z.string().min(1),
 });
 
-const bodySchema = z.object({
+export const bodySchema = z.object({
   acbu_amount: z
     .string()
     .min(1)

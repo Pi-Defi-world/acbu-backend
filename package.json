@@ -91,6 +91,7 @@
     "prettier": "^3.2.4",
     "supertest": "^7.2.2",
     "ts-jest": "^29.1.2",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "zod-to-json-schema": "^3.25.2"
   }
 }

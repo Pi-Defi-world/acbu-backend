@@ -105,12 +105,22 @@ jest.mock("../config/env", () => ({
 
 jest.mock("../config/logger", () => ({
   logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+  logFinancialEvent: jest.fn(),
 }));
 
 jest.mock("../config/database", () => ({
   prisma: {
     webhook: { create: jest.fn() },
   },
+}));
+
+jest.mock("../services/limits/limitsService", () => ({
+  checkWithdrawalLimits: jest.fn(),
+  isCurrencyWithdrawalPaused: jest.fn().mockResolvedValue(false),
+}));
+
+jest.mock("../services/bills", () => ({
+  reconcileBillsWebhook: jest.fn(),
 }));
 
 import {
@@ -265,6 +275,7 @@ describe("webhookController", () => {
     it("persists webhook record with paystack: prefix and returns 200", async () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({ id: "wh-1" });
       const req = {
+        headers: {},
         body: {
           event: "charge.success",
           data: { reference: "ref-1", status: "success" },
@@ -292,7 +303,7 @@ describe("webhookController", () => {
     it("uses 'unknown' eventType when event field is absent", async () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({});
       await handlePaystackWebhook(
-        { body: {} } as Request,
+        { headers: {}, body: {} } as Request,
         makeRes(),
         makeNext(),
       );
@@ -309,7 +320,7 @@ describe("webhookController", () => {
       );
       const next = makeNext();
       await handlePaystackWebhook(
-        { body: { event: "charge.success" } } as Request,
+        { headers: {}, body: { event: "charge.success" } } as Request,
         makeRes(),
         next,
       );
@@ -323,6 +334,7 @@ describe("webhookController", () => {
     it("persists webhook record and returns 200", async () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({ id: "wh-2" });
       const req = {
+        headers: {},
         body: {
           event: "charge.completed",
           data: { tx_ref: "ref-2", status: "successful" },
@@ -350,7 +362,7 @@ describe("webhookController", () => {
     it("falls back to payload.type when event field is absent", async () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({});
       await handleFlutterwaveWebhook(
-        { body: { type: "CARD_TRANSACTION", data: {} } } as Request,
+        { headers: {}, body: { type: "CARD_TRANSACTION", data: {} } } as Request,
         makeRes(),
         makeNext(),
       );
@@ -366,7 +378,7 @@ describe("webhookController", () => {
         new Error("DB error"),
       );
       const next = makeNext();
-      await handleFlutterwaveWebhook({ body: {} } as Request, makeRes(), next);
+      await handleFlutterwaveWebhook({ headers: {}, body: {} } as Request, makeRes(), next);
       expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
   });

@@ -12,7 +12,7 @@ import { AppError } from "../middleware/errorHandler";
 import { isValidStellarAddress } from "../utils/stellar";
 import { assertUserWalletAddress } from "../services/wallet/walletService";
 
-const bodySchema = z.object({
+export const bodySchema = z.object({
   stellar_address: z
     .string()
     .length(56)
@@ -74,6 +74,22 @@ export async function registerOnRampSwap(
           usdc_amount != null ? new Decimal(Number(usdc_amount)) : null,
         status: "pending_convert",
       },
+    });
+    const correlationId =
+      (req.headers["x-request-id"] as string | undefined) ??
+      crypto.randomUUID();
+    logFinancialEvent({
+      event: "onramp.registered",
+      status: "pending",
+      transactionId: swap.id,
+      userId,
+      accountId: userWalletAddress,
+      idempotencyKey: swap.id,
+      amount: Math.round(xlmNum * 1e7), // XLM in stroops (7 decimal places)
+      currency: "XLM",
+      correlationId,
+      timestamp: new Date().toISOString(),
+      environment: (process.env.NODE_ENV ?? "development") as "production" | "staging" | "development",
     });
     await enqueueXlmToAcbu({
       onRampSwapId: swap.id,

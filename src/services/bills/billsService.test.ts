@@ -54,6 +54,7 @@ jest.mock("../../config/logger", () => ({
     warn: jest.fn(),
     debug: jest.fn(),
   },
+  logFinancialEvent: jest.fn(),
 }));
 
 import { prisma } from "../../config/database";

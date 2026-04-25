@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "../config/database";
 import { AuthRequest } from "../middleware/auth";
 
-const listTransactionsQuerySchema = z.object({
+export const listTransactionsQuerySchema = z.object({
   limit: z
     .string()
     .optional()

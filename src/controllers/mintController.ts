@@ -34,7 +34,7 @@ const MINT_FEE_BPS = 30; // 0.3%
 // DECIMALS_7 is kept for reference but replaced by decimalToContractNumber
 const DECIMALS_7 = 1e7;
 
-const usdcBodySchema = z.object({
+export const usdcBodySchema = z.object({
   usdc_amount: z
     .string()
     .min(1)
@@ -203,7 +203,7 @@ export async function mintFromUsdcInternal(
   }
 }
 
-const depositBodySchema = z.object({
+export const depositBodySchema = z.object({
   currency: z.string().length(3).toUpperCase(),
   amount: z
     .string()
