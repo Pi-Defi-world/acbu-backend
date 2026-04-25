@@ -158,45 +158,25 @@ export async function burnAcbu(
       req.apiKey?.organizationId ?? null,
     );
 
-    const createData = {
-      userId: req.apiKey?.userId ?? undefined,
-      organizationId: req.apiKey?.organizationId ?? undefined,
-      type: "burn" as const,
-      status: "pending" as const,
-      acbuAmountBurned: new Decimal(acbuDecimal),
-      localCurrency: currency,
-      localAmount: new Decimal(localDecimal),
-      recipientAccount: recipient_account as object,
-      fee: new Decimal(feeAcbuDecimal),
-      rateSnapshot: {
-        acbu_ngn: null,
-        timestamp: new Date().toISOString(),
+    const tx = await prisma.transaction.create({
+      data: {
+        userId: req.apiKey?.userId ?? undefined,
+        organizationId: req.apiKey?.organizationId ?? undefined,
+        type: "burn",
+        status: "pending",
+        acbuAmountBurned: new Decimal(acbuNum),
+        localCurrency: currency,
+        localAmount: new Decimal(localNum),
+        recipientAccount: recipient_account as object,
+        fee: new Decimal(feeAcbu),
+        rateSnapshot: {
+          acbu_ngn: null,
+          timestamp: new Date().toISOString(),
+        },
+        blockchainTxHash: burningEnabled && blockchain_tx_hash ? blockchain_tx_hash : undefined,
       },
-      blockchainTxHash:
-        burningEnabled && blockchain_tx_hash ? blockchain_tx_hash : undefined,
-    };
+    });
 
-    let tx: any; // Using any to avoid type issues with Prisma client
-    try {
-      tx = await prisma.transaction.create({ data: createData });
-    } catch (err: unknown) {
-      // Idempotency: if another request created the same hash concurrently, return the original record.
-      if (
-        burningEnabled &&
-        blockchain_tx_hash &&
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === "P2002"
-      ) {
-        const existing = await prisma.transaction.findFirst({
-          where: { type: "burn", blockchainTxHash: blockchain_tx_hash },
-        });
-        if (existing) {
-          respondFromExistingBurnTx(res, existing, blockchain_tx_hash);
-          return;
-        }
-      }
-      throw err;
-    }
     await logAudit({
       eventType: "transaction",
       entityType: "transaction",
