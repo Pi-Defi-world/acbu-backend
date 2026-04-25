@@ -76,21 +76,32 @@ export class CacheService {
   }
 
   /**
-   * Delete multiple keys containing a specific substring pattern.
-   * Input is automatically escaped to prevent ReDoS (Regular Expression Denial of Service).
+   * Safely delete cache keys by literal prefix pattern.
+   * Fixes B-027: prevent regex-based ReDoS via escaping + length cap.
    */
   async deletePattern(pattern: string): Promise<void> {
+    const MAX_REDOS_LENGTH = 128;
+    if (
+      !pattern ||
+      typeof pattern !== "string" ||
+      pattern.length > MAX_REDOS_LENGTH
+    ) {
+      logger.warn("Cache deletePattern: Rejected invalid or over-length pattern.");
+      return;
+    }
+
+    // Escape regex metacharacters so user input is treated as a literal string.
+    const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     try {
+      // Anchored prefix regex limits search scope and avoids catastrophic patterns.
+      const safeRegex = new RegExp(`^${escapedPattern}`);
+
       const db = getMongoDB();
       const collection = db.collection(CACHE_COLLECTION);
-
-      // Sanitize input to prevent ReDoS (Regular Expression Denial of Service)
-      const sanitizedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regex = new RegExp(sanitizedPattern);
-
-      await collection.deleteMany({ key: { $regex: regex } });
+      await collection.deleteMany({ key: { $regex: safeRegex } });
     } catch (error) {
-      logger.error("Cache delete pattern error", { pattern, error });
+      logger.error("Cache deletePattern failed safely", { pattern, error });
     }
   }
 

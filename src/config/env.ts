@@ -49,6 +49,7 @@ export const config = {
   mongodbUri: env.MONGODB_URI,
   rabbitmqUrl: env.RABBITMQ_URL,
   jwtSecret: env.JWT_SECRET,
+  challengeTokenSecret: process.env.CHALLENGE_TOKEN_SECRET || 'default_secret',
   jwtExpiresIn: env.JWT_EXPIRES_IN,
   jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
   challengeTokenSecret: env.CHALLENGE_TOKEN_SECRET || env.JWT_SECRET,
@@ -256,10 +257,12 @@ export const config = {
       | "ses"
       | "log",
     emailFrom:
-      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.example.com",
+      process.env.NOTIFICATION_FROM_EMAIL || "noreply@acbu.io",
     sendgridApiKey: process.env.SENDGRID_API_KEY || "",
     sesRegion:
       process.env.AWS_REGION || process.env.AWS_SES_REGION || "us-east-1",
+    sesAccessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    sesSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
     smsProvider: (process.env.NOTIFICATION_SMS_PROVIDER || "log") as
       | "twilio"
       | "africas_talking"
@@ -345,5 +348,5 @@ export const config = {
   },
 
   // CORS
-  corsOrigin: process.env.CORS_ORIGIN?.split(",") || ["*"],
+  corsOrigin: process.env.CORS_ORIGIN?.split(",") || [],
 };

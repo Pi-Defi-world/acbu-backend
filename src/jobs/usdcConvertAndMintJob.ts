@@ -19,6 +19,7 @@ import { swapUsdcToXlm } from "../services/stellar/usdcSwap";
 import { Decimal } from "@prisma/client/runtime/library";
 
 const QUEUE = QUEUES.USDC_CONVERT_AND_MINT;
+const MAX_RETRIES = 5;
 
 export interface UsdcConvertAndMintPayload {
   onRampSwapId: string;
@@ -32,6 +33,10 @@ export async function startUsdcConvertAndMintConsumer(): Promise<void> {
     QUEUE,
     async (msg: ConsumeMessage | null) => {
       if (!msg) return;
+
+      const headers = msg.properties.headers ?? {};
+      const retries = typeof headers["x-retries"] === "number" ? headers["x-retries"] : 0;
+
       try {
         const body = JSON.parse(
           msg.content.toString(),
@@ -40,7 +45,35 @@ export async function startUsdcConvertAndMintConsumer(): Promise<void> {
         ch.ack(msg);
       } catch (e) {
         logger.error("USDC convert-and-mint job failed", { error: e });
-        ch.nack(msg, false, true);
+
+        // Safely extract onRampSwapId for logging
+        let onRampSwapId: string | null = null;
+        try {
+          const payload = JSON.parse(msg.content.toString()) as UsdcConvertAndMintPayload;
+          onRampSwapId = payload.onRampSwapId;
+        } catch {
+          // ignore parse error, already logged
+        }
+
+        if (retries >= MAX_RETRIES) {
+          logger.error("USDC convert-and-mint job failed permanently, sending to DLQ", {
+            onRampSwapId,
+            retries,
+          });
+          // send to DLQ by nacking without requeue
+          ch.nack(msg, false, false);
+          return;
+        }
+
+        // retry with incremented header
+        ch.sendToQueue(QUEUE, msg.content, {
+          persistent: true,
+          headers: {
+            ...headers,
+            "x-retries": retries + 1,
+          },
+        });
+        ch.ack(msg);
       }
     },
     { noAck: false },

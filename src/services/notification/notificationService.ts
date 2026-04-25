@@ -1,6 +1,15 @@
 /**
  * NotificationService: email (SendGrid/SES) and SMS (Twilio/AfricasTalking).
  * When provider is 'log', only logs; when API keys are set, sends via provider.
+ *
+ * --- DOMAIN AUTHENTICATION REQUIREMENTS (DNS) ---
+ * To ensure deliverability and avoid spam filters, ensure the following records
+ * are set for the verified domain (e.g., acbu.io):
+ *
+ * 1. SPF: v=spf1 include:sendgrid.net include:amazonses.com ~all
+ * 2. DKIM: Follow provider-specific instructions to add CNAME/TXT records.
+ * 3. DMARC: v=DMARC1; p=quarantine; adkim=s; aspf=s;
+ * 4. Verified "From" Address: Must match the authenticated domain.
  */
 import axios from "axios";
 import { config } from "../../config/env";
@@ -47,11 +56,23 @@ export async function sendEmail(
     }
     return;
   }
-  if (cfg.emailProvider === "ses") {
-    logger.warn("SES provider not implemented; logging only", {
-      to: to ? "***" : undefined,
-      subject,
-    });
+  if (cfg.emailProvider === "ses" && cfg.sesAccessKeyId && cfg.sesSecretAccessKey) {
+    try {
+      // AWS SigV4 signing is complex to implement manually. 
+      // For reliability and production readiness, we recommend installing @aws-sdk/client-ses.
+      // Example command: pnpm add @aws-sdk/client-ses
+      logger.warn("SES provider configured but @aws-sdk/client-ses is recommended for production SigV4 signing.", {
+        to: to ? "***" : undefined,
+      });
+
+      // Placeholder for actual SDK call or signed request
+      throw new Error("SES provider requires @aws-sdk/client-ses for secure communication.");
+    } catch (e) {
+      logger.error("SES send failed (check credentials and domain verification)", {
+        error: e,
+      });
+      throw e;
+    }
     return;
   }
   logger.info("NotificationService (email log)", {
