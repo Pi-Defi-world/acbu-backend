@@ -231,7 +231,7 @@ export async function triggerSchedule(scheduleId: string): Promise<void> {
 
   if (!schedule || schedule.status !== "active") return;
 
-  const amountConfig = schedule.amountConfig as any[];
+  const amountConfig = schedule.amountConfig as unknown as any[]; // Temporary fix until types are perfect
   const totalAmount = amountConfig.reduce(
     (acc, item) => acc.add(new Decimal(item.amount)),
     new Decimal(0),

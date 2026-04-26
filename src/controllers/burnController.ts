@@ -41,7 +41,7 @@ function toNullableStringDecimal(v: unknown): string | null {
 /** Formats an idempotent response using the existing burn transaction record. */
 function respondFromExistingBurnTx(
   res: Response,
-  tx: any, // Using any to avoid type issues with Prisma client
+  tx: Prisma.TransactionGetPayload<{}>, // Using proper payload type
   blockchainTxHash: string,
 ): void {
   res.status(200).json({
@@ -162,9 +162,9 @@ export async function burnAcbu(
         status: "pending",
         acbuAmountBurned: new Decimal(acbuNum),
         localCurrency: currency,
-        localAmount: new Decimal(localNum),
+        localAmount: localDecimal,
         recipientAccount: recipient_account as object,
-        fee: new Decimal(feeAcbu),
+        fee: feeAcbuDecimal,
         rateSnapshot: {
           acbu_ngn: null,
           timestamp: new Date().toISOString(),

@@ -553,7 +553,7 @@ export async function deleteMe(
     const userId = req.apiKey?.userId;
     if (!userId) throw new AppError("User-scoped API key required", 401);
 
-    await prisma.$transaction(async (tx: any) => {
+    await prisma.$transaction(async (tx) => {
       // 1. Delete associated sensitive records
       await tx.apiKey.deleteMany({ where: { userId } });
       await tx.otpChallenge.deleteMany({ where: { userId } });

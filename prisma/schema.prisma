@@ -64,7 +64,6 @@ model User {
   contactOf              UserContact[]    @relation("ContactOf")
   contacts               UserContact[]    @relation("UserContacts")
   passkeys               UserPasskey[]
-  userDevices            UserDevice[]
   organization           Organization?    @relation("UserOrganization", fields: [organizationId], references: [id])
   salaryBatches          SalaryBatch[]
   salarySchedules        SalarySchedule[]
@@ -242,15 +241,19 @@ model RebalancingEvent {
 }
 
 model AuditTrail {
-  id          String   @id @default(uuid()) @db.Uuid
-  eventType   String   @map("event_type") @db.VarChar(50)
-  entityType  String?  @map("entity_type") @db.VarChar(50)
-  entityId    String?  @map("entity_id") @db.Uuid
-  action      String   @db.VarChar(50)
-  oldValue    Json?    @map("old_value")
-  newValue    Json?    @map("new_value")
-  performedBy String?  @map("performed_by") @db.Uuid
-  timestamp   DateTime @default(now()) @db.Timestamp(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  eventType      String   @map("event_type") @db.VarChar(50)
+  entityType     String?  @map("entity_type") @db.VarChar(50)
+  entityId       String?  @map("entity_id") @db.Uuid
+  action         String   @db.VarChar(50)
+  oldValue       Json?    @map("old_value")
+  newValue       Json?    @map("new_value")
+  performedBy    String?  @map("performed_by") @db.Uuid
+  actorType      String?  @map("actor_type") @db.VarChar(20)
+  keyType        String?  @map("key_type") @db.VarChar(32)
+  organizationId String?  @map("organization_id") @db.Uuid
+  reason         String?  @db.VarChar(255)
+  timestamp      DateTime @default(now()) @db.Timestamp(6)
 
   @@index([eventType], map: "idx_audit_trail_event_type")
   @@index([entityType], map: "idx_audit_trail_entity_type")
@@ -550,19 +553,61 @@ model RecoveryAttempt {
 }
 
 model InvestmentStrategy {
-  id                   String   @id @default(uuid()) @db.Uuid
-  name                 String   @unique @db.VarChar(100)
-  description          String?  @db.Text
-  status               String   @default("active") @db.VarChar(20) // 'active' | 'paused' | 'deprecated'
-  policyLimitUsd       Decimal  @map("policy_limit_usd") @db.Decimal(20, 2)
-  deployedNotionalUsd  Decimal  @default(0) @map("deployed_notional_usd") @db.Decimal(20, 2)
-  targetApyBps         Int?     @map("target_apy_bps")
-  riskTier             String   @default("medium") @map("risk_tier") @db.VarChar(20) // 'low' | 'medium' | 'high'
-  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  id                  String   @id @default(uuid()) @db.Uuid
+  name                String   @unique @db.VarChar(100)
+  description         String?  @db.Text
+  status              String   @default("active") @db.VarChar(20) // 'active' | 'paused' | 'deprecated'
+  policyLimitUsd      Decimal  @map("policy_limit_usd") @db.Decimal(20, 2)
+  deployedNotionalUsd Decimal  @default(0) @map("deployed_notional_usd") @db.Decimal(20, 2)
+  targetApyBps        Int?     @map("target_apy_bps")
+  riskTier            String   @default("medium") @map("risk_tier") @db.VarChar(20) // 'low' | 'medium' | 'high'
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@index([status], map: "idx_investment_strategies_status")
   @@index([riskTier], map: "idx_investment_strategies_risk_tier")
   @@map("investment_strategies")
 }
 
+model SalaryItem {
+  id               String   @id @default(uuid()) @db.Uuid
+  batchId          String   @map("batch_id") @db.Uuid
+  recipientId      String?  @map("recipient_id") @db.Uuid
+  recipientAddress String   @map("recipient_address") @db.VarChar(56)
+  amount           Decimal  @db.Decimal(20, 8)
+  status           String   @default("pending") @db.VarChar(20)
+  transactionId    String?  @unique @map("transaction_id") @db.Uuid
+  errorMessage     String?  @map("error_message") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  batch       SalaryBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([batchId], map: "idx_salary_item_batch_id")
+  @@index([status], map: "idx_salary_item_status")
+  @@map("salary_items")
+}
+
+model SalarySchedule {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  name           String    @db.VarChar(100)
+  cron           String    @db.VarChar(100)
+  amountConfig   Json      @map("amount_config")
+  currency       String    @default("ACBU") @db.VarChar(10)
+  status         String    @default("active") @db.VarChar(20)
+  lastRunAt      DateTime? @map("last_run_at") @db.Timestamp(6)
+  nextRunAt      DateTime? @map("next_run_at") @db.Timestamp(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+
+  @@index([organizationId], map: "idx_salary_schedule_org_id")
+  @@index([status], map: "idx_salary_schedule_status")
+  @@index([nextRunAt], map: "idx_salary_schedule_next_run")
+  @@map("salary_schedules")
+}

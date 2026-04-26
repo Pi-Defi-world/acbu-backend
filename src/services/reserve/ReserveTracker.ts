@@ -451,42 +451,7 @@ export class ReserveTracker {
       return ledgerSupply;
     }
   }
-,
-      );
 
-      return this.getTotalAcbuSupplyFromLedger();
-    }
-
-    try {
-      const server = stellarClient.getServer();
-      const assets = await server
-        .assets()
-        .forCode(assetCode)
-        .forIssuer(issuer)
-        .call();
-
-      if (assets.records.length === 0) {
-        logger.warn(
-          "ACBU asset not found on Stellar; supply is effectively zero.",
-          {
-            assetCode,
-            issuer,
-          },
-        );
-        return 0;
-      }
-
-      // Assets response contains 'amount' which represents total circulating supply
-      const totalSupply = parseFloat((assets.records[0] as any).amount);
-      return totalSupply;
-    } catch (e) {
-      logger.error("Failed to query Stellar for ACBU total supply", {
-        error: e,
-      });
-      // We throw here because returning a stale or zero value would incorrectly trigger health alerts
-      throw new Error(`Stellar Horizon query failed for ACBU supply: ${e}`);
-    }
-  }
 
   /**
    * Get total reserve value in USD for a segment (default: transactions).

@@ -88,7 +88,7 @@ export class ReserveTrackerService {
         [],
       );
 
-      const map = ContractClient.fromScVal(result) as any;
+      const map = ContractClient.fromScVal(result);
       const out: Record<string, ReserveData> = {};
 
       // `fromScVal` returns a JS Map-like for Soroban maps in most paths.
@@ -97,7 +97,7 @@ export class ReserveTrackerService {
         map instanceof Map
           ? Array.from(map.entries())
           : typeof map === "object" && map
-            ? Object.entries(map as any)
+            ? Object.entries(map as Record<string, any>)
             : [];
 
       for (const [, v] of entries) {

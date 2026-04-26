@@ -40,7 +40,7 @@ export async function postLendingWithdraw(
     if (!lender || !amount) {
       throw new AppError("lender and amount required", 400);
     }
-    const txHash = await (acbuLendingPoolService as any).withdraw({
+    const txHash = await acbuLendingPoolService.withdraw({
       lender,
       amount: String(amount),
     });
