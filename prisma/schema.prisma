@@ -34,6 +34,8 @@ model Organization {
 model User {
   id                     String           @id @default(uuid()) @db.Uuid
   stellarAddress         String?          @unique @db.VarChar(56)
+  // B-013: stellarAddress is validated at application level and database constraint
+  // Valid addresses: 56 chars, starts with 'G', base32 encoded, not a placeholder
   kycStatus              String           @default("pending") @db.VarChar(20)
   kycVerifiedAt          DateTime?        @map("kyc_verified_at") @db.Timestamp(6)
   countryCode            String?          @map("country_code") @db.VarChar(3)
