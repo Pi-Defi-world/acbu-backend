@@ -31,6 +31,7 @@ const LIMIT_CONFIG_SCOPES = [
 
 let cachedSnapshot: LimitsSnapshot | null = null;
 let cacheExpiresAt = 0;
+let refreshPromise: Promise<LimitsSnapshot> | null = null;
 
 function readNumber(name: string, fallback: number): number {
   const value = Number(process.env[name]);
@@ -153,32 +154,36 @@ async function loadLimitsSnapshot(): Promise<LimitsSnapshot> {
 
   if (!delegate) return snapshot;
 
-  const rows = await delegate.findMany({
-    where: { scope: { in: [...LIMIT_CONFIG_SCOPES] } },
-  });
+  try {
+    const rows = await delegate.findMany({
+      where: { scope: { in: [...LIMIT_CONFIG_SCOPES] } },
+    });
 
-  for (const row of rows) {
-    if (!row.values || typeof row.values !== "object") continue;
-    const values = row.values as Record<string, unknown>;
+    for (const row of rows) {
+      if (!row.values || typeof row.values !== "object") continue;
+      const values = row.values as Record<string, unknown>;
 
-    if (row.scope === "circuit_breaker") {
-      snapshot.circuitBreaker = applyCircuitBreakerOverrides(
-        snapshot.circuitBreaker,
-        values,
-      );
-      continue;
+      if (row.scope === "circuit_breaker") {
+        snapshot.circuitBreaker = applyCircuitBreakerOverrides(
+          snapshot.circuitBreaker,
+          values,
+        );
+        continue;
+      }
+
+      if (
+        row.scope === "retail" ||
+        row.scope === "business" ||
+        row.scope === "government"
+      ) {
+        snapshot.audiences[row.scope] = applyLimitOverrides(
+          snapshot.audiences[row.scope],
+          values,
+        );
+      }
     }
-
-    if (
-      row.scope === "retail" ||
-      row.scope === "business" ||
-      row.scope === "government"
-    ) {
-      snapshot.audiences[row.scope] = applyLimitOverrides(
-        snapshot.audiences[row.scope],
-        values,
-      );
-    }
+  } catch {
+    return cachedSnapshot ?? snapshot;
   }
 
   return snapshot;
@@ -187,6 +192,7 @@ async function loadLimitsSnapshot(): Promise<LimitsSnapshot> {
 export function invalidateLimitsConfigCache(): void {
   cachedSnapshot = null;
   cacheExpiresAt = 0;
+  refreshPromise = null;
 }
 
 export async function getLimitsSnapshot(): Promise<LimitsSnapshot> {
@@ -195,7 +201,11 @@ export async function getLimitsSnapshot(): Promise<LimitsSnapshot> {
     return cachedSnapshot;
   }
 
-  cachedSnapshot = await loadLimitsSnapshot();
+  refreshPromise ??= loadLimitsSnapshot().finally(() => {
+    refreshPromise = null;
+  });
+
+  cachedSnapshot = await refreshPromise;
   cacheExpiresAt = now + cacheTtlMs();
   return cachedSnapshot;
 }
