@@ -19,8 +19,8 @@ jest.mock("../../config/limits", () => ({
     withdrawalSingleCurrencyDailyUsd: 10000,
     withdrawalSingleCurrencyMonthlyUsd: 80000,
   }),
-  CIRCUIT_BREAKER_RESERVE_WEIGHT_THRESHOLD_PCT: 10,
-  CIRCUIT_BREAKER_MIN_RESERVE_RATIO: 1.02,
+  getCircuitBreakerReserveWeightThresholdPct: jest.fn().mockResolvedValue(10),
+  getCircuitBreakerMinReserveRatio: jest.fn().mockResolvedValue(1.02),
 }));
 
 jest.mock("../reserve/ReserveTracker", () => ({

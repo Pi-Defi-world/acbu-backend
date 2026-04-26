@@ -227,6 +227,18 @@ model BasketConfig {
   @@map("basket_config")
 }
 
+/// Runtime-tunable operational limits. Values are partial JSON overrides over env/default limits.
+model LimitConfig {
+  id        String   @id @default(uuid()) @db.Uuid
+  scope     String   @unique @db.VarChar(32) // retail | business | government | circuit_breaker
+  values    Json     @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([updatedAt], map: "idx_limit_config_updated_at")
+  @@map("limits_config")
+}
+
 model RebalancingEvent {
   id          String    @id @default(uuid()) @db.Uuid
   type        String    @db.VarChar(20)
@@ -565,4 +577,3 @@ model InvestmentStrategy {
   @@index([riskTier], map: "idx_investment_strategies_risk_tier")
   @@map("investment_strategies")
 }
-

@@ -5,8 +5,8 @@
 import { prisma } from "../../config/database";
 import {
   getLimitConfig,
-  CIRCUIT_BREAKER_RESERVE_WEIGHT_THRESHOLD_PCT,
-  CIRCUIT_BREAKER_MIN_RESERVE_RATIO,
+  getCircuitBreakerMinReserveRatio,
+  getCircuitBreakerReserveWeightThresholdPct,
 } from "../../config/limits";
 import { reserveTracker, ReserveTracker } from "../reserve/ReserveTracker";
 // import { basketService } from '../basket';
@@ -42,7 +42,7 @@ export async function checkDepositLimits(
   userId: string | null,
   organizationId: string | null,
 ): Promise<void> {
-  const config = getLimitConfig(audience);
+  const config = await getLimitConfig(audience);
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const startOfMonth = new Date(
     new Date().getFullYear(),
@@ -102,7 +102,7 @@ export async function checkWithdrawalLimits(
   userId: string | null,
   organizationId: string | null,
 ): Promise<void> {
-  const config = getLimitConfig(audience);
+  const config = await getLimitConfig(audience);
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const startOfMonth = new Date(
     new Date().getFullYear(),
@@ -167,7 +167,7 @@ export async function isCurrencyWithdrawalPaused(
   const actualWeight = curr.actualWeight;
   if (targetWeight <= 0) return false;
   const pctOfTarget = (actualWeight / targetWeight) * 100;
-  return pctOfTarget < CIRCUIT_BREAKER_RESERVE_WEIGHT_THRESHOLD_PCT;
+  return pctOfTarget < (await getCircuitBreakerReserveWeightThresholdPct());
 }
 
 /**
@@ -177,5 +177,5 @@ export async function isMintingPaused(): Promise<boolean> {
   const ratio = await reserveTracker.calculateReserveRatio(
     ReserveTracker.SEGMENT_TRANSACTIONS,
   );
-  return ratio < CIRCUIT_BREAKER_MIN_RESERVE_RATIO;
+  return ratio < (await getCircuitBreakerMinReserveRatio());
 }
