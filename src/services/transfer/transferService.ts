@@ -14,7 +14,7 @@ import { stellarClient } from "../stellar/client";
 import { getBaseFee } from "../stellar/feeManager";
 import { resolveRecipientToStellarAddress } from "../recipient/recipientResolver";
 
-import { logger } from "../../config/logger";
+import { logger, logFinancialEvent } from "../../config/logger";
 import type {
   CreateTransferParams,
   CreateTransferOptions,
@@ -111,7 +111,12 @@ export async function createTransfer(
   });
 
   const correlationId = options?.correlationId ?? crypto.randomUUID();
-  const amountInSmallestUnit = Math.round(Number(amount) * 100);
+  // Avoid float arithmetic: parse integer and fractional parts separately to
+  // prevent precision loss when amount has up to 7 decimal places.
+  const [wholePart, fracPart = ""] = amount.split(".");
+  const amountInSmallestUnit =
+    parseInt(wholePart, 10) * 100 +
+    parseInt(fracPart.slice(0, 2).padEnd(2, "0"), 10);
 
   // Emit transfer.initiated immediately after the Transaction row is created
   logFinancialEvent({

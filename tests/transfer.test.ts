@@ -291,6 +291,61 @@ describe("createTransfer", () => {
     expect(mockTx.update).not.toHaveBeenCalled();
   });
 
+  // ── max precision Decimal construction ──────────────────────────────────────
+
+  it("stores Decimal with full 7-decimal precision (no float rounding)", async () => {
+    (mockUser.findUnique as jest.Mock)
+      .mockResolvedValueOnce(verifiedSender)
+      .mockResolvedValueOnce({ stellarAddress: RECIPIENT_STELLAR });
+    (mockUser.findFirst as jest.Mock).mockResolvedValue(bobUser);
+    (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-prec" });
+
+    await createTransfer({
+      senderUserId: SENDER_ID,
+      to: "@bob",
+      amountAcbu: "9999999.9999999",
+    });
+
+    const createCall = (mockTx.create as jest.Mock).mock.calls[0][0];
+    const stored = createCall.data.acbuAmount;
+    // Prisma Decimal.toString() must round-trip the original string exactly
+    expect(stored.toString()).toBe("9999999.9999999");
+  });
+
+  it("stores Decimal for minimum positive amount with 7 decimals", async () => {
+    (mockUser.findUnique as jest.Mock)
+      .mockResolvedValueOnce(verifiedSender)
+      .mockResolvedValueOnce({ stellarAddress: RECIPIENT_STELLAR });
+    (mockUser.findFirst as jest.Mock).mockResolvedValue(bobUser);
+    (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-min-prec" });
+
+    await createTransfer({
+      senderUserId: SENDER_ID,
+      to: "@bob",
+      amountAcbu: "0.0000001",
+    });
+
+    const createCall = (mockTx.create as jest.Mock).mock.calls[0][0];
+    expect(createCall.data.acbuAmount.toString()).toBe("0.0000001");
+  });
+
+  it("stores Decimal for whole number amount without decimal point", async () => {
+    (mockUser.findUnique as jest.Mock)
+      .mockResolvedValueOnce(verifiedSender)
+      .mockResolvedValueOnce({ stellarAddress: RECIPIENT_STELLAR });
+    (mockUser.findFirst as jest.Mock).mockResolvedValue(bobUser);
+    (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-whole" });
+
+    await createTransfer({
+      senderUserId: SENDER_ID,
+      to: "@bob",
+      amountAcbu: "1000000",
+    });
+
+    const createCall = (mockTx.create as jest.Mock).mock.calls[0][0];
+    expect(createCall.data.acbuAmount.toString()).toBe("1000000");
+  });
+
   // ── raw Stellar address as recipient ─────────────────────────────────────────
 
   it("accepts raw Stellar address as recipient", async () => {
