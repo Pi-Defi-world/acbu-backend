@@ -1,7 +1,5 @@
 import { assertUserWalletAddress } from "./walletService";
 import { prisma } from "../../config/database";
-import { AppError } from "../../middleware/errorHandler";
-
 jest.mock("../../config/database", () => ({
   prisma: {
     user: {

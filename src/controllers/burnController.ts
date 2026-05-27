@@ -9,6 +9,7 @@ import { getContractAddresses } from "../config/contracts";
 import { acbuBurningService } from "../services/contracts";
 import { stellarClient } from "../services/stellar/client";
 import { AuthRequest } from "../middleware/auth";
+import { AppError } from "../middleware/errorHandler";
 import { Decimal } from "@prisma/client/runtime/library";
 import { logAudit } from "../services/audit";
 import {
@@ -22,10 +23,7 @@ import {
   contractNumberToDecimal,
   calculateFee,
 } from "../utils/decimalUtils";
-import { Prisma } from "@prisma/client";
-
-// DECIMALS_7 is kept for reference but replaced by decimalToContractNumber
-const DECIMALS_7 = 1e7;
+// DECIMALS_7 kept in history — removed to satisfy linter
 
 /** Best-effort stringify for Decimal-like values in Prisma models. */
 function toNullableStringDecimal(v: unknown): string | null {
@@ -160,11 +158,11 @@ export async function burnAcbu(
         organizationId: req.apiKey?.organizationId ?? undefined,
         type: "burn",
         status: "pending",
-        acbuAmountBurned: new Decimal(acbuNum),
+        acbuAmountBurned: acbuDecimal,
         localCurrency: currency,
-        localAmount: new Decimal(localNum),
+        localAmount: localDecimal,
         recipientAccount: recipient_account as object,
-        fee: new Decimal(feeAcbu),
+        fee: feeAcbuDecimal,
         rateSnapshot: {
           acbu_ngn: null,
           timestamp: new Date().toISOString(),

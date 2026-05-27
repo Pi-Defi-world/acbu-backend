@@ -33,6 +33,7 @@ export class StellarClient {
     const horizonUrl = cfg?.horizonUrl ?? config.stellar.horizonUrl;
     const networkPassphrase =
       cfg?.networkPassphrase ??
+      config.stellar.networkPassphrase ??
       (network === "testnet"
         ? "Test SDF Network ; September 2015"
         : "Public Global Stellar Network ; September 2015");

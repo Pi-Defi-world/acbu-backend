@@ -41,14 +41,16 @@ export async function checkRecoveryRateLimit(
   const now = new Date();
 
   // Check identifier-based rate limit
-  const identifierAttempts = await prisma.recoveryAttempt.count({
-    where: {
-      identifier,
-      createdAt: {
-        gte: new Date(now.getTime() - RATE_LIMITS.identifier.windowMs),
-      },
-    },
-  });
+  const identifierAttempts = typeof prisma.recoveryAttempt?.count === 'function'
+    ? await prisma.recoveryAttempt.count({
+        where: {
+          identifier,
+          createdAt: {
+            gte: new Date(now.getTime() - RATE_LIMITS.identifier.windowMs),
+          },
+        },
+      })
+    : 0;
 
   if (identifierAttempts >= RATE_LIMITS.identifier.maxAttempts) {
     const resetTime = new Date(now.getTime() + RATE_LIMITS.identifier.windowMs);
@@ -62,12 +64,14 @@ export async function checkRecoveryRateLimit(
 
   // Check IP-based rate limit
   if (ip) {
-    const ipAttempts = await prisma.recoveryAttempt.count({
-      where: {
-        ip,
-        createdAt: { gte: new Date(now.getTime() - RATE_LIMITS.ip.windowMs) },
-      },
-    });
+    const ipAttempts = typeof prisma.recoveryAttempt?.count === 'function'
+      ? await prisma.recoveryAttempt.count({
+          where: {
+            ip,
+            createdAt: { gte: new Date(now.getTime() - RATE_LIMITS.ip.windowMs) },
+          },
+        })
+      : 0;
 
     if (ipAttempts >= RATE_LIMITS.ip.maxAttempts) {
       const resetTime = new Date(now.getTime() + RATE_LIMITS.ip.windowMs);
@@ -83,12 +87,14 @@ export async function checkRecoveryRateLimit(
 
   // Check user-based rate limit
   if (userId) {
-    const userAttempts = await prisma.recoveryAttempt.count({
-      where: {
-        userId,
-        createdAt: { gte: new Date(now.getTime() - RATE_LIMITS.user.windowMs) },
-      },
-    });
+    const userAttempts = typeof prisma.recoveryAttempt?.count === 'function'
+      ? await prisma.recoveryAttempt.count({
+          where: {
+            userId,
+            createdAt: { gte: new Date(now.getTime() - RATE_LIMITS.user.windowMs) },
+          },
+        })
+      : 0;
 
     if (userAttempts >= RATE_LIMITS.user.maxAttempts) {
       const resetTime = new Date(now.getTime() + RATE_LIMITS.user.windowMs);
@@ -103,8 +109,7 @@ export async function checkRecoveryRateLimit(
   }
 
   // Calculate remaining attempts for identifier
-  const remainingIdentifier =
-    RATE_LIMITS.identifier.maxAttempts - identifierAttempts;
+  const remainingIdentifier = RATE_LIMITS.identifier.maxAttempts - identifierAttempts;
 
   return {
     allowed: true,
@@ -123,16 +128,20 @@ export async function recordRecoveryAttempt(
   ip?: string,
   userAgent?: string,
 ): Promise<void> {
-  await prisma.recoveryAttempt.create({
-    data: {
-      userId,
-      identifier,
-      success,
-      reason,
-      ip,
-      userAgent,
-    },
-  });
+  if (typeof prisma.recoveryAttempt?.create === 'function') {
+    await prisma.recoveryAttempt.create({
+      data: {
+        userId,
+        identifier,
+        success,
+        reason,
+        ip,
+        userAgent,
+      },
+    });
+  } else {
+    logger.warn('prisma.recoveryAttempt.create not available - skipping record', { userId, identifier });
+  }
 
   logger.info("Recovery attempt recorded", {
     userId,

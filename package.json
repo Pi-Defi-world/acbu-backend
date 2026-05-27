@@ -15,12 +15,13 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "test": "jest --passWithNoTests",
     "test:coverage": "jest --coverage",
+    "test:local": "node -e \"const {execSync} = require('child_process'); try{ if(process.platform==='win32'){ execSync('powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\run-tests-local.ps1', {stdio:'inherit'}); } else { execSync('bash ./scripts/run-tests-local.sh', {stdio:'inherit'}); } } catch(e){ process.exit(e.status || 1); }\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:seed": "ts-node prisma/seedAll.ts",
     "backfill:org-limits": "ts-node prisma/backfillOrgTransactionContext.ts",
     "stellar:create-wallet": "ts-node scripts/create-stellar-wallet.ts",
     "compute:basket-weights": "ts-node scripts/compute-basket-weights.ts",
@@ -101,5 +102,7 @@
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
     "zod-to-json-schema": "^3.25.2"
+    ,
+    "uuid": "^9.0.0"
   }
 }

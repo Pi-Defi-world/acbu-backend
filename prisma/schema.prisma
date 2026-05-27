@@ -246,6 +246,8 @@ model AuditTrail {
   eventType   String   @map("event_type") @db.VarChar(50)
   entityType  String?  @map("entity_type") @db.VarChar(50)
   entityId    String?  @map("entity_id") @db.Uuid
+  actorType   String?  @map("actor_type") @db.VarChar(20)
+  organizationId String? @map("organization_id") @db.Uuid
   action      String   @db.VarChar(50)
   oldValue    Json?    @map("old_value")
   newValue    Json?    @map("new_value")
@@ -259,6 +261,66 @@ model AuditTrail {
   @@index([organizationId, timestamp], map: "idx_audit_trail_org_timestamp")
   @@index([timestamp], map: "idx_audit_trail_timestamp")
   @@map("audit_trail")
+}
+
+model UserDevice {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  fingerprint         String   @db.VarChar(128)
+  userAgent           String?  @map("user_agent") @db.VarChar(512)
+  lastIp              String?  @map("last_ip") @db.VarChar(45)
+  lastSeenAt          DateTime? @map("last_seen_at") @db.Timestamp(6)
+  isTrusted           Boolean  @default(false) @map("is_trusted")
+  trustedAt           DateTime? @map("trusted_at") @db.Timestamp(6)
+  verificationAttempts Int     @default(0) @map("verification_attempts")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint], map: "uq_user_device_user_fingerprint")
+  @@index([userId], map: "idx_user_device_user_id")
+  @@map("user_devices")
+}
+
+model SalaryItem {
+  id               String   @id @default(uuid()) @db.Uuid
+  batchId          String   @map("batch_id") @db.Uuid
+  recipientId      String?  @map("recipient_id") @db.Uuid
+  recipientAddress String   @map("recipient_address") @db.VarChar(56)
+  amount           Decimal  @db.Decimal(20, 8)
+  status           String   @db.VarChar(20) @default("pending")
+  transactionId    String?  @map("transaction_id") @db.Uuid @unique
+  errorMessage     String?  @map("error_message") @db.VarChar(1000)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  batch SalaryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([batchId], map: "idx_salary_item_batch_id")
+  @@map("salary_items")
+}
+
+model SalarySchedule {
+  id            String   @id @default(uuid()) @db.Uuid
+  organizationId String? @map("organization_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  name          String   @db.VarChar(255)
+  cron          String   @db.VarChar(128)
+  amountConfig  Json
+  currency      String   @db.VarChar(10) @default("ACBU")
+  status        String   @db.VarChar(20) @default("active")
+  nextRunAt     DateTime?
+  lastRunAt     DateTime?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([userId], map: "idx_salary_schedule_user_id")
+  @@index([organizationId], map: "idx_salary_schedule_org_id")
+  @@map("salary_schedules")
 }
 
 model Webhook {

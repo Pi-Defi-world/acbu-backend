@@ -13,3 +13,6 @@ process.env.FLUTTERWAVE_WEBHOOK_SECRET =
   process.env.FLUTTERWAVE_WEBHOOK_SECRET || "test-fw-webhook-secret";
 process.env.PAYSTACK_SECRET_KEY =
   process.env.PAYSTACK_SECRET_KEY || "test-ps-secret-key";
+
+// Note: `jest.config.js` maps `@prisma/client` to the in-repo mock file.
+// Avoid calling `jest.mock` here to prevent resolver recursion.

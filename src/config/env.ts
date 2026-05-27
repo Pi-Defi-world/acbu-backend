@@ -15,6 +15,14 @@ const envSchema = z.object({
   PRISMA_ACCELERATE_URL: z.string().optional(),
   JWT_EXPIRES_IN: z.string().default("7d"),
   JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().default(30),
+  // S3 (optional for tests/local runs)
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().optional(),
+  S3_ENDPOINT: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_UPLOAD_URL_TTL_SECONDS: z.coerce.number().default(900),
+  S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().default(900),
   API_KEY_SALT: z.string().default(""),
   ADMIN_API_KEY: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
@@ -50,7 +58,6 @@ export const config = {
   mongodbUri: env.MONGODB_URI,
   rabbitmqUrl: env.RABBITMQ_URL,
   jwtSecret: env.JWT_SECRET,
-  challengeTokenSecret: process.env.CHALLENGE_TOKEN_SECRET || 'default_secret',
   jwtExpiresIn: env.JWT_EXPIRES_IN,
   jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
   challengeTokenSecret: env.CHALLENGE_TOKEN_SECRET || env.JWT_SECRET,
@@ -85,6 +92,16 @@ export const config = {
     webhookSecret: process.env.FLUTTERWAVE_WEBHOOK_SECRET || "",
     baseUrl:
       process.env.FLUTTERWAVE_BASE_URL || "https://api.flutterwave.com/v3",
+  },
+  // S3 configuration used by storage service. Defaults are safe for tests.
+  s3: {
+    bucket: process.env.S3_BUCKET || "test-bucket",
+    region: process.env.S3_REGION || "us-east-1",
+    endpoint: process.env.S3_ENDPOINT || "",
+    accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
+    uploadUrlTtlSeconds: parseInt(process.env.S3_UPLOAD_URL_TTL_SECONDS || "900", 10),
+    downloadUrlTtlSeconds: parseInt(process.env.S3_DOWNLOAD_URL_TTL_SECONDS || "900", 10),
   },
   paystack: {
     secretKey: process.env.PAYSTACK_SECRET_KEY || "",
@@ -150,10 +167,12 @@ export const config = {
         : "https://soroban-testnet.stellar.org";
     })(),
     secretKey: process.env.STELLAR_SECRET_KEY || "",
+    // Allow overriding the exact network passphrase via STELLAR_NETWORK_PASSPHRASE
     networkPassphrase:
-      process.env.STELLAR_NETWORK === "mainnet"
+      process.env.STELLAR_NETWORK_PASSPHRASE ??
+      (process.env.STELLAR_NETWORK === "mainnet"
         ? "Public Global Stellar Network ; September 2015"
-        : "Test SDF Network ; September 2015",
+        : "Test SDF Network ; September 2015"),
     /** Network-native asset code shown to callers for wallet bootstrap (default XLM, or PI when bootstrap profile says so). */
     nativeAssetCode: ((): string => {
       const explicit = process.env.STELLAR_NATIVE_ASSET_CODE?.trim();

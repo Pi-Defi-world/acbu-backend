@@ -58,44 +58,7 @@ async function readOnChainCustody(currency: string): Promise<{
     ContractClient.toScVal(addresses.minting),
   ]);
   const amountAtomic = BigInt(ContractClient.fromScVal(balRes).toString());
-
-  const valueUsdAtomic =
-    (amountAtomic * rateUsdAtomic) / RESERVE_DECIMALS_BIGINT;
-
-  return { amountAtomic, rateUsdAtomic, valueUsdAtomic };
-}
-
-const RESERVE_TRACKER_RETRIES = 3;
-const RESERVE_TRACKER_RETRY_DELAY_MS = 1000;
-
-async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= RESERVE_TRACKER_RETRIES; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastError = e;
-      logger.warn(
-        `${label} attempt ${attempt}/${RESERVE_TRACKER_RETRIES} failed`,
-        { error: e },
-      );
-      if (attempt < RESERVE_TRACKER_RETRIES) {
-        await new Promise((r) => setTimeout(r, RESERVE_TRACKER_RETRY_DELAY_MS));
-      }
-    }
   }
-  throw lastError;
-}
-
-export interface ReserveStatus {
-  currency: string;
-  targetWeight: number;
-  actualWeight: number;
-  reserveAmount: number;
-  reserveValueUsd: number;
-  weightDrift: number;
-}
-
 export interface ReserveHealth {
   totalAcbuSupply: number;
   totalReserveValueUsd: number;

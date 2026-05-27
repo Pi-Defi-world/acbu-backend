@@ -19,22 +19,33 @@ const INITIAL_BASKET: { currency: string; weight: number }[] = [
 async function main() {
   console.log('Seeding database...');
 
-  const existing = await prisma.basketConfig.findFirst({ where: { status: 'active' } });
-  if (!existing) {
-    const effectiveFrom = new Date(0); // epoch so "current" from start
-    for (const { currency, weight } of INITIAL_BASKET) {
-      await prisma.basketConfig.create({
-        data: {
-          effectiveFrom,
-          currency,
-          weight,
-          status: 'active',
-        },
-      });
+  const args = process.argv.slice(2);
+  const truncate = args.includes("--truncate");
+
+  if (truncate) {
+    if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED_TRUNCATE !== "true") {
+      console.error("Refusing to truncate database in production. Set ALLOW_SEED_TRUNCATE=true to override.");
+      process.exit(1);
     }
-    console.log('Seeded initial 10-currency basket (BasketConfig).');
+    console.log('Truncating seed-target tables (safe mode)...');
+    // Only truncate tables known to be seeded by this script. Keep this conservative.
+    await prisma.basketConfig.deleteMany({});
+    console.log('Truncated BasketConfig.');
   }
 
+  const effectiveFrom = new Date(0); // epoch so "current" from start
+  // Use createMany with skipDuplicates to make repeated runs idempotent.
+  await prisma.basketConfig.createMany({
+    data: INITIAL_BASKET.map(({ currency, weight }) => ({
+      effectiveFrom,
+      currency,
+      weight,
+      status: 'active',
+    })),
+    skipDuplicates: true,
+  });
+
+  console.log('Seeded initial 10-currency basket (BasketConfig).');
   console.log('Seeding completed.');
 }
 

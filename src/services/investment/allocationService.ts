@@ -165,7 +165,7 @@ export async function allocateToStrategy(
   }
 
   // Use transaction to ensure atomicity
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     const strategy = await tx.investmentStrategy.findUnique({
       where: { id: strategyId },
     });
@@ -218,7 +218,7 @@ export async function deallocateFromStrategy(
     throw new Error("Deallocation amount must be positive");
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     const strategy = await tx.investmentStrategy.findUnique({
       where: { id: strategyId },
     });

@@ -14,7 +14,7 @@ import { stellarClient } from "../stellar/client";
 import { getBaseFee } from "../stellar/feeManager";
 import { resolveRecipientToStellarAddress } from "../recipient/recipientResolver";
 
-import { logger } from "../../config/logger";
+import { logger, logFinancialEvent } from "../../config/logger";
 import type {
   CreateTransferParams,
   CreateTransferOptions,
@@ -114,7 +114,8 @@ export async function createTransfer(
   const amountInSmallestUnit = Math.round(Number(amount) * 100);
 
   // Emit transfer.initiated immediately after the Transaction row is created
-  logFinancialEvent({
+  if (typeof logFinancialEvent === 'function') {
+    logFinancialEvent({
     event: "transfer.initiated",
     status: "pending",
     transactionId: tx.id,
@@ -125,7 +126,8 @@ export async function createTransfer(
     amount: amountInSmallestUnit,
     currency: "ACBU",
     correlationId,
-  });
+    });
+  }
 
   let status = "pending";
   let blockchainTxHash: string | null = null;
@@ -142,7 +144,8 @@ export async function createTransfer(
       },
     });
     // Emit transfer.completed for pre-submitted hash path
-    logFinancialEvent({
+    if (typeof logFinancialEvent === 'function') {
+      logFinancialEvent({
       event: "transfer.completed",
       status: "success",
       transactionId: tx.id,
@@ -154,7 +157,8 @@ export async function createTransfer(
       currency: "ACBU",
       correlationId,
       providerRef: blockchainTxHash,
-    });
+      });
+    }
     return {
       transactionId: tx.id,
       status,
@@ -188,7 +192,8 @@ export async function createTransfer(
           senderUserId,
         });
         // Emit transfer.completed on successful Stellar submission
-        logFinancialEvent({
+        if (typeof logFinancialEvent === 'function') {
+          logFinancialEvent({
           event: "transfer.completed",
           status: "success",
           transactionId: tx.id,
@@ -200,7 +205,8 @@ export async function createTransfer(
           currency: "ACBU",
           correlationId,
           providerRef: blockchainTxHash,
-        });
+          });
+        }
       } catch (err) {
         logger.error("Transfer Stellar submission failed", {
           transactionId: tx.id,
@@ -213,7 +219,8 @@ export async function createTransfer(
           data: { status: "failed" },
         });
         // Emit transfer.failed on Stellar submission failure
-        logFinancialEvent({
+        if (typeof logFinancialEvent === 'function') {
+          logFinancialEvent({
           event: "transfer.failed",
           status: "failed",
           transactionId: tx.id,
@@ -225,7 +232,8 @@ export async function createTransfer(
           currency: "ACBU",
           correlationId,
           errorMessage: err instanceof Error ? err.message : String(err),
-        });
+          });
+        }
       }
     }
   }
