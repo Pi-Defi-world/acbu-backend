@@ -1,9 +1,10 @@
 import { prisma } from "../../config/database";
 import { Decimal } from "@prisma/client/runtime/library";
 import { createTransfer } from "../transfer/transferService";
-import { logger } from "../../config/logger";
+import { logger, logFinancialEvent } from "../../config/logger";
 import { CreateSalaryBatchParams, CreateSalaryBatchResult } from "./types";
 import { AppError } from "../../middleware/errorHandler";
+import crypto from "crypto";
 
 /**
  * Creates a new salary batch with items. Supports idempotency via idempotencyKey.
@@ -70,6 +71,19 @@ export async function createSalaryBatch(
     batchId: batch.id,
     userId,
     organizationId,
+  });
+
+  const salaryCorrelationId = idempotencyKey ?? crypto.randomUUID();
+  logFinancialEvent({
+    event: "salary.batch.initiated",
+    status: "pending",
+    transactionId: batch.id,
+    userId: userId ?? batch.id,
+    accountId: organizationId ?? userId ?? batch.id,
+    idempotencyKey: idempotencyKey ?? batch.id,
+    amount: Math.round(calculatedTotal.toNumber() * 100),
+    currency: currency || "ACBU",
+    correlationId: salaryCorrelationId,
   });
 
   // Trigger asynchronous processing
@@ -176,6 +190,18 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
       status: finalStatus,
       completedAt: finalStatus === "completed" ? new Date() : null,
     },
+  });
+
+  logFinancialEvent({
+    event: "salary.batch.completed",
+    status: allSucceeded ? "success" : anySucceeded ? "success" : "failed",
+    transactionId: batchId,
+    userId: batch.userId ?? batchId,
+    accountId: batch.organizationId ?? batch.userId ?? batchId,
+    idempotencyKey: batch.idempotencyKey ?? batchId,
+    amount: Math.round(batch.totalAmount.toNumber() * 100),
+    currency: batch.currency,
+    correlationId: crypto.randomUUID(),
   });
 
   logger.info("Salary batch processing finished", {

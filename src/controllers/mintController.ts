@@ -29,6 +29,7 @@ import {
   contractNumberToDecimal,
   calculateFee,
 } from "../utils/decimalUtils";
+import { logFinancialEvent } from "../config/logger";
 
 const MINT_FEE_BPS = 30; // 0.3%
 // DECIMALS_7 is kept for reference but replaced by decimalToContractNumber
@@ -125,9 +126,16 @@ export async function mintFromUsdcInternal(
   userId?: string,
   organizationId?: string,
 ): Promise<{ transactionId: string; acbuAmount: number }> {
+<<<<<<< HEAD
   const usdcDecimal = new Decimal(usdcAmount);
   const feeUsdcDecimal = calculateFee(usdcDecimal, MINT_FEE_BPS);
   const usdcAmount7 = decimalToContractNumber(usdcDecimal).toString();
+  const correlationId = crypto.randomUUID();
+=======
+  const feeUsdc = (usdcAmount * MINT_FEE_BPS) / 10000;
+  const usdcAmount7 = Math.round(usdcAmount * DECIMALS_7).toString();
+  const correlationId = crypto.randomUUID();
+>>>>>>> upstream/main
   const tx = await prisma.transaction.create({
     data: {
       userId: userId ?? undefined,
@@ -142,6 +150,19 @@ export async function mintFromUsdcInternal(
       },
     },
   });
+
+  logFinancialEvent({
+    event: "mint.initiated",
+    status: "pending",
+    transactionId: tx.id,
+    userId: userId ?? tx.id,
+    accountId: walletAddress,
+    idempotencyKey: tx.id,
+    amount: Math.round(usdcAmount * 100), // cents
+    currency: "USDC",
+    correlationId,
+  });
+
   const addresses = getContractAddresses();
   if (!addresses.minting) {
     await prisma.transaction.update({
@@ -185,6 +206,18 @@ export async function mintFromUsdcInternal(
         completedAt: new Date(),
       },
     });
+    logFinancialEvent({
+      event: "mint.completed",
+      status: "success",
+      transactionId: tx.id,
+      userId: userId ?? tx.id,
+      accountId: walletAddress,
+      idempotencyKey: tx.id,
+      amount: Math.round(usdcAmount * 100),
+      currency: "USDC",
+      correlationId,
+      providerRef: result.transactionHash,
+    });
     return { transactionId: tx.id, acbuAmount: acbuNum };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -195,6 +228,18 @@ export async function mintFromUsdcInternal(
         status: "failed",
         rateSnapshot: { error: message, at: new Date().toISOString() },
       },
+    });
+    logFinancialEvent({
+      event: "mint.failed",
+      status: "failed",
+      transactionId: tx.id,
+      userId: userId ?? tx.id,
+      accountId: walletAddress,
+      idempotencyKey: tx.id,
+      amount: Math.round(usdcAmount * 100),
+      currency: "USDC",
+      correlationId,
+      errorMessage: message,
     });
     throw err;
   }
@@ -267,7 +312,16 @@ export async function depositFromBasketCurrency(
 
     // Apply deposit limits - use retail as default if no audience is set
     const audience = req.audience || "retail";
-    const amountUsdPlaceholder = amountNum; // TODO: convert via rate to USD for accurate limit
+    
+    // CRITICAL: Convert local currency amount to USD for accurate limit checking.
+    // Previously, the raw local amount was passed directly to checkDepositLimits,
+    // treating 100,000 NGN as if it were 100,000 USD.
+    // Now we fetch the current exchange rates and properly convert:
+    // 1. Get the rate: how many local currency units per 1 ACBU
+    // 2. Calculate ACBU equivalent: localAmount / localRate
+    // 3. Convert to USD: acbuAmount * acbuUsdRate
+    const amountUsd = await convertLocalToUsd(amountNum, currency);
+    
     await checkDepositLimits(
       audience,
       amountUsdPlaceholder,
