@@ -201,6 +201,10 @@ async function startServer() {
     const { eventListener } = await import("./services/stellar/eventListener");
     void eventListener.start();
 
+    // Mark application as ready for health checks
+    const { markStartupComplete } = await import("./services/health/healthService");
+    markStartupComplete();
+
     // Start HTTP server
     app.listen(config.port, () => {
       logger.info(`Server running on port ${config.port}`);

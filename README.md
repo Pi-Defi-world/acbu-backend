@@ -226,6 +226,7 @@ The API provides three health check endpoints with different purposes:
 - **Status:** Returns `200` if all dependencies up, `503` if any down
 - **Purpose:** For Kubernetes readinessProbe configurations
 - **Probes:** PostgreSQL, MongoDB, RabbitMQ
+- **Startup Guard:** Returns `503` during application startup until all infrastructure connections and background jobs are fully initialized, preventing load balancers from routing traffic to partially-initialized instances
 - **Recommendation:** Use this endpoint in K8s deployment readinessProbe
 
 ### `/health/deep` - Deep Health Check
@@ -233,6 +234,7 @@ The API provides three health check endpoints with different purposes:
 - **Status:** Returns `200` if all dependencies up, `503` if any down
 - **Purpose:** Detailed dependency status for monitoring dashboards
 - **Response:** Full report with status of each dependency
+- **Startup Guard:** Returns `503` during application startup until all infrastructure connections and background jobs are fully initialized
 
 ### Kubernetes Configuration Example
 
