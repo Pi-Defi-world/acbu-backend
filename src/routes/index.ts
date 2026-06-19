@@ -28,6 +28,7 @@ import governmentFundsRoutes from "./governmentFundsRoutes";
 import investmentRoutes from "./investmentRoutes";
 import fiatRoutes from "./fiatRoutes";
 import configRoutes from "./configRoutes";
+import kycRoutes from "./kycRoutes";
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -74,6 +75,7 @@ router.use("/government", governmentFundsRoutes);
 router.use("/investment", investmentRoutes);
 router.use("/fiat", fiatRoutes);
 router.use("/config", configRoutes);
+router.use("/kyc", kycRoutes);
 router.use("/webhooks", webhookRoutes);
 
 export default router;

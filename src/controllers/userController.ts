@@ -56,6 +56,8 @@ const patchMeSchema = z.object({
     .nullable(),
   privacy_hide_from_search: z.boolean().optional(),
   passcode: z.string().min(4).max(64).optional(), // set or update passcode for Tier-1 recovery
+  kyc_status: z.string().max(20).optional(),
+  country_code: z.string().max(3).optional(),
 });
 
 /**
@@ -128,6 +130,8 @@ export async function patchMe(
       phoneE164?: string | null;
       privacyHideFromSearch?: boolean;
       passcodeHash?: string | null;
+      kycStatus?: string;
+      countryCode?: string;
     } = {};
     if (body.username !== undefined) data.username = body.username;
     if (body.email !== undefined) data.email = body.email;
@@ -136,6 +140,8 @@ export async function patchMe(
       data.privacyHideFromSearch = body.privacy_hide_from_search;
     if (body.passcode !== undefined)
       data.passcodeHash = await bcrypt.hash(body.passcode, 10);
+    if (body.kyc_status !== undefined) data.kycStatus = body.kyc_status;
+    if (body.country_code !== undefined) data.countryCode = body.country_code;
 
     const user = await prisma.user.update({
       where: { id: userId },
