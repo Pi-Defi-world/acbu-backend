@@ -14,6 +14,7 @@ import { stellarClient } from "../stellar/client";
 import { getBaseFee } from "../stellar/feeManager";
 import { resolveRecipientToStellarAddress } from "../recipient/recipientResolver";
 import crypto from "crypto";
+import { generateId } from '../../utils/idGenerator';
 
 import { logger, logFinancialEvent } from "../../config/logger";
 import type {
@@ -154,7 +155,7 @@ export async function createTransfer(
     throw createError;
   }
 
-  const correlationId = options?.correlationId ?? crypto.randomUUID();
+  const correlationId = options?.correlationId ?? generateId();
   // Avoid float arithmetic: parse integer and fractional parts separately to
   // prevent precision loss when amount has up to 7 decimal places.
   const [wholePart, fracPart = ""] = amount.split(".");

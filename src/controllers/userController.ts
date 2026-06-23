@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { generateId } from '../utils/idGenerator';
 import { Response, NextFunction } from "express";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -565,7 +566,7 @@ export async function deleteMe(
       await tx.guardian.deleteMany({ where: { guardianUserId: userId } });
 
       // 2. Tombstone the User record
-      const tombstoneSuffix = crypto.randomUUID().substring(0, 8);
+      const tombstoneSuffix = generateId().substring(0, 8);
       await tx.user.update({
         where: { id: userId },
         data: {

@@ -6,7 +6,7 @@
  */
 import bcrypt from "bcryptjs";
 import { totp } from "otplib";
-import { randomUUID } from "crypto";
+import { generateId } from '../../utils/idGenerator';
 import { config } from "../../config/env";
 import { prisma } from "../../config/database";
 import { generateApiKey } from "../../middleware/auth";
@@ -889,8 +889,8 @@ export interface RevokeRefreshTokenParams {
 }
 
 function generateSecureRefreshToken(): string {
-  const bytes = Buffer.from(randomUUID()).toString('base64');
-  return bytes + Buffer.from(randomUUID()).toString('base64');
+  const bytes = Buffer.from(generateId()).toString('base64');
+  return bytes + Buffer.from(generateId()).toString('base64');
 }
 
 async function hashRefreshToken(token: string): Promise<string> {
@@ -907,7 +907,7 @@ export async function issueRefreshToken(
   const { userId } = params;
   const token = generateSecureRefreshToken();
   const tokenHash = await hashRefreshToken(token);
-  const tokenFamilyId = randomUUID();
+  const tokenFamilyId = generateId();
   const expiresAt = new Date(
     Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
   );
@@ -995,7 +995,7 @@ export async function refreshAccessToken(
   // Issue a new refresh token in a NEW family
   const newToken = generateSecureRefreshToken();
   const newTokenHash = await hashRefreshToken(newToken);
-  const newTokenFamilyId = randomUUID();
+  const newTokenFamilyId = generateId();
   const newExpiresAt = new Date(
     Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
   );

@@ -11,6 +11,7 @@
 import { Response, NextFunction } from "express";
 import { z } from "zod";
 import crypto from "crypto";
+import { generateId } from '../utils/idGenerator';
 import { AuthRequest } from "../middleware/auth";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
@@ -101,7 +102,7 @@ export async function requestUploadUrl(
     // Generate a document ID if not provided
     const documentId =
       body.document_id ??
-      crypto.randomUUID();
+      generateId();
 
     const result = await generateUploadUrl(
       userId,

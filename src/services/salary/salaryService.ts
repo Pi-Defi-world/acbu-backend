@@ -6,6 +6,7 @@ import { logger, logFinancialEvent } from "../../config/logger";
 import { CreateSalaryBatchParams, CreateSalaryBatchResult } from "./types";
 import { AppError } from "../../middleware/errorHandler";
 import crypto from "crypto";
+import { generateId } from '../../utils/idGenerator';
 
 /**
  * Creates a new salary batch with items. Supports idempotency via idempotencyKey.
@@ -74,7 +75,7 @@ export async function createSalaryBatch(
     organizationId,
   });
 
-  const salaryCorrelationId = idempotencyKey ?? crypto.randomUUID();
+  const salaryCorrelationId = idempotencyKey ?? generateId();
   logFinancialEvent({
     event: "salary.batch.initiated",
     status: "pending",
@@ -205,7 +206,7 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
     idempotencyKey: batch.idempotencyKey ?? batchId,
     amount: Math.round(batch.totalAmount.toNumber() * 100),
     currency: batch.currency,
-    correlationId: crypto.randomUUID(),
+    correlationId: generateId(),
   });
 
   logger.info("Salary batch processing finished", {

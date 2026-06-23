@@ -9,7 +9,7 @@ import { logger, logFinancialEvent } from "../config/logger";
 import { prisma } from "../config/database";
 import { mintFromUsdcInternal } from "../controllers/mintController";
 import { fetchXlmRateUsd } from "../services/oracle/cryptoClient";
-import { randomUUID } from "crypto";
+import { generateId } from '../utils/idGenerator';
 
 const QUEUE = QUEUES.XLM_TO_ACBU;
 const MAX_RETRIES = 5;
@@ -34,7 +34,7 @@ export async function startXlmToAcbuConsumer(): Promise<void> {
       const retries = typeof headers["x-retries"] === "number" ? headers["x-retries"] : 0;
       try {
         const body = JSON.parse(msg.content.toString()) as XlmToAcbuPayload;
-        const correlationId = randomUUID();
+        const correlationId = generateId();
         await processXlmToAcbu(body, correlationId);
         ch.ack(msg);
       } catch (e) {
@@ -61,7 +61,7 @@ export async function startXlmToAcbuConsumer(): Promise<void> {
  */
 export async function processXlmToAcbu(
   payload: XlmToAcbuPayload,
-  correlationId: string = randomUUID(),
+  correlationId: string = generateId(),
 ): Promise<void> {
   const { onRampSwapId, userId, stellarAddress, xlmAmount, usdcEquivalent } =
     payload;

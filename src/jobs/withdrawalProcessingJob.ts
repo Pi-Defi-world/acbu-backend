@@ -2,7 +2,7 @@
  * Consumes WITHDRAWAL_PROCESSING queue: after BurnEvent, validate withdrawal and recipient,
  * disburse via fintech, update transaction status, optionally publish user notification.
  */
-import { randomUUID } from "crypto";
+import { generateId } from '../utils/idGenerator';
 import type { ConsumeMessage } from "amqplib";
 import {
   connectRabbitMQ,
@@ -28,7 +28,7 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
     queue,
     async (msg: ConsumeMessage | null) => {
       if (!msg) return;
-      const correlationId = randomUUID();
+      const correlationId = generateId();
       try {
         const body = JSON.parse(msg.content.toString()) as WithdrawalPayload;
         const { transactionId, txHash } = body;

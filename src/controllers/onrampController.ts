@@ -5,6 +5,7 @@
 import { Response, NextFunction } from "express";
 import { z } from "zod";
 import crypto from "crypto";
+import { generateId } from '../utils/idGenerator';
 import { prisma } from "../config/database";
 import { AuthRequest } from "../middleware/auth";
 import { Decimal } from "@prisma/client/runtime/library";
@@ -125,7 +126,7 @@ export async function registerOnRampSwap(
     }
     const correlationId =
       (req.headers["x-request-id"] as string | undefined) ??
-      crypto.randomUUID();
+      generateId();
     logFinancialEvent({
       event: "onramp.registered",
       status: "pending",

@@ -7,6 +7,7 @@ import type {
   PartnerBillRefundRequest,
   PartnerBillRefundResponse,
 } from "./types";
+import { generateId } from '../../utils/idGenerator';
 
 const SIMULATED_BILLERS: BillsCatalogBiller[] = [
   {
@@ -107,7 +108,7 @@ export class SimulatedBillsPartner implements BillsPartnerAdapter {
   async payBill(
     request: PartnerBillPaymentRequest,
   ): Promise<PartnerBillPaymentResponse> {
-    const providerReference = `bill_${crypto.randomUUID()}`;
+    const providerReference = `bill_${generateId()}`;
     return {
       provider: this.providerId,
       providerReference,

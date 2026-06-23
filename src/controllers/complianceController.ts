@@ -5,6 +5,7 @@ import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 import { logger } from "../config/logger";
 import crypto from "crypto";
+import { generateId } from '../utils/idGenerator';
 
 /**
  * GET /compliance/export
@@ -88,7 +89,7 @@ export async function deleteAccount(
       await tx.guardian.deleteMany({ where: { guardianUserId: userId } });
 
       // 2. Tombstone the User record
-      const tombstoneSuffix = crypto.randomUUID().substring(0, 8);
+      const tombstoneSuffix = generateId().substring(0, 8);
       await tx.user.update({
         where: { id: userId },
         data: {

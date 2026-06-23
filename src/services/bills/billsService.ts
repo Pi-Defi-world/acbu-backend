@@ -1,5 +1,6 @@
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../../config/database";
+import { generateId } from '../../utils/idGenerator';
 import { AppError } from "../../middleware/errorHandler";
 import { logger, logFinancialEvent } from "../../config/logger";
 import { logAudit } from "../audit";
@@ -204,7 +205,7 @@ export async function payBill(
     performedBy: request.userId ?? undefined,
   });
 
-  const correlationId = crypto.randomUUID();
+  const correlationId = generateId();
 
   logFinancialEvent({
     event: "bill.initiated",
@@ -433,7 +434,7 @@ export async function reconcileBillsWebhook(event: BillsWebhookEvent): Promise<{
     userId: transaction.userId ?? transaction.id,
     accountId: transaction.userId ?? transaction.id,
     idempotencyKey: transaction.id,
-    correlationId: crypto.randomUUID(),
+    correlationId: generateId(),
     amount: Math.round((transaction.localAmount?.toNumber() ?? event.amount) * 100),
     currency: transaction.localCurrency ?? event.currency,
     provider: event.provider,
@@ -497,7 +498,7 @@ export async function refundBillPayment(
     userId: transaction.userId ?? transaction.id,
     accountId: transaction.userId ?? transaction.id,
     idempotencyKey: transaction.id,
-    correlationId: crypto.randomUUID(),
+    correlationId: generateId(),
     amount: Math.round(localAmount * 100),
     currency,
     provider: refundResponse.provider,

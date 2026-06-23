@@ -14,6 +14,7 @@ function setFiatWebhookDeprecationHeaders(res: Response): void {
 }
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import { generateId } from '../utils/idGenerator';
 import { config } from "../config/env";
 import { logger, logFinancialEvent } from "../config/logger";
 import { prisma } from "../config/database";
@@ -219,7 +220,7 @@ export async function handlePaystackWebhook(
       paystackStatusMap[data.status ?? ""] ?? "pending";
     const paystackCorrelationId =
       (req.headers["x-request-id"] as string | undefined) ??
-      crypto.randomUUID();
+      generateId();
 
     logFinancialEvent({
       event: "webhook.received",
@@ -300,7 +301,7 @@ export async function handleFlutterwaveWebhook(
       flwStatusMap[data.status ?? ""] ?? "pending";
     const flwCorrelationId =
       (req.headers["x-request-id"] as string | undefined) ??
-      crypto.randomUUID();
+      generateId();
 
     logFinancialEvent({
       event: "webhook.received",
