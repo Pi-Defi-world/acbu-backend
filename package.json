@@ -37,6 +37,8 @@
     "backfill:kyc-encryption": "ts-node --transpile-only scripts/backfillKycEncryption.ts",
     "stellar:create-wallet": "ts-node --transpile-only scripts/create-stellar-wallet.ts",
     "compute:basket-weights": "ts-node --transpile-only scripts/compute-basket-weights.ts",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 0",
+    "changelog:update": "conventional-changelog -p angular -i CHANGELOG.md -s",
     "postinstall": "prisma generate"
   },
   "keywords": [
@@ -112,6 +114,8 @@
     "@types/swagger-ui-express": "^4.1.6",
     "@typescript-eslint/eslint-plugin": "^8.59.0",
     "@typescript-eslint/parser": "^8.59.0",
+    "conventional-changelog": "^6.0.0",
+    "conventional-changelog-cli": "^5.0.0",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.3",
