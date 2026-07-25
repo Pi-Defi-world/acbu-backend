@@ -10,6 +10,8 @@ jest.mock("../services/enterpriseService", () => ({
   processBulkTransfer: jest.fn(),
 }));
 
+jest.mock("../services/treasury/TreasuryService");
+
 import { processBulkTransfer } from "../services/enterpriseService";
 
 const makeRes = () => {
@@ -93,17 +95,129 @@ describe("enterpriseController", () => {
     );
   });
 
-  it("keeps the treasury endpoint stub intact", async () => {
+  function mockGetTreasury() {
+    return (jest.requireMock("../services/treasury/TreasuryService") as any).getEnterpriseTreasury as jest.Mock<any>;
+  }
+
+  it("returns treasury data from the TreasuryService", async () => {
+    mockGetTreasury().mockResolvedValue({
+      totalBalanceUsd: 1500000,
+      totalReserveAmount: 1250000,
+      summary: {
+        transactionsSegmentUsd: 1000000,
+        investmentSavingsSegmentUsd: 500000,
+      },
+      byCurrency: [
+        {
+          currency: "USD",
+          targetWeight: null,
+          transactions: {
+            currency: "USD",
+            segment: "transactions",
+            reserveAmount: 800000,
+            reserveValueUsd: 800000,
+            fxRate: 1,
+            fxRateTimestamp: new Date().toISOString(),
+            fxRateSource: "current",
+          },
+          investmentSavings: {
+            currency: "USD",
+            segment: "investment_savings",
+            reserveAmount: 400000,
+            reserveValueUsd: 400000,
+            fxRate: 1,
+            fxRateTimestamp: new Date().toISOString(),
+            fxRateSource: "current",
+          },
+          combined: { reserveAmount: 1200000, reserveValueUsd: 1200000 },
+        },
+      ],
+      reconciliation: {
+        ledgerTotal: 1500000,
+        calculatedTotal: 1500000,
+        discrepancy: 0,
+        discrepancyPercentage: 0,
+        isReconciled: true,
+        tolerancePercentage: 0.01,
+        warnings: [],
+      },
+      message: "Treasury reconciliation successful",
+    });
+
+    const { getTreasury } = await import("./enterpriseController");
+    const res = makeRes();
+    const next = makeNext();
+
+    await getTreasury(
+      { apiKey: { userId: "user-1", organizationId: "org-1", permissions: ["enterprise:read"], rateLimit: 100 }, query: {} } as unknown as AuthRequest,
+      res,
+      next,
+    );
+
+    expect(mockGetTreasury()).toHaveBeenCalledWith("org-1", undefined);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({
+      totalBalanceUsd: 1500000,
+      message: "Treasury reconciliation successful",
+    });
+  });
+
+  it("passes tolerance query param to TreasuryService", async () => {
+    mockGetTreasury().mockResolvedValue({
+      totalBalanceUsd: 0, totalReserveAmount: 0,
+      summary: { transactionsSegmentUsd: 0, investmentSavingsSegmentUsd: 0 },
+      byCurrency: [],
+      reconciliation: { ledgerTotal: 0, calculatedTotal: 0, discrepancy: 0, discrepancyPercentage: 0, isReconciled: true, tolerancePercentage: 0.05, warnings: [] },
+      message: "Treasury reconciliation successful",
+    });
+
+    const { getTreasury } = await import("./enterpriseController");
+    const res = makeRes();
+    const next = makeNext();
+
+    await getTreasury(
+      { apiKey: { userId: "user-1", organizationId: "org-1", permissions: ["enterprise:read"], rateLimit: 100 }, query: { tolerance: "0.05" } } as unknown as AuthRequest,
+      res,
+      next,
+    );
+
+    expect(mockGetTreasury()).toHaveBeenCalledWith("org-1", 0.05);
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("handles treasury service errors", async () => {
+    mockGetTreasury().mockRejectedValue(new Error("DB connection failed"));
+
+    const { getTreasury } = await import("./enterpriseController");
+    const res = makeRes();
+    const next = makeNext();
+
+    await getTreasury(
+      { apiKey: { userId: "user-1", organizationId: "org-1", permissions: ["enterprise:read"], rateLimit: 100 }, query: {} } as unknown as AuthRequest,
+      res,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it("handles missing organizationId gracefully", async () => {
+    mockGetTreasury().mockResolvedValue({
+      totalBalanceUsd: 0, totalReserveAmount: 0,
+      summary: { transactionsSegmentUsd: 0, investmentSavingsSegmentUsd: 0 },
+      byCurrency: [],
+      reconciliation: { ledgerTotal: 0, calculatedTotal: 0, discrepancy: 0, discrepancyPercentage: 0, isReconciled: true, tolerancePercentage: 0.01, warnings: [] },
+      message: "Treasury reconciliation successful",
+    });
+
     const { getTreasury } = await import("./enterpriseController");
     const res = makeRes();
     const next = makeNext();
 
     await getTreasury({} as AuthRequest, res, next);
 
+    expect(mockGetTreasury()).toHaveBeenCalledWith(undefined, undefined);
     expect(res.status).toHaveBeenCalledWith(200);
-    expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({
-      message: "Treasury view not yet implemented.",
-    });
   });
 });
 
