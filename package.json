@@ -16,10 +16,10 @@
     "README.md"
   ],
   "scripts": {
-    "dev": "nodemon",
-    "build": "tsc -p tsconfig.build.json",
+    "dev": "node api.js && nodemon",
+    "build": "node api.js && tsc -p tsconfig.build.json",
     "prestart": "pnpm run build",
-    "start": "node dist/index.js",
+    "start": "node api.js && node dist/index.js",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
