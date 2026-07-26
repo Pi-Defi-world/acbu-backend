@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { AuthRequest } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { processBulkTransfer } from "../services/enterpriseService";
+import { getEnterpriseTreasury } from "../services/treasury/TreasuryService";
 
 function getUploadedFile(
   req: Request,
@@ -104,19 +105,17 @@ export async function postBulkTransfer(
 
 /**
  * GET /enterprise/treasury
- * Returns a stub treasury response until treasury aggregation is implemented.
+ * Returns the enterprise treasury with full reconciliation.
  */
 export async function getTreasury(
-  _req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction,
 ): Promise<void> {
   try {
-    res.status(200).json({
-      totalBalance: null,
-      byCurrency: [],
-      message: "Treasury view not yet implemented.",
-    });
+    const organizationId = req.apiKey?.organizationId;
+    const result = await getEnterpriseTreasury(organizationId);
+    res.status(200).json(result);
   } catch (e) {
     next(e);
   }
