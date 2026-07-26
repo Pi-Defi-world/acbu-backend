@@ -12,6 +12,12 @@ jest.mock("../services/enterpriseService", () => ({
 
 import { processBulkTransfer } from "../services/enterpriseService";
 
+jest.mock("../services/treasury/TreasuryService", () => ({
+  getEnterpriseTreasury: jest.fn(),
+}));
+
+import { getEnterpriseTreasury } from "../services/treasury/TreasuryService";
+
 const makeRes = () => {
   const res = { status: jest.fn(), json: jest.fn() } as unknown as Response;
   (res.status as jest.Mock).mockReturnValue(res);
@@ -93,17 +99,65 @@ describe("enterpriseController", () => {
     );
   });
 
-  it("keeps the treasury endpoint stub intact", async () => {
+  it("returns the enterprise treasury from the treasury service", async () => {
+    const mockTreasury = {
+      totalBalanceUsd: 1_234_567.89,
+      totalReserveAmount: 1_000_000.0,
+      summary: {
+        transactionsSegmentUsd: 800_000.0,
+        investmentSavingsSegmentUsd: 434_567.89,
+      },
+      byCurrency: [
+        {
+          currency: "USD",
+          targetWeight: null,
+          transactions: {
+            currency: "USD",
+            segment: "transactions",
+            reserveAmount: 800_000,
+            reserveValueUsd: 800_000,
+            fxRate: 1,
+            fxRateTimestamp: new Date().toISOString(),
+            fxRateSource: "current",
+          },
+          investmentSavings: {
+            currency: "USD",
+            segment: "investment_savings",
+            reserveAmount: 434_567.89,
+            reserveValueUsd: 434_567.89,
+            fxRate: 1,
+            fxRateTimestamp: new Date().toISOString(),
+            fxRateSource: "current",
+          },
+          combined: {
+            reserveAmount: 1_234_567.89,
+            reserveValueUsd: 1_234_567.89,
+          },
+        },
+      ],
+      reconciliation: {
+        ledgerTotal: 1_234_567.89,
+        calculatedTotal: 1_234_560.0,
+        discrepancy: 7.89,
+        discrepancyPercentage: 0.00064,
+        isReconciled: true,
+        tolerancePercentage: 0.01,
+        warnings: [],
+      },
+      message: "Treasury reconciliation successful",
+    };
+
+    (getEnterpriseTreasury as jest.Mock<any>).mockResolvedValue(mockTreasury);
+
     const { getTreasury } = await import("./enterpriseController");
     const res = makeRes();
     const next = makeNext();
 
-    await getTreasury({} as AuthRequest, res, next);
+    await getTreasury({ apiKey: { organizationId: "org-1" } } as AuthRequest, res, next);
 
+    expect(getEnterpriseTreasury).toHaveBeenCalledWith("org-1");
     expect(res.status).toHaveBeenCalledWith(200);
-    expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({
-      message: "Treasury view not yet implemented.",
-    });
+    expect((res.json as jest.Mock).mock.calls[0][0]).toEqual(mockTreasury);
   });
 });
 
