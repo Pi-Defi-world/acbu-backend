@@ -64,6 +64,27 @@ function summarizeErrorDetails(details: unknown): unknown {
   return "REDACTED_NON_OBJECT_DETAILS";
 }
 
+/**
+ * Sanitize AppError.details before including it in a client-facing response.
+ *
+ * Guarantees:
+ *  - Only plain JSON-serializable values reach the client (no class instances,
+ *    Buffers, functions, Symbols, or circular references).
+ *  - Returns undefined if sanitization fails for any reason, so callers can
+ *    simply omit the details key rather than crashing or leaking internals.
+ */
+function sanitizeDetailsForClient(details: unknown): unknown {
+  if (details === null || details === undefined) return undefined;
+  try {
+    // JSON round-trip drops functions/Symbols/undefined values and throws on
+    // circular references, guaranteeing a plain, serializable value.
+    return JSON.parse(JSON.stringify(details));
+  } catch {
+    // Circular reference or other non-serializable content — omit entirely.
+    return undefined;
+  }
+}
+
 export const errorHandler = (
   err: Error | AppError | SyntaxError,
   req: Request,
@@ -93,13 +114,14 @@ export const errorHandler = (
       details: summarizeErrorDetails(err.details),
     });
 
+    const clientDetails = sanitizeDetailsForClient(err.details);
     res.status(err.statusCode).json({
       error: {
         code: err.code,
         error_code: err.code,
         message: err.message,
         statusCode: err.statusCode,
-        ...(err.details ? { details: err.details } : {}),
+        ...(clientDetails !== undefined ? { details: clientDetails } : {}),
       },
     });
     return;
