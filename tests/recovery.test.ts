@@ -171,6 +171,7 @@ describe("recoveryService", () => {
       mockPrismaOtpFindFirst.mockResolvedValue({
         id: "otp-1",
         codeHash: await bcrypt.hash("111111", 10),
+        failedAttempts: 0,
       });
       mockGenerateApiKey.mockResolvedValue("api-key-1");
 
@@ -187,11 +188,12 @@ describe("recoveryService", () => {
       expect(mockGenerateApiKey).toHaveBeenCalledWith("user-1", []);
     });
 
-    it("rejects invalid OTP", async () => {
+    it("rejects invalid OTP and increments failed attempts", async () => {
       mockVerifyChallengeToken.mockReturnValue({ userId: "user-1" });
       mockPrismaOtpFindFirst.mockResolvedValue({
         id: "otp-1",
         codeHash: await bcrypt.hash("111111", 10),
+        failedAttempts: 0,
       });
 
       await expect(
@@ -200,6 +202,125 @@ describe("recoveryService", () => {
           code: "222222",
         }),
       ).rejects.toThrow("Invalid code");
+
+      // Must increment failedAttempts (no lock yet — only 1 attempt)
+      expect(mockPrismaOtpUpdate).toHaveBeenCalledWith({
+        where: { id: "otp-1" },
+        data: { failedAttempts: 1 },
+      });
+    });
+
+    it("does not set lockedAt before the threshold is reached", async () => {
+      mockVerifyChallengeToken.mockReturnValue({ userId: "user-1" });
+      mockPrismaOtpFindFirst.mockResolvedValue({
+        id: "otp-1",
+        codeHash: await bcrypt.hash("111111", 10),
+        // 3 prior failures — still one short of the limit
+        failedAttempts: 3,
+      });
+
+      await expect(
+        verifyRecoveryOtp({
+          challenge_token: "challenge-token",
+          code: "000000",
+        }),
+      ).rejects.toThrow("Invalid code");
+
+      // failedAttempts becomes 4 — no lockedAt
+      expect(mockPrismaOtpUpdate).toHaveBeenCalledWith({
+        where: { id: "otp-1" },
+        data: { failedAttempts: 4 },
+      });
+    });
+
+    it("locks the challenge on the 5th failed attempt", async () => {
+      mockVerifyChallengeToken.mockReturnValue({ userId: "user-1" });
+      mockPrismaOtpFindFirst.mockResolvedValue({
+        id: "otp-1",
+        codeHash: await bcrypt.hash("111111", 10),
+        // 4 prior failures — next one hits the cap
+        failedAttempts: 4,
+      });
+
+      await expect(
+        verifyRecoveryOtp({
+          challenge_token: "challenge-token",
+          code: "000000",
+        }),
+      ).rejects.toThrow("Invalid code");
+
+      // failedAttempts becomes 5 AND lockedAt must be set
+      expect(mockPrismaOtpUpdate).toHaveBeenCalledWith({
+        where: { id: "otp-1" },
+        data: { failedAttempts: 5, lockedAt: expect.any(Date) },
+      });
+    });
+
+    it("rejects immediately when challenge is already locked (not returned by query)", async () => {
+      mockVerifyChallengeToken.mockReturnValue({ userId: "user-1" });
+      // The findFirst query excludes lockedAt != null rows, so it returns null
+      mockPrismaOtpFindFirst.mockResolvedValue(null);
+
+      await expect(
+        verifyRecoveryOtp({
+          challenge_token: "challenge-token",
+          code: "111111",
+        }),
+      ).rejects.toThrow("Invalid or expired code");
+
+      // No attempt-counter update should occur
+      expect(mockPrismaOtpUpdate).not.toHaveBeenCalled();
+    });
+
+    it("emits a high-risk audit event when the challenge is locked", async () => {
+      mockVerifyChallengeToken.mockReturnValue({ userId: "user-1" });
+      mockPrismaOtpFindFirst.mockResolvedValue({
+        id: "otp-1",
+        codeHash: await bcrypt.hash("111111", 10),
+        failedAttempts: 4,
+      });
+
+      await expect(
+        verifyRecoveryOtp({
+          challenge_token: "challenge-token",
+          code: "000000",
+        }),
+      ).rejects.toThrow("Invalid code");
+
+      expect(mockAuditRecoveryEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "recovery_failed",
+          userId: "user-1",
+          risk: "high",
+          details: expect.objectContaining({
+            challengeLocked: true,
+            failedAttempts: 5,
+          }),
+        }),
+      );
+    });
+
+    it("emits a medium-risk audit event for a non-locking wrong guess", async () => {
+      mockVerifyChallengeToken.mockReturnValue({ userId: "user-1" });
+      mockPrismaOtpFindFirst.mockResolvedValue({
+        id: "otp-1",
+        codeHash: await bcrypt.hash("111111", 10),
+        failedAttempts: 1,
+      });
+
+      await expect(
+        verifyRecoveryOtp({
+          challenge_token: "challenge-token",
+          code: "000000",
+        }),
+      ).rejects.toThrow("Invalid code");
+
+      expect(mockAuditRecoveryEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          risk: "medium",
+          details: expect.objectContaining({ challengeLocked: false }),
+        }),
+      );
     });
   });
 });

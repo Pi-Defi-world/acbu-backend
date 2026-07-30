@@ -433,13 +433,15 @@ model UserContact {
 }
 
 model OtpChallenge {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  codeHash  String    @map("code_hash") @db.VarChar(255)
-  channel   String    @db.VarChar(20) // 'sms' | 'email'
-  expiresAt DateTime  @map("expires_at") @db.Timestamp(6)
-  usedAt    DateTime? @map("used_at") @db.Timestamp(6)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  codeHash       String    @map("code_hash") @db.VarChar(255)
+  channel        String    @db.VarChar(20) // 'sms' | 'email'
+  expiresAt      DateTime  @map("expires_at") @db.Timestamp(6)
+  usedAt         DateTime? @map("used_at") @db.Timestamp(6)
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedAt       DateTime? @map("locked_at") @db.Timestamp(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
