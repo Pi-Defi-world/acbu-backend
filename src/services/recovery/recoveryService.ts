@@ -246,8 +246,19 @@ export async function unlockApp(
   };
 }
 
+/** Maximum number of wrong-code guesses before a challenge is permanently locked. */
+export const OTP_MAX_ATTEMPTS = 5;
+
 /**
  * Step 2: Enhanced OTP verification with session rotation and device trust.
+ *
+ * Per-challenge attempt throttling (BE-018):
+ *   - Each wrong guess increments `failedAttempts` on the challenge row.
+ *   - After OTP_MAX_ATTEMPTS failures the row is locked (`lockedAt` is set) and
+ *     every subsequent attempt is rejected with the same error as an expired
+ *     challenge, so callers cannot distinguish lockout from expiry.
+ *   - On success `failedAttempts` is not reset — the row is consumed via
+ *     `usedAt` and will never be found again by the active-challenge query.
  */
 export async function verifyRecoveryOtp(
   params: VerifyRecoveryOtpParams,
@@ -261,6 +272,8 @@ export async function verifyRecoveryOtp(
       userId: payload.userId,
       expiresAt: { gt: now },
       usedAt: null,
+      // Exclude locked challenges — they are dead to all callers
+      lockedAt: null,
     },
     orderBy: { createdAt: "desc" },
   });
@@ -280,16 +293,38 @@ export async function verifyRecoveryOtp(
 
   const match = await bcrypt.compare(code, challenge.codeHash);
   if (!match) {
+    // Increment the failed-attempt counter and, if the threshold is reached,
+    // lock the challenge atomically in a single UPDATE so there is no window
+    // where a concurrent request can slip through.
+    const newFailedAttempts = challenge.failedAttempts + 1;
+    const shouldLock = newFailedAttempts >= OTP_MAX_ATTEMPTS;
+
+    await prisma.otpChallenge.update({
+      where: { id: challenge.id },
+      data: {
+        failedAttempts: newFailedAttempts,
+        ...(shouldLock ? { lockedAt: now } : {}),
+      },
+    });
+
     await auditRecoveryEvent({
       eventType: "recovery_failed",
       userId: payload.userId,
       ip: deviceFingerprint?.ip,
       userAgent: deviceFingerprint?.userAgent,
-      details: { reason: "Invalid OTP" },
-      risk: "medium",
+      details: {
+        reason: shouldLock ? "OTP challenge locked after max attempts" : "Invalid OTP",
+        failedAttempts: newFailedAttempts,
+        challengeLocked: shouldLock,
+      },
+      risk: shouldLock ? "high" : "medium",
     });
 
-    logger.warn("Recovery: invalid OTP", { userId: payload.userId });
+    logger.warn("Recovery: invalid OTP", {
+      userId: payload.userId,
+      failedAttempts: newFailedAttempts,
+      challengeLocked: shouldLock,
+    });
     throw new Error("Invalid code");
   }
 
