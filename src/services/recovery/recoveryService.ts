@@ -24,6 +24,7 @@ import {
   detectSuspiciousPatterns,
   rotateUserSessions,
 } from "./auditService";
+import { generateSecureOtp } from "../../utils/otp";
 
 const OTP_EXPIRY_MINUTES = 10;
 
@@ -54,10 +55,6 @@ export interface VerifyRecoveryOtpParams {
 export interface VerifyRecoveryOtpResult {
   api_key: string;
   user_id: string;
-}
-
-function generateOtpCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 async function publishOtpToQueue(payload: {
@@ -197,7 +194,7 @@ export async function unlockApp(
     throw new Error("Recovery channel not configured");
   }
 
-  const code = generateOtpCode();
+  const code = generateSecureOtp();
   const codeHash = await bcrypt.hash(code, 10);
   await prisma.otpChallenge.create({
     data: {
