@@ -9,9 +9,6 @@ build/
 *.tsbuildinfo
 
 # Environment variables
-.env
-.env.production
-.env.local
 .env.*.local
 
 # Logs
@@ -26,7 +23,6 @@ coverage/
 .nyc_output/
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -46,3 +42,7 @@ temp/
 heapdumps/
 *.heapsnapshot
 # Sensitive architecture and security docs
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+config.bat

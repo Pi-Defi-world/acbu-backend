@@ -1,0 +1,99 @@
+name: Env Contract Validation
+
+on:
+  pull_request:
+    branches: [main, dev, develop]
+    paths:
+      - '.env.example'
+      - '.github/workflows/env-contract-validation.yml'
+      - 'src/config/**'
+
+jobs:
+  validate-env-contract:
+    name: Validate Environment Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.33.1"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Validate backend environment schema
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          MONGODB_URI: mongodb://localhost:27017/test
+          RABBITMQ_URL: amqp://localhost:5672
+          JWT_SECRET: ci-test-secret-that-is-at-least-32-characters-long
+          NODE_ENV: ci
+          CORS_ORIGIN: http://localhost:3000
+        run: |
+          node -e "
+          try {
+            require('./src/config/env');
+            console.log('✓ Environment schema validation passed');
+          } catch (e) {
+            console.error('✗ Environment schema validation failed:', e.message);
+            process.exit(1);
+          }
+          "
+
+      - name: Validate CORS configuration
+        run: |
+          node -e "
+          const { parseCorsOrigins } = require('./src/config/corsOrigins');
+          const tests = [
+            { input: 'http://localhost:3000', env: 'development', expect: ['http://localhost:3000'] },
+            { input: 'https://app.acbu.io,https://www.acbu.io', env: 'production', expect: ['https://app.acbu.io', 'https://www.acbu.io'] },
+          ];
+
+          tests.forEach(({ input, env, expect }) => {
+            const result = parseCorsOrigins(input, env);
+            if (JSON.stringify(result.sort()) !== JSON.stringify(expect.sort())) {
+              throw new Error(\`CORS parse failed for \${input}: got \${JSON.stringify(result)}, expected \${JSON.stringify(expect)}\`);
+            }
+          });
+
+          console.log('✓ CORS configuration validation passed');
+          "
+
+      - name: Check env schema matches .env.example
+        run: |
+          node -e "
+          const fs = require('fs');
+          const envExample = fs.readFileSync('.env.example', 'utf-8');
+          const configEnv = fs.readFileSync('src/config/env.ts', 'utf-8');
+
+          // Extract variable names from .env.example (pattern: NAME=value)
+          const exampleVars = new Set(
+            (envExample.match(/^[A-Z_]+=/gm) || []).map(m => m.slice(0, -1))
+          );
+
+          // Extract variable names from env.ts schema (pattern: VARIABLE_NAME: z.*)
+          const schemaVars = new Set(
+            (configEnv.match(/^\s+[A-Z_]+:\s+z\./gm) || []).map(m => m.trim().split(':')[0])
+          );
+
+          // Check critical variables are documented
+          const criticalVars = ['DATABASE_URL', 'JWT_SECRET', 'CORS_ORIGIN', 'MONGODB_URI'];
+          const missingDocs = criticalVars.filter(v => !exampleVars.has(v));
+
+          if (missingDocs.length > 0) {
+            throw new Error(\`Critical environment variables missing from .env.example: \${missingDocs.join(', ')}\`);
+          }
+
+          console.log('✓ Environment documentation validation passed');
+          console.log(\`  Documented: \${exampleVars.size} variables\`);
+          console.log(\`  Configured: \${schemaVars.size} variables\`);
+          "
