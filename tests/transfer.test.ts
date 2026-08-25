@@ -5,6 +5,7 @@ jest.mock("../src/config/database", () => ({
     user: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
+      updateMany: jest.fn(),
     },
     transaction: {
       create: jest.fn(),
@@ -102,7 +103,10 @@ describe("normalizeRecipientQuery", () => {
 });
 
 describe("createTransfer", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (mockUser.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+  });
 
   // ── amount validation ────────────────────────────────────────────────────────
 
@@ -159,7 +163,7 @@ describe("createTransfer", () => {
     (mockUser.findUnique as jest.Mock).mockResolvedValue(verifiedSender);
     (mockUser.findFirst as jest.Mock).mockResolvedValue(null);
     await expect(
-      createTransfer({ senderUserId: SENDER_ID, to: "@ghost", amountAcbu: "10" })
+      createTransfer({ senderUserId: SENDER_ID, to: "@ghost", amountAcbu: "10" }, { ifMatch: '"0"' })
     ).rejects.toThrow("Recipient not found or not available");
   });
 
@@ -175,7 +179,7 @@ describe("createTransfer", () => {
       privacyHideFromSearch: false,
     });
     await expect(
-      createTransfer({ senderUserId: SENDER_ID, to: "@alice", amountAcbu: "10" })
+      createTransfer({ senderUserId: SENDER_ID, to: "@alice", amountAcbu: "10" }, { ifMatch: '"0"' })
     ).rejects.toThrow("Cannot transfer to yourself");
   });
 
@@ -188,7 +192,7 @@ describe("createTransfer", () => {
     (mockUser.findFirst as jest.Mock).mockResolvedValue(bobUser);
     (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-123" });
 
-    const result = await createTransfer({ senderUserId: SENDER_ID, to: "@bob", amountAcbu: "5.5" });
+    const result = await createTransfer({ senderUserId: SENDER_ID, to: "@bob", amountAcbu: "5.5" }, { ifMatch: '"0"' });
 
     expect(result.transactionId).toBe("tx-123");
     expect(result.status).toBe("pending");
@@ -207,7 +211,7 @@ describe("createTransfer", () => {
 
     const result = await createTransfer(
       { senderUserId: SENDER_ID, to: "@bob", amountAcbu: "10" },
-      { submittedBlockchainTxHash: "abc123hash" },
+      { submittedBlockchainTxHash: "abc123hash", ifMatch: '"0"' },
     );
 
     expect(result.status).toBe("completed");
@@ -236,7 +240,7 @@ describe("createTransfer", () => {
 
     const result = await createTransfer(
       { senderUserId: SENDER_ID, to: "@bob", amountAcbu: "10" },
-      { getSenderSigningKey: async () => "STEST_SECRET_KEY" },
+      { getSenderSigningKey: async () => "STEST_SECRET_KEY", ifMatch: '"0"' },
     );
 
     expect(result.status).toBe("completed");
@@ -265,7 +269,7 @@ describe("createTransfer", () => {
 
     const result = await createTransfer(
       { senderUserId: SENDER_ID, to: "@bob", amountAcbu: "10" },
-      { getSenderSigningKey: async () => "STEST_SECRET_KEY" },
+      { getSenderSigningKey: async () => "STEST_SECRET_KEY", ifMatch: '"0"' },
     );
 
     expect(result.status).toBe("failed");
@@ -285,7 +289,7 @@ describe("createTransfer", () => {
 
     const result = await createTransfer(
       { senderUserId: SENDER_ID, to: "@bob", amountAcbu: "10" },
-      { getSenderSigningKey: async () => null },
+      { getSenderSigningKey: async () => null, ifMatch: '"0"' },
     );
 
     expect(result.status).toBe("pending");
@@ -301,11 +305,14 @@ describe("createTransfer", () => {
     (mockUser.findFirst as jest.Mock).mockResolvedValue(bobUser);
     (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-prec" });
 
-    await createTransfer({
-      senderUserId: SENDER_ID,
-      to: "@bob",
-      amountAcbu: "9999999.9999999",
-    });
+    await createTransfer(
+      {
+        senderUserId: SENDER_ID,
+        to: "@bob",
+        amountAcbu: "9999999.9999999",
+      },
+      { ifMatch: '"0"' },
+    );
 
     const createCall = (mockTx.create as jest.Mock).mock.calls[0][0];
     const stored = createCall.data.acbuAmount;
@@ -320,11 +327,14 @@ describe("createTransfer", () => {
     (mockUser.findFirst as jest.Mock).mockResolvedValue(bobUser);
     (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-min-prec" });
 
-    await createTransfer({
-      senderUserId: SENDER_ID,
-      to: "@bob",
-      amountAcbu: "0.0000001",
-    });
+    await createTransfer(
+      {
+        senderUserId: SENDER_ID,
+        to: "@bob",
+        amountAcbu: "0.0000001",
+      },
+      { ifMatch: '"0"' },
+    );
 
     const createCall = (mockTx.create as jest.Mock).mock.calls[0][0];
     expect(createCall.data.acbuAmount.toString()).toBe("0.0000001");
@@ -337,11 +347,14 @@ describe("createTransfer", () => {
     (mockUser.findFirst as jest.Mock).mockResolvedValue(bobUser);
     (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-whole" });
 
-    await createTransfer({
-      senderUserId: SENDER_ID,
-      to: "@bob",
-      amountAcbu: "1000000",
-    });
+    await createTransfer(
+      {
+        senderUserId: SENDER_ID,
+        to: "@bob",
+        amountAcbu: "1000000",
+      },
+      { ifMatch: '"0"' },
+    );
 
     const createCall = (mockTx.create as jest.Mock).mock.calls[0][0];
     expect(createCall.data.acbuAmount.toString()).toBe("1000000");
@@ -353,11 +366,14 @@ describe("createTransfer", () => {
     (mockUser.findUnique as jest.Mock).mockResolvedValueOnce(verifiedSender);
     (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-raw" });
 
-    const result = await createTransfer({
-      senderUserId: SENDER_ID,
-      to: RECIPIENT_STELLAR,
-      amountAcbu: "1",
-    });
+    const result = await createTransfer(
+      {
+        senderUserId: SENDER_ID,
+        to: RECIPIENT_STELLAR,
+        amountAcbu: "1",
+      },
+      { ifMatch: '"0"' },
+    );
 
     expect(result.status).toBe("pending");
     expect(mockTx.create).toHaveBeenCalledWith(
