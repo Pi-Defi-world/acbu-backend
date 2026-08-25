@@ -26,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  actions: write # actions/cache saves/restores build caches
 
 env:
   MSRV: "1.88.0"
