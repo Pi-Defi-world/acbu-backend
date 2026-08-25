@@ -15,6 +15,14 @@ import {
   ensureDemoFiatTrustline,
 } from "../stellar/trustlineService";
 import { ensureAccountActivated } from "../stellar/activationService";
+import {
+  InvalidCurrencyError,
+  InvalidMintAmountError,
+  InvalidCurrencyForOnRampError,
+  TrustlineMissingError,
+  NonExistentContractFunctionError,
+  ValidationError,
+} from "../../errors/index";
 
 const DECIMALS_7 = 1e7;
 const DECIMALS_7_BIGINT = 10_000_000n;
@@ -24,13 +32,13 @@ const MAX_MINT_USD_7 = 1_000_000_000_000n; // 100,000 USD in 7-dec fixed point
 function assertMintingConfigured(): void {
   const { minting } = getContractAddresses();
   if (!minting) {
-    throw new Error("Minting contract not configured (CONTRACT_MINTING)");
+    throw new ValidationError("Minting contract not configured (CONTRACT_MINTING)");
   }
 }
 
 function wholeFiatToI128(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error("Invalid fiat amount");
+    throw new ValidationError("Invalid fiat amount");
   }
   return String(Math.round(amount * DECIMALS_7));
 }
@@ -65,12 +73,12 @@ async function validateDemoMintAmount(
     const requestedFiat = Number(fiatAmountI128) / DECIMALS_7;
     const usdApprox = Number(usdGross) / DECIMALS_7;
 
-    throw new Error(
+    throw new InvalidMintAmountError(
       `Invalid mint amount for ${currency}: ${requestedFiat} converts to ~${usdApprox.toFixed(2)} USD. Allowed range is ${minFiat.toFixed(2)} to ${maxFiat.toFixed(2)} ${currency}.`,
     );
   } catch (e) {
     // Bubble only intentional validation errors; ignore pre-check network issues.
-    if (e instanceof Error && e.message.startsWith("Invalid mint amount for")) {
+    if (e instanceof InvalidMintAmountError) {
       throw e;
     }
   }
@@ -168,11 +176,11 @@ export async function requestFaucet(
   transaction_hash: string;
 }> {
   if (!BASKET_CURRENCIES.includes(currency as BasketCurrency)) {
-    throw new Error("Invalid currency for demo fiat faucet.");
+    throw new InvalidCurrencyError(currency);
   }
 
   if (amount <= 0 || amount > 10_000_000) {
-    throw new Error("Invalid amount (must be > 0 and <= 10000000).");
+    throw new ValidationError("Invalid amount (must be > 0 and <= 10000000).");
   }
 
   assertMintingConfigured();
@@ -194,7 +202,7 @@ export async function requestFaucet(
     }
   }
   if (!stellarAddress) {
-    throw new Error("User wallet address not set (and no recipient provided).");
+    throw new ValidationError("User wallet address not set (and no recipient provided).");
   }
 
   // Ensure the recipient account exists on-chain (testnet: newly generated addresses need funding).
@@ -231,13 +239,15 @@ export async function requestFaucet(
       e.message.includes("trustline entry is missing")
     ) {
       const secret = await decryptUserStellarSecret(userId, passcode);
-      if (!secret) throw e;
+      if (!secret) throw new TrustlineMissingError(e.message);
       await ensureDemoFiatTrustline({ userSecret: secret, currency });
       ({ transactionHash } = await acbuMintingService.adminDripDemoFiat({
         recipient: stellarAddress,
         currency,
         amount: amountI128,
       }));
+    } else if (e instanceof Error && e.message.includes("non-existent contract function")) {
+      throw new NonExistentContractFunctionError();
     } else {
       throw e;
     }
@@ -291,16 +301,16 @@ export async function simulateOnRamp(
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.stellarAddress) {
-    throw new Error("User wallet address not set");
+    throw new ValidationError("User wallet address not set");
   }
 
   if (!BASKET_CURRENCIES.includes(currency as BasketCurrency)) {
-    throw new Error("Invalid currency for on-ramp.");
+    throw new InvalidCurrencyForOnRampError();
   }
 
   const sourceAccount = stellarClient.getKeypair()?.publicKey();
   if (!sourceAccount) {
-    throw new Error("No Stellar source account (STELLAR_SECRET_KEY)");
+    throw new ValidationError("No Stellar source account (STELLAR_SECRET_KEY)");
   }
 
   const fiatAmountI128 = wholeFiatToI128(fiatAmount);
@@ -388,6 +398,10 @@ export async function simulateOnRamp(
           blockchain_tx_hash: retry.transactionHash,
         };
       }
+      throw new TrustlineMissingError(err.message);
+    }
+    if (err instanceof Error && err.message.includes("non-existent contract function")) {
+      throw new NonExistentContractFunctionError();
     }
 
     const message = err instanceof Error ? err.message : String(err);
@@ -423,7 +437,7 @@ export async function simulateOffRamp(
 }> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.stellarAddress) {
-    throw new Error("User wallet address not set");
+    throw new ValidationError("User wallet address not set");
   }
 
   const acbuRateRecord = await getLatestAcbuRate();

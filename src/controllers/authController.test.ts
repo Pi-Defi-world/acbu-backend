@@ -8,6 +8,16 @@ import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 import type { AuthRequest } from "../middleware/auth";
 import type { Response, NextFunction } from "express";
+import {
+  UsernameTakenError,
+  InvalidCredentialsError,
+  TooManyAttemptsError,
+  TwoFactorChannelNotConfiguredError,
+  OtpDeliveryUnavailableError,
+  InvalidOrExpiredChallengeError,
+  InvalidCodeError,
+  UnsupportedTwoFactorMethodError,
+} from "../errors/index";
 
 jest.mock("../services/auth", () => ({
   signup: jest.fn(),
@@ -91,9 +101,7 @@ describe("authController", () => {
     });
 
     it("returns 409 when username is already taken", async () => {
-      (signup as jest.Mock).mockRejectedValue(
-        new Error("Username already taken"),
-      );
+      (signup as jest.Mock).mockRejectedValue(new UsernameTakenError());
       const next = makeNext();
       await postSignup(
         { body: { username: "alice", passcode: "1234" } } as AuthRequest,
@@ -167,7 +175,7 @@ describe("authController", () => {
     });
 
     it("returns 401 on invalid credentials", async () => {
-      (signin as jest.Mock).mockRejectedValue(new Error("Invalid credentials"));
+      (signin as jest.Mock).mockRejectedValue(new InvalidCredentialsError());
       const next = makeNext();
       await postSignin(
         { body: { identifier: "alice", passcode: "wrong" } } as AuthRequest,
@@ -192,7 +200,7 @@ describe("authController", () => {
 
     it("returns 503 when OTP delivery is unavailable", async () => {
       (signin as jest.Mock).mockRejectedValue(
-        new Error("OTP delivery unavailable"),
+        new OtpDeliveryUnavailableError(),
       );
       const next = makeNext();
       await postSignin(
@@ -206,7 +214,7 @@ describe("authController", () => {
 
     it("returns 400 when 2FA channel is not configured", async () => {
       (signin as jest.Mock).mockRejectedValue(
-        new Error("2FA channel not configured"),
+        new TwoFactorChannelNotConfiguredError(),
       );
       const next = makeNext();
       await postSignin(
@@ -267,7 +275,7 @@ describe("authController", () => {
 
     it("returns 401 on invalid or expired challenge", async () => {
       (verify2fa as jest.Mock).mockRejectedValue(
-        new Error("Invalid or expired challenge"),
+        new InvalidOrExpiredChallengeError(),
       );
       const next = makeNext();
       await postVerify2fa(
@@ -281,7 +289,7 @@ describe("authController", () => {
     });
 
     it("returns 401 on invalid code", async () => {
-      (verify2fa as jest.Mock).mockRejectedValue(new Error("Invalid code"));
+      (verify2fa as jest.Mock).mockRejectedValue(new InvalidCodeError());
       const next = makeNext();
       await postVerify2fa(
         { body: { challenge_token: "tok", code: "000000" } } as AuthRequest,
@@ -307,7 +315,7 @@ describe("authController", () => {
 
     it("returns 400 when 2FA method is unsupported", async () => {
       (verify2fa as jest.Mock).mockRejectedValue(
-        new Error("Unsupported 2FA method"),
+        new UnsupportedTwoFactorMethodError(),
       );
       const next = makeNext();
       await postVerify2fa(

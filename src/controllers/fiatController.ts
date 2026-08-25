@@ -9,6 +9,7 @@ import {
   type FiatAccountView,
 } from "../services/fiat/fiatService";
 import { AppError } from "../middleware/errorHandler";
+import { TrustlineMissingError } from "../errors/index";
 
 export const faucetSchema = z.object({
   currency: z.string().min(3).max(3),
@@ -69,24 +70,13 @@ export async function postFaucet(
       const msg = e.errors.map((x) => x.message).join("; ");
       return next(new AppError(msg, 400));
     }
-    if (e instanceof Error) {
-      if (e.message.includes("Invalid currency")) {
-        return next(new AppError(e.message, 400));
-      }
-      if (
-        e.message.includes("trustline entry is missing for account") ||
-        e.message.includes("trustline entry is missing")
-      ) {
-        return next(
-          new AppError(
-            "Your wallet is missing a trustline for this demo currency (SAC). Add a trustline for the asset (e.g. NGN:GDHO63...) in your wallet, then retry the faucet.",
-            400,
-          ),
-        );
-      }
-      if (e.message.includes("non-existent contract function")) {
-        return next(new AppError(e.message, 503));
-      }
+    if (e instanceof TrustlineMissingError) {
+      return next(
+        new AppError(
+          "Your wallet is missing a trustline for this demo currency (SAC). Add a trustline for the asset (e.g. NGN:GDHO63...) in your wallet, then retry the faucet.",
+          400,
+        ),
+      );
     }
     next(e);
   }
@@ -115,30 +105,13 @@ export async function postOnRamp(
       const msg = e.errors.map((x) => x.message).join("; ");
       return next(new AppError(msg, 400));
     }
-    if (
-      e instanceof Error &&
-      (e.message.startsWith("Invalid mint amount for") ||
-        e.message.includes("Invalid currency for on-ramp."))
-    ) {
-      return next(new AppError(e.message, 400));
-    }
-    if (
-      e instanceof Error &&
-      (e.message.includes("trustline entry is missing for account") ||
-        e.message.includes("trustline entry is missing"))
-    ) {
+    if (e instanceof TrustlineMissingError) {
       return next(
         new AppError(
           "Recipient wallet is missing the ACBU trustline. Add trustline for ACBU first, then retry on-ramp mint.",
           400,
         ),
       );
-    }
-    if (
-      e instanceof Error &&
-      e.message.includes("non-existent contract function")
-    ) {
-      return next(new AppError(e.message, 503));
     }
     next(e);
   }
