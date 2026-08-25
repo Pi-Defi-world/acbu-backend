@@ -62,13 +62,15 @@ const rateField = {
  *
  * @param localAmount - The amount in local currency (as number)
  * @param currency - The currency code (e.g., "NGN", "KES")
- * @returns The equivalent USD amount as a number with proper decimal precision
+ * @returns The equivalent USD amount as a Decimal to preserve full precision.
+ *          Callers that need a JS number for comparison with integer thresholds
+ *          should call `.toNumber()` at the boundary — not inside this function.
  * @throws AppError if currency not supported, rates not available, or conversion fails
  */
 export async function convertLocalToUsd(
   localAmount: number,
   currency: string,
-): Promise<number> {
+): Promise<Decimal> {
   // Validate currency is supported
   if (!CURRENCY_TO_RATE_FIELD[currency]) {
     throw new AppError(
@@ -93,7 +95,7 @@ export async function convertLocalToUsd(
   // Retrieve the local-to-ACBU rate (how many units of local currency per 1 ACBU)
   const localToAcbuRate = latestRate[rateFieldName as keyof typeof latestRate];
 
-  if (!localToAcbuRate || localToAcbuRate.toNumber() <= 0) {
+  if (!localToAcbuRate || new Decimal(localToAcbuRate).isNegative() || new Decimal(localToAcbuRate).isZero()) {
     throw new AppError(
       `Exchange rate for ${currency} is not available or invalid. Cannot process deposit at this time.`,
       503,
@@ -110,7 +112,7 @@ export async function convertLocalToUsd(
   // Get USD rate per ACBU
   const acbuUsdRate = new Decimal(latestRate.acbuUsd);
 
-  if (acbuUsdRate.toNumber() <= 0) {
+  if (acbuUsdRate.isNegative() || acbuUsdRate.isZero()) {
     throw new AppError(
       "USD conversion rate is invalid. Cannot process deposit at this time.",
       503,
@@ -118,10 +120,14 @@ export async function convertLocalToUsd(
   }
 
   // Convert ACBU to USD
+  // Issue #787: Return the full-precision Decimal rather than calling .toNumber().
+  // JavaScript's 64-bit float cannot represent all fractional values exactly, so
+  // converting to number here would silently lose precision for large or highly
+  // fractional USD amounts (e.g., deposit limits and fee calculations).
+  // Callers that need a JS number should call .toNumber() at the boundary.
   const usdAmount = acbuAmount.mul(acbuUsdRate);
 
-  // Return as number with precision
-  return usdAmount.toNumber();
+  return usdAmount;
 }
 
 /**

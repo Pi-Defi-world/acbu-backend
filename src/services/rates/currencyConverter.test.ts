@@ -35,7 +35,8 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(100000, "NGN");
 
-      expect(result).toBeCloseTo(50, 5);
+      // Issue #787: result is now a Decimal; convert at the test boundary
+      expect(result.toNumber()).toBeCloseTo(50, 5);
     });
 
     it("should convert KES to USD correctly", async () => {
@@ -49,7 +50,8 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(7500, "KES");
 
-      expect(result).toBeCloseTo(25, 5);
+      // Issue #787: result is now a Decimal; convert at the test boundary
+      expect(result.toNumber()).toBeCloseTo(25, 5);
     });
 
     it("should handle all supported currencies", async () => {
@@ -90,8 +92,9 @@ describe("currencyConverter", () => {
 
       for (const currency of currencies) {
         const result = await convertLocalToUsd(1000, currency);
-        expect(typeof result).toBe("number");
-        expect(result).toBeGreaterThan(0);
+        // Issue #787: result is now Decimal, not a primitive number
+        expect(result).toBeInstanceOf(Decimal);
+        expect(result.toNumber()).toBeGreaterThan(0);
       }
     });
 
@@ -105,8 +108,11 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(999999.99, "NGN");
 
-      // Should maintain precision
-      expect(result).toBeCloseTo(507.83, 2);
+      // Issue #787: The Decimal result preserves full precision — no floating-point skew.
+      // Verify precision is maintained beyond what JS number could represent.
+      expect(result.toNumber()).toBeCloseTo(507.83, 2);
+      // Also verify the raw Decimal string to confirm no rounding loss at source.
+      expect(parseFloat(result.toString())).toBeCloseTo(507.83, 2);
     });
 
     it("should reject unsupported currency", async () => {
@@ -127,7 +133,7 @@ describe("currencyConverter", () => {
 
       // NGN should work
       const result = await convertLocalToUsd(100000, "NGN");
-      expect(result).toBeCloseTo(50, 5);
+      expect(result.toNumber()).toBeCloseTo(50, 5);
     });
 
     it("should throw error if no rates available", async () => {
@@ -182,7 +188,7 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(1, "NGN");
 
-      expect(result).toBeCloseTo(0.0005, 10);
+      expect(result.toNumber()).toBeCloseTo(0.0005, 10);
     });
 
     it("should handle very large local amounts", async () => {
@@ -194,7 +200,7 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(1000000000, "NGN");
 
-      expect(result).toBeCloseTo(500000, 2);
+      expect(result.toNumber()).toBeCloseTo(500000, 2);
     });
 
     it("should handle decimal input strings", async () => {
@@ -206,7 +212,7 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(100000.5, "NGN");
 
-      expect(result).toBeCloseTo(50.00025, 5);
+      expect(result.toNumber()).toBeCloseTo(50.00025, 5);
     });
   });
 
@@ -286,7 +292,7 @@ describe("currencyConverter", () => {
       const usdEquivalent = await convertLocalToUsd(50000, "NGN");
 
       // 50,000 NGN = 100 ACBU = $60 USD
-      expect(usdEquivalent).toBeCloseTo(60, 2);
+      expect(usdEquivalent.toNumber()).toBeCloseTo(60, 2);
     });
 
     it("should correctly price a large business KES deposit", async () => {
@@ -301,7 +307,7 @@ describe("currencyConverter", () => {
       const usdEquivalent = await convertLocalToUsd(1000000, "KES");
 
       // 1,000,000 KES = 5,000 ACBU = $3,500 USD
-      expect(usdEquivalent).toBeCloseTo(3500, 2);
+      expect(usdEquivalent.toNumber()).toBeCloseTo(3500, 2);
     });
 
     it("should handle multi-currency conversion consistency", async () => {
@@ -329,8 +335,8 @@ describe("currencyConverter", () => {
       const kesToUsd = await convertLocalToUsd(kesEquivalent, "KES");
 
       // Both should be approximately $50 USD
-      expect(ngnToUsd).toBeCloseTo(50, 2);
-      expect(kesToUsd).toBeCloseTo(50, 2);
+      expect(ngnToUsd.toNumber()).toBeCloseTo(50, 2);
+      expect(kesToUsd.toNumber()).toBeCloseTo(50, 2);
     });
   });
 });
