@@ -52,6 +52,18 @@ function isTimestampValid(raw: string | undefined): boolean {
   return Math.abs(nowS - eventS) <= WEBHOOK_TIMESTAMP_TOLERANCE_S;
 }
 
+/**
+ * Validate that the request Content-Type is application/json.
+ * Rejects requests with multipart/form-data, text/xml, or other content types
+ * that could bypass JSON body parsing middleware.
+ */
+function isContentTypeJson(req: Request): boolean {
+  const contentType = req.headers["content-type"];
+  if (!contentType) return false;
+  // Accept application/json with or without charset parameter
+  return contentType.startsWith("application/json");
+}
+
 if (bypassEnabled) {
   logger.warn(
     "WEBHOOK_SIGNATURE_BYPASS is enabled — webhook signature verification " +
@@ -71,6 +83,15 @@ export function verifyFlutterwaveSignature(
   if (bypassEnabled) {
     logger.warn("Flutterwave webhook signature check bypassed (dev/stage)");
     next();
+    return;
+  }
+
+  // #296: Enforce Content-Type to prevent bypass of JSON body parsing
+  if (!isContentTypeJson(req)) {
+    logger.warn("Flutterwave webhook rejected: invalid Content-Type", {
+      contentType: req.headers["content-type"],
+    });
+    res.status(415).json({ error: "Content-Type must be application/json" });
     return;
   }
 
@@ -154,6 +175,15 @@ export function verifyPaystackSignature(
   if (bypassEnabled) {
     logger.warn("Paystack webhook signature check bypassed (dev/stage)");
     next();
+    return;
+  }
+
+  // #296: Enforce Content-Type to prevent bypass of JSON body parsing
+  if (!isContentTypeJson(req)) {
+    logger.warn("Paystack webhook rejected: invalid Content-Type", {
+      contentType: req.headers["content-type"],
+    });
+    res.status(415).json({ error: "Content-Type must be application/json" });
     return;
   }
 
@@ -392,6 +422,15 @@ export function verifyBillsWebhookSignature(
   if (bypassEnabled) {
     logger.warn("Bills webhook signature check bypassed (dev/stage)");
     next();
+    return;
+  }
+
+  // #296: Enforce Content-Type to prevent bypass of JSON body parsing
+  if (!isContentTypeJson(req)) {
+    logger.warn("Bills webhook rejected: invalid Content-Type", {
+      contentType: req.headers["content-type"],
+    });
+    res.status(415).json({ error: "Content-Type must be application/json" });
     return;
   }
 
