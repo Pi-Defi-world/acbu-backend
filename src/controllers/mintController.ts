@@ -366,7 +366,10 @@ export async function depositFromBasketCurrency(
 
     await checkDepositLimits(
       audience,
-      amountUsd,
+      // Issue #787: convertLocalToUsd now returns Decimal for full precision.
+      // Convert to number here at the boundary, since checkDepositLimits
+      // compares against integer config thresholds (e.g., 5000, 50000).
+      amountUsd.toNumber(),
       userId,
       req.apiKey?.organizationId ?? null,
     );

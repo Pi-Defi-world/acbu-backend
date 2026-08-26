@@ -77,7 +77,10 @@
     "decimal.js": "^10.6.0",
     "dotenv": "^16.4.5",
     "escape-string-regexp": "^5.0.0",
-    "express": "^4.18.2",
+    // Issue #780: bumped from ^4.18.2 to ^4.21.2 to pull in body-parser >=1.20.6
+    // (GHSA-v422-hmwv-36x6 — invalid limit silently disables body size enforcement).
+    "body-parser": "^1.20.6",
+    "express": "^4.21.2",
     "express-async-errors": "^3.1.1",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",

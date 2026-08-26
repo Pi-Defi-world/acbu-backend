@@ -157,9 +157,17 @@ if (parsed.data.NODE_ENV === "production" && !parsed.data.USDC_ISSUER_MAINNET) {
   throw new Error("Missing required environment variable: USDC_ISSUER_MAINNET");
 }
 
-const s3ScanWebhookSecret = process.env.S3_SCAN_WEBHOOK_SECRET?.trim() || "change-me-in-production";
+// Issue #763: Use an empty string as the fallback — not a known sentinel value.
+// The previous pattern ("change-me-in-production") served double-duty as both
+// the default AND the guard string, meaning a deploy that accidentally sets the
+// real secret to that exact string would fail to boot, and the sentinel value
+// was only checked in production (non-prod environments ran with a known public
+// string as the active secret). The fix keeps concerns separate:
+//   - Default: empty string (the variable is simply absent / unset).
+//   - Guard:   check for non-empty length, which is the true requirement.
+const s3ScanWebhookSecret = process.env.S3_SCAN_WEBHOOK_SECRET?.trim() ?? "";
 
-if (parsed.data.NODE_ENV === "production" && s3ScanWebhookSecret === "change-me-in-production") {
+if (parsed.data.NODE_ENV === "production" && s3ScanWebhookSecret.length === 0) {
   throw new Error("Missing required environment variable: S3_SCAN_WEBHOOK_SECRET");
 }
 // #382: Fintech partner keys must never be absent in production — an empty

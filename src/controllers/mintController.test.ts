@@ -43,10 +43,17 @@ jest.mock("../services/limits/limitsService", () => ({
   isMintingPaused: jest.fn(),
 }));
 
-jest.mock("../services/rates", () => ({
-  convertLocalToUsd: jest.fn().mockResolvedValue(100),
-  convertLocalToUsdWithPrecision: jest.fn(),
-}));
+jest.mock("../services/rates", () => {
+  // Import Decimal lazily to avoid hoisting issues with jest.mock
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Decimal } = require("@prisma/client/runtime/library") as { Decimal: typeof import("@prisma/client/runtime/library").Decimal };
+  return {
+    // Issue #787: convertLocalToUsd now returns Decimal, not number.
+    // The controller calls .toNumber() at the boundary before checkDepositLimits.
+    convertLocalToUsd: jest.fn().mockResolvedValue(new Decimal("100")),
+    convertLocalToUsdWithPrecision: jest.fn(),
+  };
+});
 
 const makeRes = () => {
   const res = { status: jest.fn(), json: jest.fn() } as unknown as Response;
