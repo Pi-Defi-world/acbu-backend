@@ -170,7 +170,7 @@ export async function convertLocalToUsdWithPrecision(
   // Retrieve the local-to-ACBU rate
   const localToAcbuRate = latestRate[rateFieldName as keyof typeof latestRate];
 
-  if (!localToAcbuRate || localToAcbuRate.toNumber() <= 0) {
+  if (!localToAcbuRate || new Decimal(localToAcbuRate).isNegative() || new Decimal(localToAcbuRate).isZero()) {
     throw new AppError(
       `Exchange rate for ${currency} is not available or invalid. Cannot process deposit at this time.`,
       503,
@@ -187,7 +187,7 @@ export async function convertLocalToUsdWithPrecision(
   // Get USD rate per ACBU
   const acbuUsdRate = new Decimal(latestRate.acbuUsd);
 
-  if (acbuUsdRate.toNumber() <= 0) {
+  if (acbuUsdRate.isNegative() || acbuUsdRate.isZero()) {
     throw new AppError(
       "USD conversion rate is invalid. Cannot process deposit at this time.",
       503,
