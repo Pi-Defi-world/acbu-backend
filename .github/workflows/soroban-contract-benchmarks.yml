@@ -1,0 +1,142 @@
+name: Soroban Contract Performance & Budget Guard
+
+# Enforces budget ceilings and performance benchmarks across Soroban smart contracts
+# in the ACBU ecosystem:
+#   - acbu-smart-contract (dev branch)
+#   - ultrahonk-soroban-verifier (main branch)
+#   - local WASM contract binaries under contracts/ or wasm/
+#
+# Prevents cost regressions (CPU instructions, memory bytes, WASM binary size)
+# from shipping silently into production.
+
+on:
+  push:
+    branches: [main, dev, develop]
+    paths:
+      - "contracts/**"
+      - "wasm/**"
+      - "scripts/ci/check-contract-budget.js"
+      - ".github/workflows/soroban-contract-benchmarks.yml"
+  pull_request:
+    branches: [main, dev, develop]
+    paths:
+      - "contracts/**"
+      - "wasm/**"
+      - "scripts/ci/check-contract-budget.js"
+      - ".github/workflows/soroban-contract-benchmarks.yml"
+  schedule:
+    # Nightly run at 03:00 UTC: catch budget & cost regressions early
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # actions/cache saves/restores cargo cache
+
+env:
+  MSRV: "1.88.0"
+  MAX_WASM_SIZE_KB: "256"
+  MAX_CPU_INSTRUCTIONS: "100000000"
+  MAX_MEMORY_BYTES: "41943040"
+
+jobs:
+  soroban-contract-benchmarks:
+    name: Benchmark & Budget Guard · ${{ matrix.repo.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - name: acbu-smart-contract
+            ref: dev
+            check: cargo test --workspace --exclude acbu_minting --exclude acbu_reserve_tracker --exclude acbu_lending_pool --exclude acbu_oracle -- --nocapture
+            targets: wasm32-unknown-unknown
+            needs-token-wasm: 'true'
+          - name: ultrahonk-soroban-verifier
+            ref: main
+            check: cargo test --manifest-path Cargo.toml -- --nocapture
+            targets: wasm32-unknown-unknown
+            needs-token-wasm: 'false'
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: Pi-Defi-world/${{ matrix.repo.name }}
+          ref: ${{ matrix.repo.ref }}
+
+      - name: Install Rust ${{ env.MSRV }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.MSRV }}
+          targets: ${{ matrix.repo.targets }}
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ matrix.repo.name }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-${{ matrix.repo.name }}-
+
+      - name: Build token contract WASM (acbu-smart-contract)
+        if: matrix.repo.needs-token-wasm == 'true'
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
+        run: |
+          set -euo pipefail
+          if [ -f soroban_token_contract.wasm ]; then
+            echo "soroban_token_contract.wasm already present"
+            exit 0
+          fi
+          git clone --depth 1 --branch v21.6.0 https://github.com/stellar/soroban-examples.git /tmp/soroban-examples
+          export CARGO_TARGET_DIR=/tmp/soroban-examples-target
+          cargo build --release --target wasm32-unknown-unknown --manifest-path /tmp/soroban-examples/token/Cargo.toml
+          cp /tmp/soroban-examples-target/wasm32-unknown-unknown/release/soroban_token_contract.wasm ./soroban_token_contract.wasm
+
+      - name: Run contract operation budget benchmark tests
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
+        run: ${{ matrix.repo.check }}
+
+      - name: Build release WASM binaries for budget inspection
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
+        run: |
+          cargo build --release --target wasm32-unknown-unknown || true
+
+      - name: Checkout backend repository scripts
+        uses: actions/checkout@v7
+        with:
+          path: .backend-scripts
+          sparse-checkout: |
+            scripts/ci/check-contract-budget.js
+
+      - name: Run WASM budget & cost ceiling guard
+        run: |
+          node .backend-scripts/scripts/ci/check-contract-budget.js --dir .
+
+  local-contract-budget-check:
+    name: Local Workspace WASM Budget Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.33.1"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run local budget guard
+        run: node scripts/ci/check-contract-budget.js --dir .
