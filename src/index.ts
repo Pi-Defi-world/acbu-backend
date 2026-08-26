@@ -22,7 +22,7 @@ import { connectRabbitMQ, disconnectRabbitMQ } from "./config/rabbitmq";
 import { prisma, connectWithRetry } from "./config/database";
 import { corsMiddleware } from "./middleware/cors";
 import { correlationMiddleware } from "./middleware/correlation";
-import { requestLogger } from "./middleware/logger";
+import { requestLogger } from "./middleware/requestLogger";
 import { requestMetricsMiddleware } from "./middleware/metrics";
 import { errorHandler, AppError } from "./middleware/errorHandler";
 import { standardRateLimiter } from "./middleware/rateLimiter";
