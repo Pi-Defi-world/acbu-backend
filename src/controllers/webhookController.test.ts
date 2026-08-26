@@ -7,6 +7,7 @@ import type { Request, Response, NextFunction } from "express";
 
 const FW_SECRET = "test-flutterwave-secret";
 const PS_SECRET = "test-paystack-secret";
+const BILLS_SECRET = "test-bills-secret";
 
 jest.mock("../config/env", () => ({
   config: {
@@ -29,6 +30,7 @@ jest.mock("../config/env", () => ({
     logFile: "logs/app.log",
     flutterwave: { webhookSecret: FW_SECRET },
     paystack: { secretKey: PS_SECRET },
+    bills: { webhookSecret: BILLS_SECRET },
     mtnMomo: {
       subscriptionKey: "",
       apiUserId: "",
@@ -126,6 +128,7 @@ jest.mock("../services/bills", () => ({
 import {
   verifyFlutterwaveSignature,
   verifyPaystackSignature,
+  verifyBillsWebhookSignature,
   handleFlutterwaveWebhook,
   handlePaystackWebhook,
   handleBillsWebhook,
@@ -161,7 +164,11 @@ describe("webhookController", () => {
       const rawBody = Buffer.from(JSON.stringify({ event: "charge.completed" }));
       const sig = crypto.createHmac("sha256", FW_SECRET).update(rawBody).digest("hex");
       const req = {
-        headers: { "verif-hash": sig, "x-flw-timestamp": validTimestamp() },
+        headers: {
+          "verif-hash": sig,
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const next = makeNext();
@@ -172,7 +179,11 @@ describe("webhookController", () => {
     it("returns 401 on mismatched signature", () => {
       const rawBody = Buffer.from(JSON.stringify({ event: "charge.completed" }));
       const req = {
-        headers: { "verif-hash": "a".repeat(64), "x-flw-timestamp": validTimestamp() },
+        headers: {
+          "verif-hash": "a".repeat(64),
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -186,7 +197,10 @@ describe("webhookController", () => {
     it("returns 401 when verif-hash header is absent", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "x-flw-timestamp": validTimestamp() },
+        headers: {
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -199,7 +213,11 @@ describe("webhookController", () => {
 
     it("returns 400 when rawBody is missing", () => {
       const req = {
-        headers: { "verif-hash": "abc", "x-flw-timestamp": validTimestamp() },
+        headers: {
+          "verif-hash": "abc",
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
       } as unknown as RawRequest;
       const res = makeRes();
       verifyFlutterwaveSignature(req, res, makeNext());
@@ -209,7 +227,11 @@ describe("webhookController", () => {
     it("returns 401 when signature length causes timingSafeEqual to throw (caught internally)", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "verif-hash": "tooshort", "x-flw-timestamp": validTimestamp() },
+        headers: {
+          "verif-hash": "tooshort",
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -221,7 +243,13 @@ describe("webhookController", () => {
 
     it("returns 401 when x-flw-timestamp header is absent", () => {
       const rawBody = Buffer.from("{}");
-      const req = { headers: { "verif-hash": "abc" }, rawBody } as unknown as RawRequest;
+      const req = {
+        headers: {
+          "verif-hash": "abc",
+          "content-type": "application/json",
+        },
+        rawBody,
+      } as unknown as RawRequest;
       const res = makeRes();
       verifyFlutterwaveSignature(req, res, makeNext());
       expect(res.status).toHaveBeenCalledWith(401);
@@ -233,7 +261,11 @@ describe("webhookController", () => {
     it("returns 401 when x-flw-timestamp is expired (>5 min old)", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "verif-hash": "abc", "x-flw-timestamp": expiredTimestamp() },
+        headers: {
+          "verif-hash": "abc",
+          "x-flw-timestamp": expiredTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -247,7 +279,11 @@ describe("webhookController", () => {
     it("returns 401 when x-flw-timestamp is too far in the future (>5 min)", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "verif-hash": "abc", "x-flw-timestamp": futureTimestamp() },
+        headers: {
+          "verif-hash": "abc",
+          "x-flw-timestamp": futureTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -261,7 +297,11 @@ describe("webhookController", () => {
     it("returns 401 when x-flw-timestamp is not a valid number or date", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "verif-hash": "abc", "x-flw-timestamp": "not-a-date" },
+        headers: {
+          "verif-hash": "abc",
+          "x-flw-timestamp": "not-a-date",
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -269,6 +309,99 @@ describe("webhookController", () => {
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
+      );
+    });
+
+    // ── #296 Content-Type enforcement ────────────────────────────────────────
+
+    it("accepts requests with application/json Content-Type", () => {
+      const rawBody = Buffer.from(JSON.stringify({ event: "charge.completed" }));
+      const sig = crypto
+        .createHmac("sha256", FW_SECRET)
+        .update(rawBody)
+        .digest("hex");
+      const req = {
+        headers: {
+          "verif-hash": sig,
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const next = makeNext();
+      verifyFlutterwaveSignature(req, makeRes(), next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it("accepts requests with application/json; charset=utf-8 Content-Type", () => {
+      const rawBody = Buffer.from(JSON.stringify({ event: "charge.completed" }));
+      const sig = crypto
+        .createHmac("sha256", FW_SECRET)
+        .update(rawBody)
+        .digest("hex");
+      const req = {
+        headers: {
+          "verif-hash": sig,
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "application/json; charset=utf-8",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const next = makeNext();
+      verifyFlutterwaveSignature(req, makeRes(), next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it("rejects requests with multipart/form-data Content-Type", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "verif-hash": "abc",
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "multipart/form-data",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyFlutterwaveSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
+      );
+    });
+
+    it("rejects requests with text/xml Content-Type", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "verif-hash": "abc",
+          "x-flw-timestamp": validTimestamp(),
+          "content-type": "text/xml",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyFlutterwaveSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
+      );
+    });
+
+    it("rejects requests with missing Content-Type header", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "verif-hash": "abc",
+          "x-flw-timestamp": validTimestamp(),
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyFlutterwaveSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
       );
     });
   });
@@ -284,7 +417,11 @@ describe("webhookController", () => {
       const rawBody = Buffer.from(JSON.stringify({ event: "charge.success" }));
       const sig = crypto.createHmac("sha512", PS_SECRET).update(rawBody).digest("hex");
       const req = {
-        headers: { "x-paystack-signature": sig, "x-paystack-timestamp": validTimestamp() },
+        headers: {
+          "x-paystack-signature": sig,
+          "x-paystack-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const next = makeNext();
@@ -295,7 +432,11 @@ describe("webhookController", () => {
     it("returns 401 on mismatched signature", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "x-paystack-signature": "deadbeef", "x-paystack-timestamp": validTimestamp() },
+        headers: {
+          "x-paystack-signature": "deadbeef",
+          "x-paystack-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -309,7 +450,10 @@ describe("webhookController", () => {
     it("returns 401 when x-paystack-signature header is absent", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "x-paystack-timestamp": validTimestamp() },
+        headers: {
+          "x-paystack-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -324,7 +468,11 @@ describe("webhookController", () => {
 
     it("returns 400 when rawBody is missing", () => {
       const req = {
-        headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": validTimestamp() },
+        headers: {
+          "x-paystack-signature": "abc",
+          "x-paystack-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
       } as unknown as RawRequest;
       const res = makeRes();
       verifyPaystackSignature(req, res, makeNext());
@@ -335,7 +483,13 @@ describe("webhookController", () => {
 
     it("returns 401 when x-paystack-timestamp header is absent", () => {
       const rawBody = Buffer.from("{}");
-      const req = { headers: { "x-paystack-signature": "abc" }, rawBody } as unknown as RawRequest;
+      const req = {
+        headers: {
+          "x-paystack-signature": "abc",
+          "content-type": "application/json",
+        },
+        rawBody,
+      } as unknown as RawRequest;
       const res = makeRes();
       verifyPaystackSignature(req, res, makeNext());
       expect(res.status).toHaveBeenCalledWith(401);
@@ -347,7 +501,11 @@ describe("webhookController", () => {
     it("returns 401 when x-paystack-timestamp is expired (>5 min old)", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": expiredTimestamp() },
+        headers: {
+          "x-paystack-signature": "abc",
+          "x-paystack-timestamp": expiredTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -361,7 +519,11 @@ describe("webhookController", () => {
     it("returns 401 when x-paystack-timestamp is too far in the future (>5 min)", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": futureTimestamp() },
+        headers: {
+          "x-paystack-signature": "abc",
+          "x-paystack-timestamp": futureTimestamp(),
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -375,7 +537,11 @@ describe("webhookController", () => {
     it("returns 401 when x-paystack-timestamp is not a valid number or date", () => {
       const rawBody = Buffer.from("{}");
       const req = {
-        headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": "garbage" },
+        headers: {
+          "x-paystack-signature": "abc",
+          "x-paystack-timestamp": "garbage",
+          "content-type": "application/json",
+        },
         rawBody,
       } as unknown as RawRequest;
       const res = makeRes();
@@ -383,6 +549,99 @@ describe("webhookController", () => {
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
+      );
+    });
+
+    // ── #296 Content-Type enforcement ────────────────────────────────────────
+
+    it("accepts requests with application/json Content-Type", () => {
+      const rawBody = Buffer.from(JSON.stringify({ event: "charge.success" }));
+      const sig = crypto
+        .createHmac("sha512", PS_SECRET)
+        .update(rawBody)
+        .digest("hex");
+      const req = {
+        headers: {
+          "x-paystack-signature": sig,
+          "x-paystack-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const next = makeNext();
+      verifyPaystackSignature(req, makeRes(), next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it("accepts requests with application/json; charset=utf-8 Content-Type", () => {
+      const rawBody = Buffer.from(JSON.stringify({ event: "charge.success" }));
+      const sig = crypto
+        .createHmac("sha512", PS_SECRET)
+        .update(rawBody)
+        .digest("hex");
+      const req = {
+        headers: {
+          "x-paystack-signature": sig,
+          "x-paystack-timestamp": validTimestamp(),
+          "content-type": "application/json; charset=utf-8",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const next = makeNext();
+      verifyPaystackSignature(req, makeRes(), next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it("rejects requests with multipart/form-data Content-Type", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "x-paystack-signature": "abc",
+          "x-paystack-timestamp": validTimestamp(),
+          "content-type": "multipart/form-data",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyPaystackSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
+      );
+    });
+
+    it("rejects requests with text/xml Content-Type", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "x-paystack-signature": "abc",
+          "x-paystack-timestamp": validTimestamp(),
+          "content-type": "text/xml",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyPaystackSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
+      );
+    });
+
+    it("rejects requests with missing Content-Type header", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "x-paystack-signature": "abc",
+          "x-paystack-timestamp": validTimestamp(),
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyPaystackSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
       );
     });
   });
@@ -490,6 +749,103 @@ describe("webhookController", () => {
       const next = makeNext();
       await handleFlutterwaveWebhook({ headers: {}, body: {} } as Request, makeRes(), next);
       expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  // ── verifyBillsWebhookSignature ─────────────────────────────────────────────
+
+  describe("verifyBillsWebhookSignature", () => {
+    const validTimestamp = () => String(Math.floor(Date.now() / 1000));
+
+    it("accepts requests with application/json Content-Type", () => {
+      const rawBody = Buffer.from(JSON.stringify({ transaction_id: "tx-1" }));
+      const sig = crypto
+        .createHmac("sha256", BILLS_SECRET)
+        .update(rawBody)
+        .digest("hex");
+      const req = {
+        headers: {
+          "x-bills-signature": sig,
+          "x-bills-timestamp": validTimestamp(),
+          "content-type": "application/json",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const next = makeNext();
+      verifyBillsWebhookSignature(req, makeRes(), next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it("accepts requests with application/json; charset=utf-8 Content-Type", () => {
+      const rawBody = Buffer.from(JSON.stringify({ transaction_id: "tx-1" }));
+      const sig = crypto
+        .createHmac("sha256", BILLS_SECRET)
+        .update(rawBody)
+        .digest("hex");
+      const req = {
+        headers: {
+          "x-bills-signature": sig,
+          "x-bills-timestamp": validTimestamp(),
+          "content-type": "application/json; charset=utf-8",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const next = makeNext();
+      verifyBillsWebhookSignature(req, makeRes(), next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it("rejects requests with multipart/form-data Content-Type", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "x-bills-signature": "abc",
+          "x-bills-timestamp": validTimestamp(),
+          "content-type": "multipart/form-data",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyBillsWebhookSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
+      );
+    });
+
+    it("rejects requests with text/xml Content-Type", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "x-bills-signature": "abc",
+          "x-bills-timestamp": validTimestamp(),
+          "content-type": "text/xml",
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyBillsWebhookSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
+      );
+    });
+
+    it("rejects requests with missing Content-Type header", () => {
+      const rawBody = Buffer.from("{}");
+      const req = {
+        headers: {
+          "x-bills-signature": "abc",
+          "x-bills-timestamp": validTimestamp(),
+        },
+        rawBody,
+      } as unknown as RawRequest;
+      const res = makeRes();
+      verifyBillsWebhookSignature(req, res, makeNext());
+      expect(res.status).toHaveBeenCalledWith(415);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Content-Type must be application/json" }),
+      );
     });
   });
 
