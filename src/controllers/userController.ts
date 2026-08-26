@@ -33,11 +33,7 @@ export const patchMeSchema = z.object({
  * GET /users/me
  * Current user profile. No stellarAddress in response.
  */
-export async function getMe(
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function getMe(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.apiKey?.userId;
     if (!userId) {
@@ -82,11 +78,7 @@ export async function getMe(
  * PATCH /users/me
  * Update username, email, phone_e164, privacy_hide_from_search.
  */
-export async function patchMe(
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function patchMe(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.apiKey?.userId;
     if (!userId) {
@@ -105,8 +97,7 @@ export async function patchMe(
     if (body.phone_e164 !== undefined) data.phoneE164 = body.phone_e164;
     if (body.privacy_hide_from_search !== undefined)
       data.privacyHideFromSearch = body.privacy_hide_from_search;
-    if (body.passcode !== undefined)
-      data.passcodeHash = await bcrypt.hash(body.passcode, 10);
+    if (body.passcode !== undefined) data.passcodeHash = await bcrypt.hash(body.passcode, 10);
 
     const user = await prisma.user.update({
       where: { id: userId },
@@ -257,8 +248,7 @@ export const addGuardianSchema = z
       .optional(),
   })
   .refine((d) => d.guardian_user_id ?? d.guardian_email ?? d.guardian_phone, {
-    message:
-      "Provide at least one of guardian_user_id, guardian_email, guardian_phone",
+    message: "Provide at least one of guardian_user_id, guardian_email, guardian_phone",
   });
 
 /**
@@ -279,14 +269,12 @@ export async function postGuardians(
       guardianEmail?: string;
       guardianPhone?: string;
     }[] = [];
-    if (body.guardian_user_id)
-      orConditions.push({ guardianUserId: body.guardian_user_id });
+    if (body.guardian_user_id) orConditions.push({ guardianUserId: body.guardian_user_id });
     if (body.guardian_email)
       orConditions.push({
         guardianEmail: body.guardian_email.trim().toLowerCase(),
       });
-    if (body.guardian_phone)
-      orConditions.push({ guardianPhone: body.guardian_phone });
+    if (body.guardian_phone) orConditions.push({ guardianPhone: body.guardian_phone });
     const existing = await prisma.guardian.findFirst({
       where: { userId, OR: orConditions },
       select: { id: true },
@@ -396,11 +384,7 @@ export async function deleteGuardian(
  * DELETE /users/me
  * Delete account: performs a tombstone delete for GDPR compliance.
  */
-export async function deleteMe(
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function deleteMe(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.apiKey?.userId;
     if (!userId) throw new AppError("User-scoped API key required", 401);
