@@ -391,8 +391,8 @@ export const authRateLimiter = createRateLimiter(
  * Rate limiter for admin endpoints
  */
 export const adminRateLimiter = createRateLimiter(
-  config.rateLimitWindowMs,
-  config.rateLimitMaxRequests,
+  config.adminRateLimitWindowMs,
+  config.adminRateLimitMaxRequests,
   "ip",
   "admin",
 );
