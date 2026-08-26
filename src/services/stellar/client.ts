@@ -18,6 +18,7 @@ export interface StellarNetworkConfig {
   horizonUrl: string;
   networkPassphrase: string;
   secretKey?: string;
+  treasuryAccountId?: string;
 }
 
 export type StellarServer = InstanceType<typeof Server>;
@@ -54,13 +55,14 @@ export class StellarClient {
     this.network = network;
     this.networkPassphrase = networkPassphrase;
     this.server = new Server(horizonUrl);
+    this.treasuryAccountId = cfg?.treasuryAccountId ?? config.stellar.treasuryAccountId;
 
     // Initialize keypair if secret key is provided
     const secretKey = cfg?.secretKey ?? config.stellar.secretKey;
     if (secretKey) {
       try {
         this.keypair = Keypair.fromSecret(secretKey);
-        this.treasuryAccountId = this.keypair.publicKey();
+        this.treasuryAccountId ??= this.keypair.publicKey();
         logger.info("Stellar keypair initialized", {
           publicKey: this.keypair.publicKey(),
           network,
