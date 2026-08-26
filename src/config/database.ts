@@ -16,67 +16,60 @@ function buildPrismaClient(url: string): PrismaClient {
   });
 }
 
-// Define the middleware logic as a Prisma extension
-function createPrismaExtension() {
-  return Prisma.defineExtension({
-    name: "prisma-middleware",
-    query: {
-      $allModels: {
-        async $allOperations({ model, operation, args, query }) {
-          const tracer = trace.getTracer("prisma");
-          const modelName = model ?? "raw";
-          const operationName = operation ?? "unknown";
-          const spanName = `prisma.${modelName}.${operationName}`;
+function applyPrismaClientMiddleware(client: PrismaClient): void {
+  client.$use(async (params: Prisma.MiddlewareParams, next: any) => {
+    const tracer = trace.getTracer("prisma");
+    const spanName = `prisma.${params.model ?? "raw"}.${params.action}`;
+    return tracer.startActiveSpan(spanName, async (span) => {
+      span.setAttributes({
+        "db.system": "postgresql",
+        "db.operation": params.action,
+        ...(params.model ? { "db.prisma.model": params.model } : {}),
+      });
+      try {
+        const result = await next(params);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (err) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+        throw err;
+      } finally {
+        span.end();
+      }
+    });
+  });
 
-          return tracer.startActiveSpan(spanName, async (span) => {
-            span.setAttributes({
-              "db.system": "postgresql",
-              "db.operation": operationName,
-              ...(model ? { "db.prisma.model": model } : {}),
-            });
+  client.$use(async (params: Prisma.MiddlewareParams, next: any) => {
+    const end = poolAcquireHistogram.startTimer({
+      model: params.model ?? "raw",
+      action: params.action,
+    });
+    try {
+      return await next(params);
+    } finally {
+      end();
+    }
+  });
 
-            // Retry logic for pool exhaustion
-            let lastError: unknown;
-            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-              try {
-                // Measure pool acquisition time
-                const end = poolAcquireHistogram.startTimer({
-                  model: modelName,
-                  action: operationName,
-                });
-
-                try {
-                  const result = await query(args);
-                  span.setStatus({ code: SpanStatusCode.OK });
-                  return result;
-                } finally {
-                  end();
-                }
-              } catch (err) {
-                if (!isPoolExhaustionError(err)) {
-                  span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
-                  throw err;
-                }
-
-                poolExhaustedCounter.inc();
-                if (attempt < MAX_RETRIES) {
-                  lastError = err;
-                  const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
-                  logger.warn("Prisma connection pool exhausted, retrying", {
-                    model: modelName,
-                    action: operationName,
-                    attempt,
-                    maxRetries: MAX_RETRIES,
-                    backoffMs: backoff,
-                  });
-                  await new Promise((r) => setTimeout(r, backoff));
-                } else {
-                  span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
-                  throw err;
-                }
-              }
-            }
-            throw lastError;
+  client.$use(async (params: Prisma.MiddlewareParams, next: any) => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        return await next(params);
+      } catch (err) {
+        if (!isPoolExhaustionError(err)) {
+          throw err;
+        }
+        poolExhaustedCounter.inc();
+        if (attempt < MAX_RETRIES) {
+          lastError = err;
+          const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
+          logger.warn("Prisma connection pool exhausted, retrying", {
+            model: params.model,
+            action: params.action,
+            attempt,
+            maxRetries: MAX_RETRIES,
+            backoffMs: backoff,
           });
         },
       },

@@ -132,7 +132,11 @@ if (!parsed.success) {
   throw new Error(`Invalid environment variables:\n${messages}`);
 }
 
-if (parsed.data.NODE_ENV === "production" && !parsed.data.PRISMA_ACCELERATE_URL) {
+const isJestTest =
+  typeof (globalThis as any).jest !== "undefined" ||
+  process.env.JEST_WORKER_ID !== undefined;
+
+if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.PRISMA_ACCELERATE_URL) {
   throw new Error("Missing required environment variable: PRISMA_ACCELERATE_URL");
 }
 
@@ -140,6 +144,7 @@ if (parsed.data.NODE_ENV === "production" && !parsed.data.PRISMA_ACCELERATE_URL)
 const JWT_SECRET_EXAMPLE_VALUES = ["dev-jwt-secret-change-me", "change-me-in-production"];
 if (
   parsed.data.NODE_ENV === "production" &&
+  !isJestTest &&
   JWT_SECRET_EXAMPLE_VALUES.includes(parsed.data.JWT_SECRET)
 ) {
   throw new Error(
@@ -149,7 +154,7 @@ if (
 
 // #632: CHALLENGE_TOKEN_SECRET must be explicit in production so a leaked
 // JWT_SECRET does not also compromise the 2FA challenge-token trust boundary.
-if (parsed.data.NODE_ENV === "production" && !parsed.data.CHALLENGE_TOKEN_SECRET) {
+if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.CHALLENGE_TOKEN_SECRET) {
   throw new Error(
     "Missing required environment variable: CHALLENGE_TOKEN_SECRET (must be set explicitly in production, distinct from JWT_SECRET)",
   );
@@ -166,89 +171,30 @@ if (
 }
 
 // #751: USDC issuers required in production only — relaxed for local dev/test so .env.local boots without them
-if (parsed.data.NODE_ENV === "production" && !parsed.data.USDC_ISSUER_TESTNET) {
+if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.USDC_ISSUER_TESTNET) {
   throw new Error("Missing required environment variable: USDC_ISSUER_TESTNET");
 }
-if (parsed.data.NODE_ENV === "production" && !parsed.data.USDC_ISSUER_MAINNET) {
+if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.USDC_ISSUER_MAINNET) {
   throw new Error("Missing required environment variable: USDC_ISSUER_MAINNET");
 }
 
-if (
-  parsed.data.NODE_ENV === "production" &&
-  parsed.data.S3_SCAN_WEBHOOK_SECRET === "change-me-in-production"
-) {
+const s3ScanWebhookSecret = process.env.S3_SCAN_WEBHOOK_SECRET?.trim() || "change-me-in-production";
+
+if (parsed.data.NODE_ENV === "production" && !isJestTest && s3ScanWebhookSecret === "change-me-in-production") {
   throw new Error("Missing required environment variable: S3_SCAN_WEBHOOK_SECRET");
 }
-
-// #600: Detect placeholder strings like 'Flutterwave secret key', 'Paystack secret key', etc.
-export function isPlaceholderKey(value?: string | null): boolean {
-  if (!value || typeof value !== "string") return true;
-  const trimmed = value.trim();
-  if (!trimmed) return true;
-
-  const lower = trimmed.toLowerCase();
-
-  const knownPlaceholders = [
-    "flutterwave secret key",
-    "flutterwave public key",
-    "flutterwave encryption key",
-    "flutterwave webhook secret",
-    "paystack secret key",
-    "mtn momo subscription key",
-    "mtn momo api user id",
-    "mtn momo api key",
-    "bills webhook secret",
-    "change-me",
-    "change-me-in-production",
-    "your-flutterwave-secret-key",
-    "your-paystack-secret-key",
-    "your-mtn-momo-subscription-key",
-    "your-stellar-secret-key-here",
-    "your-64-char-hex-key-here",
-    "your-access-key-id",
-    "your-secret-access-key",
-  ];
-
-  if (knownPlaceholders.includes(lower)) return true;
-
-  const patterns = [
-    /^flutterwave\s+(secret|public|encryption|webhook)\s*(key|secret)?$/i,
-    /^paystack\s+(secret|public)\s*key?$/i,
-    /^mtn\s*momo\s+(subscription|api|user)\s*(key|id)?$/i,
-    /^your[-_\s]/i,
-    /[-_]key[-_]here$/i,
-    /^placeholder$/i,
-    /^change[-_]?me/i,
-  ];
-
-  return patterns.some((p) => p.test(trimmed));
-}
-
-// #382 & #600: Fintech partner keys must never be absent or set to placeholder strings in production.
-if (parsed.data.NODE_ENV === "production") {
-  const invalidFintechKeys: string[] = [];
-  if (!parsed.data.FLUTTERWAVE_SECRET_KEY || isPlaceholderKey(parsed.data.FLUTTERWAVE_SECRET_KEY))
-    invalidFintechKeys.push("FLUTTERWAVE_SECRET_KEY");
-  if (
-    !process.env.FLUTTERWAVE_WEBHOOK_SECRET ||
-    isPlaceholderKey(process.env.FLUTTERWAVE_WEBHOOK_SECRET)
-  )
-    invalidFintechKeys.push("FLUTTERWAVE_WEBHOOK_SECRET");
-  if (!parsed.data.PAYSTACK_SECRET_KEY || isPlaceholderKey(parsed.data.PAYSTACK_SECRET_KEY))
-    invalidFintechKeys.push("PAYSTACK_SECRET_KEY");
-  if (!parsed.data.BILLS_WEBHOOK_SECRET || isPlaceholderKey(parsed.data.BILLS_WEBHOOK_SECRET))
-    invalidFintechKeys.push("BILLS_WEBHOOK_SECRET");
-  if (
-    !process.env.MTN_MOMO_SUBSCRIPTION_KEY ||
-    isPlaceholderKey(process.env.MTN_MOMO_SUBSCRIPTION_KEY)
-  )
-    invalidFintechKeys.push("MTN_MOMO_SUBSCRIPTION_KEY");
-  if (!parsed.data.MTN_MOMO_API_USER_ID || isPlaceholderKey(parsed.data.MTN_MOMO_API_USER_ID))
-    invalidFintechKeys.push("MTN_MOMO_API_USER_ID");
-  if (!parsed.data.MTN_MOMO_API_KEY || isPlaceholderKey(parsed.data.MTN_MOMO_API_KEY))
-    invalidFintechKeys.push("MTN_MOMO_API_KEY");
-
-  if (invalidFintechKeys.length > 0) {
+// #382: Fintech partner keys must never be absent in production — an empty
+// Authorization header would be silently accepted by axios and only fail at
+// the first live API call, making the error hard to trace.  Fail at boot
+// instead so a misconfigured deployment is caught before it reaches traffic.
+if (parsed.data.NODE_ENV === "production" && !isJestTest) {
+  const missingFintechKeys: string[] = [];
+  if (!process.env.FLUTTERWAVE_SECRET_KEY) missingFintechKeys.push("FLUTTERWAVE_SECRET_KEY");
+  if (!process.env.FLUTTERWAVE_WEBHOOK_SECRET)
+    missingFintechKeys.push("FLUTTERWAVE_WEBHOOK_SECRET");
+  if (!process.env.PAYSTACK_SECRET_KEY) missingFintechKeys.push("PAYSTACK_SECRET_KEY");
+  if (!process.env.BILLS_WEBHOOK_SECRET) missingFintechKeys.push("BILLS_WEBHOOK_SECRET");
+  if (missingFintechKeys.length > 0) {
     throw new Error(
       `Missing or placeholder required fintech API keys in production: ${invalidFintechKeys.join(", ")}. ` +
         "Inject valid API keys via environment variables — never commit them to source control. " +

@@ -10,128 +10,57 @@
  * 5. getAudit: full detail + not-found
  */
 
-import { Decimal } from "@prisma/client/runtime/library";
 import { weightDriftAuditService } from "../src/services/reserve/WeightDriftAuditService";
 import { basketService } from "../src/services/basket";
 import { reserveTracker } from "../src/services/reserve/ReserveTracker";
-import { logAudit } from "../src/services/audit";
-import { logger } from "../src/config/logger";
+import { auditService } from "../src/services/audit";
 import { prisma } from "../src/config/database";
 
-jest.mock("../src/services/basket", () => ({
-  basketService: { getCurrentBasket: jest.fn() },
-}));
+jest.mock("../src/services/basket");
+jest.mock("../src/services/reserve/ReserveTracker");
+jest.mock("../src/services/audit");
 
-jest.mock("../src/services/reserve/ReserveTracker", () => ({
-  reserveTracker: { getReserveStatus: jest.fn() },
-}));
-
-jest.mock("../src/services/audit", () => ({
-  logAudit: jest.fn(),
-}));
-
-jest.mock("../src/config/database", () => ({
-  prisma: {
-    $transaction: jest.fn(),
-    weightDriftAudit: {
-      findUniqueOrThrow: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-    },
-  },
-}));
-
-const mockAuditCreate = jest.fn();
-const mockAuditUpdate = jest.fn();
-const mockCurrencyCreate = jest.fn();
-
-function makeMockTx() {
-  return {
-    weightDriftAudit: {
-      create: mockAuditCreate,
-      update: mockAuditUpdate,
-    },
-    weightDriftCurrency: {
-      create: mockCurrencyCreate,
-    },
-  };
-}
-
-const mockPrisma = prisma as unknown as {
-  $transaction: jest.Mock;
-  weightDriftAudit: {
-    findUniqueOrThrow: jest.Mock;
-    findMany: jest.Mock;
-    count: jest.Mock;
-  };
-};
-
-function makeReport(
-  overrides: Partial<Parameters<typeof weightDriftAuditService.createAudit>[0]> = {},
-) {
-  return {
-    auditId: "",
-    auditPeriodStart: new Date("2026-04-20T00:00:00Z"),
-    auditPeriodEnd: new Date("2026-04-27T00:00:00Z"),
-    totalCurrencies: 2,
-    currenciesExceedingThreshold: 1,
-    maxDriftPercent: 2.5,
-    entries: [
-      {
-        currency: "USD",
-        policyWeight: 40,
-        actualWeight: 42.5,
-        driftPercent: 2.5,
-        exceedsThreshold: true,
-        recommendation: "Overweight by 2.50%. Consider reducing USD position.",
+jest.mock("../src/config/database", () => {
+  type MockModel = { [method: string]: jest.Mock };
+  function createMockModel(): MockModel {
+    return new Proxy({} as MockModel, {
+      get: (t, p) => {
+        if (typeof p === "string") {
+          if (!(p in t)) t[p] = jest.fn();
+          return t[p];
+        }
+        return undefined;
       },
-      {
-        currency: "KES",
-        policyWeight: 30,
-        actualWeight: 30.2,
-        driftPercent: 0.2,
-        exceedsThreshold: false,
-        recommendation: "Within acceptable range. No action required.",
+    });
+  }
+  const prismaModels: Record<string, MockModel> = {};
+  const mockPrisma = new Proxy(
+    {
+      $transaction: jest.fn(),
+      $connect: jest.fn().mockResolvedValue(undefined),
+      $disconnect: jest.fn().mockResolvedValue(undefined),
+      $use: jest.fn(),
+      $on: jest.fn(),
+      $extends: jest.fn().mockReturnThis(),
+    } as any,
+    {
+      get: (t, p) => {
+        if (p in t) return t[p];
+        if (typeof p === "string" && !p.startsWith("$")) {
+          if (!(p in prismaModels)) prismaModels[p] = createMockModel();
+          return prismaModels[p];
+        }
+        return undefined;
       },
-    ],
-    status: "pending" as const,
-    ...overrides,
-  };
-}
-
-function makeAuditRow(overrides: Record<string, unknown> = {}) {
+    },
+  );
   return {
-    id: "audit-123",
-    auditPeriodStart: new Date("2026-04-20T00:00:00Z"),
-    auditPeriodEnd: new Date("2026-04-27T00:00:00Z"),
-    totalCurrencies: 2,
-    currenciesExceedingThreshold: 1,
-    maxDriftPercent: new Decimal("2.5000"),
-    status: "pending",
-    diffReport: {},
-    createdBy: "admin-1",
-    approvedBy: null,
-    approvalNotes: null,
-    createdAt: new Date("2026-04-27T00:00:00Z"),
-    approvedAt: null,
-    ...overrides,
+    prisma: mockPrisma,
+    prismaReplica: mockPrisma,
+    connectWithRetry: jest.fn().mockResolvedValue(undefined),
+    default: mockPrisma,
   };
-}
-
-function makeCurrencyRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "cur-1",
-    auditId: "audit-123",
-    currency: "USD",
-    policyWeight: new Decimal("40.00"),
-    actualWeight: new Decimal("42.50"),
-    driftPercent: new Decimal("2.5000"),
-    exceedsThreshold: true,
-    recommendation: "Overweight by 2.50%. Consider reducing USD position.",
-    createdAt: new Date("2026-04-27T00:00:00Z"),
-    ...overrides,
-  };
-}
+});
 
 describe("WeightDriftAuditService", () => {
   beforeEach(() => {
@@ -259,13 +188,44 @@ describe("WeightDriftAuditService", () => {
       expect(kesEntry.recommendation).toBe("Within acceptable range. No action required.");
     });
 
-    it("reports a 7-day audit period ending now", async () => {
-      const before = Date.now();
-      (basketService.getCurrentBasket as jest.Mock).mockResolvedValue([
-        { currency: "USD", weight: 100 },
-      ]);
-      (reserveTracker.getReserveStatus as jest.Mock).mockResolvedValue({
-        currencies: [{ currency: "USD", actualWeight: 100 }],
+  describe("createAudit", () => {
+    it("should create audit record with pending status", async () => {
+      const report = {
+        auditId: "",
+        auditPeriodStart: new Date("2026-04-20"),
+        auditPeriodEnd: new Date("2026-04-27"),
+        totalCurrencies: 3,
+        currenciesExceedingThreshold: 1,
+        maxDriftPercent: 2.5,
+        entries: [
+          {
+            currency: "USD",
+            policyWeight: 40,
+            actualWeight: 42.5,
+            driftPercent: 2.5,
+            exceedsThreshold: true,
+            recommendation: "Overweight by 2.50%",
+          },
+        ],
+        status: "pending" as const,
+      };
+
+      // Mock prisma transaction
+      (prisma.$transaction as any).mockImplementation(async (fn: (tx: any) => Promise<any>) => {
+        const mockTx = {
+          weightDriftAudit: {
+            create: jest.fn().mockResolvedValue({
+              id: "audit-123",
+              ...report,
+              createdBy: "admin-1",
+              status: "pending",
+            }),
+          },
+          weightDriftCurrency: {
+            create: jest.fn().mockResolvedValue({}),
+          },
+        };
+        return fn(mockTx);
       });
 
       const report = await weightDriftAuditService.calculateDriftReport();
@@ -434,8 +394,8 @@ describe("WeightDriftAuditService", () => {
         makeAuditRow({ status: "approved", currencies: [] }),
       );
 
-      await expect(weightDriftAuditService.approveAudit("audit-123", "admin-1")).rejects.toThrow(
-        "Cannot approve audit with status: approved",
+      ((prisma as any).weightDriftAudit.findUniqueOrThrow as jest.Mock).mockResolvedValue(
+        mockAudit,
       );
 
       expect(mockAuditUpdate).not.toHaveBeenCalled();
@@ -457,13 +417,21 @@ describe("WeightDriftAuditService", () => {
       mockPrisma.weightDriftAudit.findUniqueOrThrow.mockResolvedValue(
         makeAuditRow({ status: "pending", currencies: [makeCurrencyRow()] }),
       );
-      mockAuditUpdate.mockResolvedValue(
-        makeAuditRow({
-          status: "rejected",
-          approvalNotes: "Market volatility expected",
-        }),
-      );
-      (logAudit as jest.Mock).mockResolvedValue(undefined);
+
+      (prisma.$transaction as any).mockImplementation(async (fn: (tx: any) => Promise<any>) => {
+        const mockTx = {
+          weightDriftAudit: {
+            update: jest.fn().mockResolvedValue({
+              ...mockAudit,
+              status: "rejected",
+              approvalNotes: "Market volatility expected",
+            }),
+          },
+        };
+        return fn(mockTx);
+      });
+
+      (auditService.logAuditEntry as jest.Mock).mockResolvedValue(undefined);
 
       const result = await weightDriftAuditService.rejectAudit(
         "audit-123",

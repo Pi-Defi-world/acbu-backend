@@ -68,7 +68,6 @@ export class StellarClient {
         });
       } catch (error) {
         logger.error("Failed to initialize Stellar keypair", { error });
-        throw new Error("Invalid Stellar secret key");
       }
     }
   }

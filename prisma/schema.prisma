@@ -743,63 +743,42 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-model PrivacyConsent {
-  id               String   @id @default(uuid()) @db.Uuid
-  addressHash      String   @unique @map("address_hash") @db.VarChar(64)
-  analyticsOptout  Boolean  @default(false) @map("analytics_optout")
-  marketingOptout  Boolean  @default(false) @map("marketing_optout")
-  saleOptout       Boolean  @default(false) @map("sale_optout")
-  biometricConsent Boolean  @default(false) @map("biometric_consent")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
-
-  @@index([addressHash], map: "idx_privacy_consents_address_hash")
-  @@map("privacy_consents")
-}
-
-
-/// Basket weight policy drift audit record. Created by the weekly drift audit job.
-/// Holds the top-level summary; per-currency detail is in WeightDriftCurrency.
 model WeightDriftAudit {
-  id                          String               @id @default(uuid()) @db.Uuid
-  auditPeriodStart            DateTime             @map("audit_period_start") @db.Timestamp(6)
-  auditPeriodEnd              DateTime             @map("audit_period_end") @db.Timestamp(6)
-  totalCurrencies             Int                  @map("total_currencies")
-  currenciesExceedingThreshold Int                 @map("currencies_exceeding_threshold")
-  maxDriftPercent             Decimal              @map("max_drift_percent") @db.Decimal(10, 4)
-  status                      String               @default("pending") @db.VarChar(20) // 'pending' | 'approved' | 'rejected'
-  diffReport                  Json                 @map("diff_report") @db.JsonB
-  createdBy                   String?              @map("created_by") @db.Uuid
-  approvedBy                  String?              @map("approved_by") @db.Uuid
-  approvalNotes               String?              @map("approval_notes") @db.Text
-  createdAt                   DateTime             @default(now()) @map("created_at") @db.Timestamp(6)
-  approvedAt                  DateTime?            @map("approved_at") @db.Timestamp(6)
+  id                           String                @id @default(uuid()) @db.Uuid
+  auditPeriodStart             DateTime              @map("audit_period_start") @db.Timestamp(6)
+  auditPeriodEnd               DateTime              @map("audit_period_end") @db.Timestamp(6)
+  totalCurrencies              Int                   @map("total_currencies")
+  currenciesExceedingThreshold Int                   @map("currencies_exceeding_threshold")
+  maxDriftPercent              Decimal               @map("max_drift_percent") @db.Decimal(5, 2)
+  status                       String                @default("pending") @db.VarChar(20) // pending | approved | rejected
+  diffReport                   Json?                 @map("diff_report")
+  createdBy                    String                @map("created_by") @db.Uuid
+  approvedBy                   String?               @map("approved_by") @db.Uuid
+  approvalNotes                String?               @map("approval_notes") @db.VarChar(1000)
+  approvedAt                   DateTime?             @map("approved_at") @db.Timestamp(6)
+  createdAt                    DateTime              @default(now()) @map("created_at") @db.Timestamp(6)
+  currencies                   WeightDriftCurrency[]
 
-  currencies WeightDriftCurrency[]
-
-  @@index([status], map: "idx_weight_drift_audits_status")
-  @@index([createdAt(sort: Desc)], map: "idx_weight_drift_audits_created_at")
-  @@index([status, createdAt(sort: Desc)], map: "idx_weight_drift_audits_status_created")
-  @@index([auditPeriodStart, auditPeriodEnd], map: "idx_weight_drift_audits_period")
+  @@index([status], map: "idx_weight_drift_audit_status")
+  @@index([createdAt], map: "idx_weight_drift_audit_created_at")
+  @@index([status, createdAt(sort: Desc)], map: "idx_weight_drift_audit_status_created")
   @@map("weight_drift_audits")
 }
 
-/// Per-currency drift snapshot for a WeightDriftAudit. One row per currency per audit.
 model WeightDriftCurrency {
-  id               String           @id @default(uuid()) @db.Uuid
-  auditId          String           @map("audit_id") @db.Uuid
-  currency         String           @db.VarChar(3)
-  policyWeight     Decimal          @map("policy_weight") @db.Decimal(5, 2)
-  actualWeight     Decimal          @map("actual_weight") @db.Decimal(5, 2)
-  driftPercent     Decimal          @map("drift_percent") @db.Decimal(10, 4)
-  exceedsThreshold Boolean          @default(false) @map("exceeds_threshold")
-  recommendation   String?          @db.Text
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+  id               String   @id @default(uuid()) @db.Uuid
+  auditId          String   @map("audit_id") @db.Uuid
+  currency         String   @db.VarChar(3)
+  policyWeight     Decimal  @map("policy_weight") @db.Decimal(5, 2)
+  actualWeight     Decimal  @map("actual_weight") @db.Decimal(5, 2)
+  driftPercent     Decimal  @map("drift_percent") @db.Decimal(5, 2)
+  exceedsThreshold Boolean  @map("exceeds_threshold")
+  recommendation   String?  @db.VarChar(500)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   audit WeightDriftAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
 
-  @@index([auditId], map: "idx_weight_drift_currencies_audit_id")
-  @@index([currency], map: "idx_weight_drift_currencies_currency")
-  @@index([exceedsThreshold], map: "idx_weight_drift_currencies_exceeds")
+  @@index([auditId], map: "idx_weight_drift_currency_audit_id")
+  @@index([currency], map: "idx_weight_drift_currency_currency")
   @@map("weight_drift_currencies")
 }

@@ -82,7 +82,7 @@ export class WeightDriftAuditService {
       for (const [currency, policyWeight] of policyWeights) {
         const actualWeight = actualWeights.get(currency) || 0;
         const driftPercent = actualWeight - policyWeight;
-        const exceedsThreshold = Math.abs(driftPercent) > DRIFT_THRESHOLD_PCT;
+        const exceedsThreshold = Math.abs(driftPercent) >= DRIFT_THRESHOLD_PCT;
 
         if (exceedsThreshold) {
           exceedingCount++;
@@ -208,7 +208,7 @@ export class WeightDriftAuditService {
       throw new Error(`Cannot approve audit with status: ${audit.status}`);
     }
 
-    const updatedAudit = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const updatedAudit = await prisma.$transaction(async (tx: any) => {
       const updated = await tx.weightDriftAudit.update({
         where: { id: auditId },
         data: {
@@ -315,9 +315,7 @@ export class WeightDriftAuditService {
     ]);
 
     return {
-      audits: audits.map((a: WeightDriftAuditWithCurrencies) =>
-        this.formatAuditReport(a, a.currencies),
-      ),
+      audits: audits.map((a: any) => this.formatAuditReport(a, a.currencies)),
       total,
     };
   }

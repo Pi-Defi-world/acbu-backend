@@ -10,7 +10,7 @@ const REQUIRED_ENV = {
   DATABASE_URL: "postgresql://u:p@localhost:5432/db",
   MONGODB_URI: "mongodb://localhost:27017/db",
   RABBITMQ_URL: "amqp://localhost:5672",
-  JWT_SECRET: "test-secret",
+  JWT_SECRET: "test-jwt-secret-change-me-32-characters-min",
   PRISMA_ACCELERATE_URL: "prisma://accelerate.prisma-data.net/?api_key=test",
   CORS_ORIGIN: "https://app.acbu.io",
 };
