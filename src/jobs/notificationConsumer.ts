@@ -37,8 +37,7 @@ async function processOtpSend(payload: OtpSend): Promise<void> {
 async function processNotification(payload: Notification): Promise<void> {
   const { type } = payload;
   if (type === "reserve_alert") {
-    const health = payload.health as string;
-    const overcollateralizationRatio = (payload.overcollateralizationRatio as number) ?? 0;
+    const { health, overcollateralizationRatio } = payload;
     const body = renderReserveAlertTemplate(health, overcollateralizationRatio);
     const adminEmail = process.env.NOTIFICATION_ALERT_EMAIL;
     if (adminEmail) await sendEmail(adminEmail, "ACBU Reserve Alert", body);
@@ -46,11 +45,7 @@ async function processNotification(payload: Notification): Promise<void> {
     return;
   }
   if (type === "withdrawal_status") {
-    const userId = payload.userId as string | null;
-    const status = payload.status as string;
-    const currency = payload.currency as string;
-    const amount = payload.amount as number;
-    const channels = (payload.channel as string[]) ?? ["email"];
+    const { userId, status, currency, amount, channel: channels } = payload;
     const body = renderWithdrawalStatusTemplate(status, currency, amount);
     if (userId) {
       const user = await prisma.user.findUnique({
@@ -64,9 +59,7 @@ async function processNotification(payload: Notification): Promise<void> {
     return;
   }
   if (type === "investment_withdrawal_ready") {
-    const userId = payload.userId as string | null;
-    const organizationId = payload.organizationId as string | null;
-    const amountAcbu = (payload.amountAcbu as number) ?? 0;
+    const { userId = null, organizationId = null, amountAcbu } = payload;
     const body = renderInvestmentWithdrawalReadyTemplate(amountAcbu);
 
     if (userId) {
@@ -84,9 +77,9 @@ async function processNotification(payload: Notification): Promise<void> {
         select: { email: true, phoneE164: true },
       });
       const emailBatch = orgUsers
-        .filter((user) => user.email)
-        .map((user) => ({
-          to: user.email as string,
+        .filter((u: { email: string | null; phoneE164: string | null }) => u.email !== null)
+        .map((u: { email: string | null; phoneE164: string | null }) => ({
+          to: u.email as string,
           subject: "Organization investment withdrawal is ready",
           body,
         }));
@@ -95,8 +88,8 @@ async function processNotification(payload: Notification): Promise<void> {
         await sendEmailBatch(emailBatch);
       }
 
-      for (const user of orgUsers) {
-        if (user.phoneE164) await sendSms(user.phoneE164, body);
+      for (const u of orgUsers) {
+        if (u.phoneE164) await sendSms(u.phoneE164, body);
       }
     }
     return;
