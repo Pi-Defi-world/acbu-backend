@@ -79,7 +79,8 @@ const envSchema = z.object({
   OPENAI_FAIL_OPEN_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   OPENAI_FAIL_OPEN_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
   OPENAI_FAIL_OPEN_RETRY_BASE_MS: z.coerce.number().int().positive().default(500),
-
+  BULK_TRANSFER_CHUNK_SIZE: z.coerce.number().int().positive().default(100),
+  BULK_TRANSFER_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(10485760),
   // #402: Startup database connection retry with exponential backoff + jitter.
   // Jitter de-synchronises reconnecting instances to avoid a thundering herd on
   // the database connection slots after a shared outage/crash.
@@ -530,9 +531,10 @@ export const config = {
     failOpenMaxRetries: env.OPENAI_FAIL_OPEN_MAX_RETRIES,
     failOpenRetryBaseMs: env.OPENAI_FAIL_OPEN_RETRY_BASE_MS,
   },
-
-  // PII encryption key for KYC and sensitive field encryption
-  piiEncryptionKey: env.PII_ENCRYPTION_KEY,
+  bulkTransfer: {
+    chunkSize: env.BULK_TRANSFER_CHUNK_SIZE,
+    maxFileSizeBytes: env.BULK_TRANSFER_MAX_FILE_SIZE_BYTES
+  },
 
   // Startup database connection retry (#402)
   database: {
