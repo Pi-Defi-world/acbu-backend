@@ -326,6 +326,7 @@ model AuditTrail {
 model Webhook {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   transactionId String?   @map("transaction_id") @db.Uuid
+  eventId       String?   @map("event_id") @db.VarChar(255)
   eventType     String    @map("event_type") @db.VarChar(50)
   payload       Json
   signature     String?   @db.VarChar(255)
@@ -338,6 +339,7 @@ model Webhook {
 
   @@index([transactionId], map: "idx_webhooks_transaction_id")
   @@index([status], map: "idx_webhooks_status")
+  @@index([eventId], map: "idx_webhooks_event_id")
   // #758: composite index for filtering pending/failed webhooks by event type (hot path in retry queue)
   @@index([eventType, status], map: "idx_webhooks_event_type_status")
   // #758: composite index for retry queue worker — find pending webhooks ordered by creation time

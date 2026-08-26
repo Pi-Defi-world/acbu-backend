@@ -22,6 +22,7 @@ envFiles.forEach((file) => {
 
 const envSchema = z.object({
   NODE_ENV: z.string().default("development"),
+  WEBHOOK_SIGNATURE_BYPASS: z.string().optional(),
   PORT: z.coerce.number().int().positive().max(65535).default(5000),
   API_VERSION: z.string().default("v1"),
   DATABASE_URL: z.string().min(1),
@@ -135,6 +136,15 @@ if (!parsed.success) {
 const isJestTest =
   typeof (globalThis as any).jest !== "undefined" ||
   process.env.JEST_WORKER_ID !== undefined;
+
+if (
+  parsed.data.WEBHOOK_SIGNATURE_BYPASS !== undefined &&
+  !["development", "test"].includes(parsed.data.NODE_ENV)
+) {
+  throw new Error(
+    "WEBHOOK_SIGNATURE_BYPASS must be unset in staging and production environments",
+  );
+}
 
 if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.PRISMA_ACCELERATE_URL) {
   throw new Error("Missing required environment variable: PRISMA_ACCELERATE_URL");
