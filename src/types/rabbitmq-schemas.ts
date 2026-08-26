@@ -118,11 +118,47 @@ export const OtpSendSchema = z.object({
 
 export type OtpSend = z.infer<typeof OtpSendSchema>;
 
-export const NotificationSchema = z
-  .object({
-    type: z.enum(["reserve_alert", "withdrawal_status", "investment_withdrawal_ready"]),
-  })
-  .passthrough();
+// ── Notification sub-type schemas (discriminated by `type`) ─────────────────
+
+export const ReserveAlertNotificationSchema = z.object({
+  type: z.literal("reserve_alert"),
+  health: z.string().min(1),
+  overcollateralizationRatio: z.number(),
+});
+
+export type ReserveAlertNotification = z.infer<typeof ReserveAlertNotificationSchema>;
+
+export const WithdrawalStatusNotificationSchema = z.object({
+  type: z.literal("withdrawal_status"),
+  userId: z.string().nullable(),
+  status: z.string().min(1),
+  currency: z.string().min(1),
+  amount: z.number(),
+  channel: z.array(z.string()).default(["email"]),
+});
+
+export type WithdrawalStatusNotification = z.infer<typeof WithdrawalStatusNotificationSchema>;
+
+export const InvestmentWithdrawalReadyNotificationSchema = z.object({
+  type: z.literal("investment_withdrawal_ready"),
+  userId: z.string().nullable().optional(),
+  organizationId: z.string().nullable().optional(),
+  amountAcbu: z.number(),
+});
+
+export type InvestmentWithdrawalReadyNotification = z.infer<
+  typeof InvestmentWithdrawalReadyNotificationSchema
+>;
+
+/**
+ * Discriminated union of all notification payload shapes.
+ * Each variant is fully typed — no passthrough() / implicit any.
+ */
+export const NotificationSchema = z.discriminatedUnion("type", [
+  ReserveAlertNotificationSchema,
+  WithdrawalStatusNotificationSchema,
+  InvestmentWithdrawalReadyNotificationSchema,
+]);
 
 export type Notification = z.infer<typeof NotificationSchema>;
 
