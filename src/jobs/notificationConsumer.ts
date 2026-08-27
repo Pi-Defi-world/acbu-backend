@@ -2,6 +2,7 @@
  * Consumes OTP_SEND and NOTIFICATIONS queues; sends email/SMS via NotificationService.
  */
 import type { ConsumeMessage } from "amqplib";
+import type { User } from "@prisma/client";
 import { connectRabbitMQ, QUEUES, assertQueueWithDLQ } from "../config/rabbitmq";
 import { getQueueMaxRetries } from "./queueConfig";
 import { logger } from "../config/logger";
@@ -21,6 +22,8 @@ import {
   MessageValidationError,
 } from "../utils/rabbitmq-validation";
 import type { OtpSend, Notification } from "../types/rabbitmq-schemas";
+
+type UserNotificationContact = Pick<User, "email" | "phoneE164">;
 
 async function processOtpSend(payload: OtpSend): Promise<void> {
   const { channel, to, code } = payload;
@@ -48,7 +51,7 @@ async function processNotification(payload: Notification): Promise<void> {
     const { userId, status, currency, amount, channel: channels } = payload;
     const body = renderWithdrawalStatusTemplate(status, currency, amount);
     if (userId) {
-      const user = await prisma.user.findUnique({
+      const user: UserNotificationContact | null = await prisma.user.findUnique({
         where: { id: userId },
         select: { email: true, phoneE164: true },
       });
@@ -63,7 +66,7 @@ async function processNotification(payload: Notification): Promise<void> {
     const body = renderInvestmentWithdrawalReadyTemplate(amountAcbu);
 
     if (userId) {
-      const user = await prisma.user.findUnique({
+      const user: UserNotificationContact | null = await prisma.user.findUnique({
         where: { id: userId },
         select: { email: true, phoneE164: true },
       });
@@ -72,14 +75,17 @@ async function processNotification(payload: Notification): Promise<void> {
     }
 
     if (organizationId) {
-      const orgUsers = await prisma.user.findMany({
+      const orgUsers: UserNotificationContact[] = await prisma.user.findMany({
         where: { organizationId },
         select: { email: true, phoneE164: true },
       });
       const emailBatch = orgUsers
-        .filter((u: { email: string | null; phoneE164: string | null }) => u.email !== null)
-        .map((u: { email: string | null; phoneE164: string | null }) => ({
-          to: u.email as string,
+        .filter(
+          (user: UserNotificationContact): user is UserNotificationContact & { email: string } =>
+            Boolean(user.email),
+        )
+        .map((user: UserNotificationContact & { email: string }) => ({
+          to: user.email,
           subject: "Organization investment withdrawal is ready",
           body,
         }));
@@ -88,8 +94,8 @@ async function processNotification(payload: Notification): Promise<void> {
         await sendEmailBatch(emailBatch);
       }
 
-      for (const u of orgUsers) {
-        if (u.phoneE164) await sendSms(u.phoneE164, body);
+      for (const user of orgUsers) {
+        if (user.phoneE164) await sendSms(user.phoneE164, body);
       }
     }
     return;
