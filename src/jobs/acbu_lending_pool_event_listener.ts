@@ -6,6 +6,7 @@ import { getContractAddresses } from "../config/contracts";
 import { logger } from "../config/logger";
 import { lendingPoolEventProducer } from "./producers";
 import { extractAndValidateTxHash } from "../services/stellar/txHashValidation";
+import type { LendingPoolEvent } from "../types/rabbitmq-schemas";
 
 const LENDING_POOL_EFFECT_TYPES = [
   "contract_credited",
@@ -17,7 +18,7 @@ type LendingPoolEffectType = (typeof LENDING_POOL_EFFECT_TYPES)[number];
 
 function isLendingPoolEffectType(type: string): type is LendingPoolEffectType {
   return (LENDING_POOL_EFFECT_TYPES as readonly string[]).includes(type);
-const LENDING_POOL_EFFECT_TYPES = ["contract_credited", "contract_debited", "contract_effect"];
+}
 
 function sanitizeEventData(
   data: Record<string, unknown>,
@@ -47,6 +48,13 @@ export async function startLendingPoolEventListener(): Promise<void> {
       // explicitly anyway rather than casting past the compiler.
       if (!isLendingPoolEffectType(event.type)) {
         logger.warn("Lending pool event with unexpected type reached handler", {
+          type: event.type,
+          contractId: event.contractId,
+          ledger: event.ledger,
+        });
+        return;
+      }
+
       const rawData = (event.data || {}) as Record<string, unknown>;
       const { txHash, valid } = extractAndValidateTxHash(rawData);
 
@@ -61,7 +69,7 @@ export async function startLendingPoolEventListener(): Promise<void> {
 
       const sanitizedData = sanitizeEventData(rawData);
 
-      const validatedEvent = {
+      const validatedEvent: LendingPoolEvent = {
         contractId: event.contractId,
         type: event.type,
         data: sanitizedData,
