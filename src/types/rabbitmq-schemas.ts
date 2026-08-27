@@ -118,11 +118,34 @@ export const OtpSendSchema = z.object({
 
 export type OtpSend = z.infer<typeof OtpSendSchema>;
 
-export const NotificationSchema = z
-  .object({
-    type: z.enum(["reserve_alert", "withdrawal_status", "investment_withdrawal_ready"]),
-  })
-  .passthrough();
+const ReserveAlertSchema = z.object({
+  type: z.literal("reserve_alert"),
+  health: z.string(),
+  overcollateralizationRatio: z.number(),
+});
+
+const WithdrawalStatusSchema = z.object({
+  type: z.literal("withdrawal_status"),
+  userId: z.string().nullable(),
+  status: z.string(),
+  currency: z.string(),
+  amount: z.number(),
+  channel: z.array(z.string()).default(["email"]),
+});
+
+const InvestmentWithdrawalReadySchema = z.object({
+  type: z.literal("investment_withdrawal_ready"),
+  userId: z.string().nullable().optional(),
+  organizationId: z.string().nullable().optional(),
+  amountAcbu: z.number().default(0),
+  timestamp: z.string().datetime().optional(),
+});
+
+export const NotificationSchema = z.discriminatedUnion("type", [
+  ReserveAlertSchema,
+  WithdrawalStatusSchema,
+  InvestmentWithdrawalReadySchema,
+]);
 
 export type Notification = z.infer<typeof NotificationSchema>;
 
