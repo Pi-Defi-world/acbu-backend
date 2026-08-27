@@ -6,8 +6,19 @@ import { getContractAddresses } from "../config/contracts";
 import { logger } from "../config/logger";
 import { savingsVaultEventProducer } from "./producers";
 import { extractAndValidateTxHash } from "../services/stellar/txHashValidation";
+import type { SavingsVaultEvent } from "../types/rabbitmq-schemas";
 
-const SAVINGS_VAULT_EFFECT_TYPES = ["contract_credited", "contract_debited", "contract_effect"];
+const SAVINGS_VAULT_EFFECT_TYPES = [
+  "contract_credited",
+  "contract_debited",
+  "contract_effect",
+] as const;
+
+type SavingsVaultEffectType = (typeof SAVINGS_VAULT_EFFECT_TYPES)[number];
+
+function isSavingsVaultEffectType(type: string): type is SavingsVaultEffectType {
+  return (SAVINGS_VAULT_EFFECT_TYPES as readonly string[]).includes(type);
+}
 
 function sanitizeEventData(
   data: Record<string, unknown>,
@@ -37,6 +48,13 @@ export async function startSavingsVaultEventListener(): Promise<void> {
       // explicitly anyway rather than casting past the compiler.
       if (!isSavingsVaultEffectType(event.type)) {
         logger.warn("Savings vault event with unexpected type reached handler", {
+          type: event.type,
+          contractId: event.contractId,
+          ledger: event.ledger,
+        });
+        return;
+      }
+
       const rawData = (event.data || {}) as Record<string, unknown>;
       const { txHash, valid } = extractAndValidateTxHash(rawData);
 
@@ -51,7 +69,7 @@ export async function startSavingsVaultEventListener(): Promise<void> {
 
       const sanitizedData = sanitizeEventData(rawData);
 
-      const validatedEvent = {
+      const validatedEvent: SavingsVaultEvent = {
         contractId: event.contractId,
         type: event.type,
         data: sanitizedData,
