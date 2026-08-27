@@ -1,0 +1,111 @@
+name: MSRV
+
+# Enforces the platform-wide minimum supported Rust version (MSRV) across the
+# Rust repositories that make up the ACBU stack:
+#   - acbu-smart-contract        (Soroban contracts, default branch: dev)
+#   - acbu-zk                    (contracts/zk_verifier, default branch: master)
+#   - ultrahonk-soroban-verifier (default branch: main)
+#
+# Each repo is checked out on its default branch and `cargo check` is run with
+# the shared MSRV. RUSTUP_TOOLCHAIN is pinned so a repo's own rust-toolchain.toml
+# cannot silently override the toolchain being validated.
+#
+# The MSRV (1.88.0) is the lowest stable Rust that the shared Soroban dependency
+# graph supports; resolving the graph at 1.87.0 selects dependencies that
+# require Rust >= 1.88.0 (see W2-C-041).
+
+on:
+  push:
+    branches: [main, dev, develop]
+  pull_request:
+    branches: [main, dev, develop]
+  schedule:
+    # Nightly: catch MSRV drift in the Rust repos even without backend changes.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # actions/cache saves/restores build caches
+
+env:
+  MSRV: "1.88.0"
+
+jobs:
+  msrv:
+    name: MSRV · ${{ matrix.repo.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          # acbu-smart-contract is mid-migration to the soroban-sdk 21.7.x
+          # event API on `dev`; the four crates below are being updated in
+          # upstream PRs (Pi-Defi-world/acbu-smart-contract#677, #678).
+          # They are excluded so this gate reports on the MSRV (the shared
+          # dependency graph plus every unaffected crate) rather than on
+          # unrelated in-flight refactors. Drop the excludes once the
+          # migration lands upstream.
+          - name: acbu-smart-contract
+            ref: dev
+            check: cargo check --workspace --exclude acbu_minting --exclude acbu_reserve_tracker --exclude acbu_lending_pool --exclude acbu_oracle
+            targets: wasm32-unknown-unknown
+            needs-token-wasm: 'true'
+          - name: acbu-zk
+            ref: master
+            check: cargo check --manifest-path contracts/zk_verifier/Cargo.toml
+            targets: ''
+            needs-token-wasm: 'false'
+          - name: ultrahonk-soroban-verifier
+            ref: main
+            check: cargo check --manifest-path Cargo.toml
+            targets: ''
+            needs-token-wasm: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Pi-Defi-world/${{ matrix.repo.name }}
+          ref: ${{ matrix.repo.ref }}
+
+      - name: Install Rust ${{ env.MSRV }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.MSRV }}
+          targets: ${{ matrix.repo.targets }}
+
+      - name: Cache cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-msrv-${{ matrix.repo.name }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-msrv-${{ matrix.repo.name }}-
+
+      - name: Build token contract WASM (acbu-smart-contract)
+        if: matrix.repo.needs-token-wasm == 'true'
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
+        run: |
+          set -euo pipefail
+          if [ -f soroban_token_contract.wasm ]; then
+            echo "soroban_token_contract.wasm already present"
+            exit 0
+          fi
+          # The repo's scripts/fetch_token_wasm.sh targets the pre-restructure
+          # path (contracts/tokens/stellar_asset), which does not exist on the
+          # pinned soroban-examples v21.6.0 tag — the token contract lives at
+          # the repository root under token/. Build the same pinned artifact
+          # from source so the contractimport! crates can compile.
+          git clone --depth 1 --branch v21.6.0 https://github.com/stellar/soroban-examples.git /tmp/soroban-examples
+          export CARGO_TARGET_DIR=/tmp/soroban-examples-target
+          cargo build --release --target wasm32-unknown-unknown --manifest-path /tmp/soroban-examples/token/Cargo.toml
+          cp /tmp/soroban-examples-target/wasm32-unknown-unknown/release/soroban_token_contract.wasm ./soroban_token_contract.wasm
+
+      - name: cargo check at MSRV
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
+        run: ${{ matrix.repo.check }}
