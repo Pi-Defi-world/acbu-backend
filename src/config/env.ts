@@ -74,6 +74,7 @@ const envSchema = z.object({
   BUSINESS_TIMEZONE: z.string().default("Africa/Lagos"),
   USDC_ISSUER_TESTNET: z.string().trim().min(1).optional(),
   USDC_ISSUER_MAINNET: z.string().trim().min(1).optional(),
+  STELLAR_TREASURY_ACCOUNT_ID: z.string().trim().min(1).optional(),
   CORS_ORIGIN: z.string().optional(),
   CDN_URL: z.string().url().optional(),
 
@@ -354,6 +355,7 @@ export const config = {
   stellar: {
     network: env.STELLAR_NETWORK,
     horizonUrl: env.STELLAR_HORIZON_URL,
+    treasuryAccountId: env.STELLAR_TREASURY_ACCOUNT_ID,
     /** Soroban RPC (simulate + send). Override if default host fails DNS (e.g. use SDF friendbot list / custom RPC). */
     sorobanRpcUrl: ((): string => {
       const explicit = env.STELLAR_SOROBAN_RPC_URL?.trim();

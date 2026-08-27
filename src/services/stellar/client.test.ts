@@ -33,6 +33,7 @@ jest.mock("../../config/env", () => ({
       activationAmount: "1",
       baseFeeStroops: 100,
       useDynamicFees: false,
+      treasuryAccountId: "",
     },
   },
 }));
@@ -58,6 +59,17 @@ beforeEach(() => {
 
 describe("StellarClient", () => {
   describe("constructor secret key validation", () => {
+    it("uses an explicitly configured treasury account for operation validation", async () => {
+      const treasuryAccountId = "GConfiguredTreasuryAccount";
+      const client = new StellarClient({ treasuryAccountId });
+
+      await expect(
+        client.buildTransaction(treasuryAccountId, [
+          { type: "accountMerge", destination: "GDestination" } as any,
+        ]),
+      ).rejects.toThrow("forbidden for the treasury account");
+    });
+
     it("initializes keypair when secret key is valid", () => {
       const client = new StellarClient({ secretKey: VALID_SECRET });
       expect(client.getKeypair()).not.toBeNull();
