@@ -23,13 +23,11 @@ import { reconcileBillsWebhook } from "../services/bills";
 import type { FinancialEventStatus } from "../types/logging";
 
 // ── Dev/stage mock bypass ────────────────────────────────────────────────────
-// When WEBHOOK_SIGNATURE_BYPASS=true AND NODE_ENV is not production,
-// signature verification is skipped entirely. This allows local development
-// and CI environments to send test payloads without real secrets.
-// Never set this variable in production — the boot guard in env.ts will
-// reject a missing secret before this code is even reached.
-const isDev = config.nodeEnv !== "production";
-const bypassEnabled = isDev && process.env.WEBHOOK_SIGNATURE_BYPASS === "true";
+// The bypass is deliberately limited to local/test environments. env.ts also
+// rejects this setting during startup for staging-facing deployments.
+const bypassEnabled =
+  ["development", "test"].includes(config.nodeEnv) &&
+  process.env.WEBHOOK_SIGNATURE_BYPASS === "true";
 
 // Maximum allowed clock drift in seconds between the webhook timestamp and server time.
 // Rejects replayed webhooks that fall outside this window. Default: 300 s (±5 min).
@@ -67,8 +65,27 @@ function isContentTypeJson(req: Request): boolean {
 if (bypassEnabled) {
   logger.warn(
     "WEBHOOK_SIGNATURE_BYPASS is enabled — webhook signature verification " +
-      "is DISABLED. This must never be set in production.",
+      "is DISABLED for development/test only. Do not use this setting in a staging-facing deployment.",
   );
+}
+
+function getWebhookEventId(payload: Record<string, unknown>): string | undefined {
+  const eventId = payload.event_id;
+  return typeof eventId === "string" && eventId.trim() ? eventId.trim() : undefined;
+}
+
+function isWebhookEventIdConflict(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}
+
+function sendDuplicateWebhookResponse(res: Response): void {
+  setFiatWebhookDeprecationHeaders(res);
+  res.status(200).json({ status: "ok", duplicate: true, deprecated: true });
 }
 
 // ── Flutterwave Webhook ──────────────────────────────────────────────────────
@@ -271,6 +288,7 @@ export async function handlePaystackWebhook(
     };
     const eventType = payload.event ?? "unknown";
     const data = payload.data ?? {};
+    const eventId = getWebhookEventId(payload as Record<string, unknown>);
     logger.warn("Paystack webhook received (deprecated path)", {
       eventType,
       reference: data.reference,
@@ -288,6 +306,23 @@ export async function handlePaystackWebhook(
     const paystackCorrelationId =
       (req.headers["x-request-id"] as string | undefined) ?? crypto.randomUUID();
 
+    try {
+      await prisma.webhook.create({
+        data: {
+          eventId,
+          eventType: `paystack:${String(eventType)}`,
+          payload: payload as object,
+          status: "processed",
+        },
+      });
+    } catch (error) {
+      if (eventId && isWebhookEventIdConflict(error)) {
+        sendDuplicateWebhookResponse(res);
+        return;
+      }
+      throw error;
+    }
+
     logFinancialEvent({
       event: "webhook.received",
       provider: "paystack",
@@ -295,18 +330,10 @@ export async function handlePaystackWebhook(
       transactionId: data.reference ?? paystackCorrelationId,
       userId: paystackCorrelationId,
       accountId: paystackCorrelationId,
-      idempotencyKey: data.reference ?? paystackCorrelationId,
+      idempotencyKey: eventId ?? data.reference ?? paystackCorrelationId,
       correlationId: paystackCorrelationId,
       amount: data.amount ?? 0,
       currency: data.currency ?? "NGN",
-    });
-
-    await prisma.webhook.create({
-      data: {
-        eventType: `paystack:${String(eventType)}`,
-        payload: payload as object,
-        status: "processed",
-      },
     });
 
     if (eventType === "charge.success" && data.status === "success") {
@@ -350,6 +377,7 @@ export async function handleFlutterwaveWebhook(
     };
     const eventType = payload.event ?? payload.type ?? "unknown";
     const data = payload.data ?? {};
+    const eventId = getWebhookEventId(payload as Record<string, unknown>);
     logger.warn("Flutterwave webhook received (deprecated path)", {
       eventType,
       tx_ref: data.tx_ref,
@@ -367,6 +395,23 @@ export async function handleFlutterwaveWebhook(
     const flwCorrelationId =
       (req.headers["x-request-id"] as string | undefined) ?? crypto.randomUUID();
 
+    try {
+      await prisma.webhook.create({
+        data: {
+          eventId,
+          eventType: String(eventType),
+          payload: payload as object,
+          status: "processed",
+        },
+      });
+    } catch (error) {
+      if (eventId && isWebhookEventIdConflict(error)) {
+        sendDuplicateWebhookResponse(res);
+        return;
+      }
+      throw error;
+    }
+
     logFinancialEvent({
       event: "webhook.received",
       provider: "flutterwave",
@@ -374,19 +419,11 @@ export async function handleFlutterwaveWebhook(
       transactionId: data.tx_ref ?? flwCorrelationId,
       userId: flwCorrelationId,
       accountId: flwCorrelationId,
-      idempotencyKey: data.tx_ref ?? flwCorrelationId,
+      idempotencyKey: eventId ?? data.tx_ref ?? flwCorrelationId,
       correlationId: flwCorrelationId,
       amount: data.amount ?? 0,
       currency: data.currency ?? "NGN",
       providerRef: data.flw_ref,
-    });
-
-    await prisma.webhook.create({
-      data: {
-        eventType: String(eventType),
-        payload: payload as object,
-        status: "processed",
-      },
     });
 
     if (eventType === "charge.completed" || data.status === "successful") {

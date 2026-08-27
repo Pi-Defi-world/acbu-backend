@@ -687,6 +687,29 @@ describe("webhookController", () => {
       );
     });
 
+    it("persists event_id and acknowledges a database duplicate", async () => {
+      (prisma.webhook.create as jest.Mock)
+        .mockResolvedValueOnce({ id: "wh-1" })
+        .mockRejectedValueOnce({ code: "P2002" });
+      const payload = { event: "charge.success", event_id: "paystack-event-1", data: {} };
+      const firstRes = makeRes();
+      const secondRes = makeRes();
+
+      await handlePaystackWebhook({ headers: {}, body: payload } as Request, firstRes, makeNext());
+      await handlePaystackWebhook({ headers: {}, body: payload } as Request, secondRes, makeNext());
+
+      expect(prisma.webhook.create).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          data: expect.objectContaining({ eventId: "paystack-event-1" }),
+        }),
+      );
+      expect(secondRes.status).toHaveBeenCalledWith(200);
+      expect(secondRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "ok", duplicate: true }),
+      );
+    });
+
     it("calls next(error) when DB write fails", async () => {
       (prisma.webhook.create as jest.Mock).mockRejectedValue(new Error("DB error"));
       const next = makeNext();
@@ -742,6 +765,24 @@ describe("webhookController", () => {
           data: expect.objectContaining({ eventType: "CARD_TRANSACTION" }),
         }),
       );
+    });
+
+    it("acknowledges duplicate event_id values without logging them again", async () => {
+      (prisma.webhook.create as jest.Mock).mockRejectedValue({ code: "P2002" });
+      const next = makeNext();
+      const res = makeRes();
+
+      await handleFlutterwaveWebhook(
+        { headers: {}, body: { event_id: "flutterwave-event-1", data: {} } } as Request,
+        res,
+        next,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "ok", duplicate: true }),
+      );
+      expect(next).not.toHaveBeenCalled();
     });
 
     it("calls next(error) when DB write fails", async () => {
