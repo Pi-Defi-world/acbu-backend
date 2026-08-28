@@ -16,70 +16,6 @@ function buildPrismaClient(url: string): PrismaClient {
   });
 }
 
-function applyPrismaClientMiddleware(client: PrismaClient): void {
-  client.$use(async (params: Prisma.MiddlewareParams, next: any) => {
-    const tracer = trace.getTracer("prisma");
-    const spanName = `prisma.${params.model ?? "raw"}.${params.action}`;
-    return tracer.startActiveSpan(spanName, async (span) => {
-      span.setAttributes({
-        "db.system": "postgresql",
-        "db.operation": params.action,
-        ...(params.model ? { "db.prisma.model": params.model } : {}),
-      });
-      try {
-        const result = await next(params);
-        span.setStatus({ code: SpanStatusCode.OK });
-        return result;
-      } catch (err) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
-        throw err;
-      } finally {
-        span.end();
-      }
-    });
-  });
-
-  client.$use(async (params: Prisma.MiddlewareParams, next: any) => {
-    const end = poolAcquireHistogram.startTimer({
-      model: params.model ?? "raw",
-      action: params.action,
-    });
-    try {
-      return await next(params);
-    } finally {
-      end();
-    }
-  });
-
-  client.$use(async (params: Prisma.MiddlewareParams, next: any) => {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        return await next(params);
-      } catch (err) {
-        if (!isPoolExhaustionError(err)) {
-          throw err;
-        }
-        poolExhaustedCounter.inc();
-        if (attempt < MAX_RETRIES) {
-          lastError = err;
-          const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
-          logger.warn("Prisma connection pool exhausted, retrying", {
-            model: params.model,
-            action: params.action,
-            attempt,
-            maxRetries: MAX_RETRIES,
-            backoffMs: backoff,
-          });
-        },
-      },
-    },
-  });
-}
-
-// Remove the old middleware application function
-// function applyPrismaClientMiddleware(client: PrismaClient): void { ... }
-
 // Retry config for connection pool exhaustion (Prisma Accelerate)
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 200;
@@ -147,6 +83,77 @@ function resolveDatabaseUrls(): { runtimeUrl: string; replicaUrl: string; useAcc
   const replicaUrl = configuredReplicaUrl || runtimeUrl;
 
   return { runtimeUrl, replicaUrl, useAccelerate };
+}
+
+/**
+ * Creates a Prisma client extension that adds:
+ *  - OpenTelemetry tracing per query
+ *  - Connection-pool-acquire histogram instrumentation
+ *  - Automatic retry on P2024 (connection pool exhaustion)
+ */
+function createPrismaExtension() {
+  return Prisma.defineExtension((client) => {
+    return client.$extends({
+      query: {
+        $allModels: {
+          async $allOperations({ model, operation, args, query }) {
+            // ── Tracing ──────────────────────────────────────────────────────
+            const tracer = trace.getTracer("prisma");
+            const spanName = `prisma.${model ?? "raw"}.${operation}`;
+
+            return tracer.startActiveSpan(spanName, async (span) => {
+              span.setAttributes({
+                "db.system": "postgresql",
+                "db.operation": operation,
+                ...(model ? { "db.prisma.model": model } : {}),
+              });
+
+              // ── Pool-acquire histogram + retry ───────────────────────────
+              const end = poolAcquireHistogram.startTimer({
+                model: model ?? "raw",
+                action: operation,
+              });
+
+              let lastError: unknown;
+              try {
+                for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                  try {
+                    const result = await query(args);
+                    span.setStatus({ code: SpanStatusCode.OK });
+                    return result;
+                  } catch (err) {
+                    if (!isPoolExhaustionError(err)) {
+                      throw err;
+                    }
+                    poolExhaustedCounter.inc();
+                    lastError = err;
+                    if (attempt < MAX_RETRIES) {
+                      const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
+                      logger.warn("Prisma connection pool exhausted, retrying", {
+                        model,
+                        action: operation,
+                        attempt,
+                        maxRetries: MAX_RETRIES,
+                        backoffMs: backoff,
+                      });
+                      await new Promise((r) => setTimeout(r, backoff));
+                    }
+                  }
+                }
+                throw lastError;
+              } catch (err) {
+                span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+                throw err;
+              } finally {
+                end();
+                span.end();
+              }
+            });
+          },
+        },
+      },
+    });
+  });
 }
 
 let basePrisma: PrismaClient = buildPrismaClient(resolveDatabaseUrls().runtimeUrl);

@@ -4,7 +4,7 @@ import { Decimal } from "@prisma/client/runtime/library";
 process.env.DATABASE_URL = "postgresql://test:test@localhost/test";
 process.env.MONGODB_URI = "mongodb://localhost/test";
 process.env.RABBITMQ_URL = "amqp://localhost";
-process.env.JWT_SECRET = "test-secret";
+process.env.JWT_SECRET = "test-secret-for-limits-tests-min32chars";
 
 // Mock prisma before importing the service
 jest.mock("../src/config/database", () => ({

@@ -7,6 +7,9 @@ import {
 import { prismaReplica } from "../../../src/config/database";
 
 jest.mock("../../../src/config/database", () => ({
+  prisma: {
+    $disconnect: jest.fn().mockResolvedValue(undefined),
+  },
   prismaReplica: {
     transaction: {
       findMany: jest.fn(),

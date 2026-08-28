@@ -3,7 +3,7 @@ module.exports = {
   testEnvironment: "node",
   testTimeout: 30000,
   setupFiles: ["<rootDir>/tests/setup.ts"],
-  setupFilesAfterFramework: ["<rootDir>/tests/jest.setup.ts"],
+  setupFilesAfterEnv: ["<rootDir>/tests/jest.setup.ts"],
   roots: ["<rootDir>/src", "<rootDir>/tests"],
   testMatch: ["**/__tests__/**/*.ts", "**/?(*.)+(spec|test).ts"],
   transform: {
