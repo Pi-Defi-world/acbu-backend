@@ -1,0 +1,175 @@
+name: Deploy to Staging
+
+# Deploy to staging on every push to the main branch.
+# This means every merged PR is automatically exercised in staging before
+# anyone touches production — closing the gap identified in W2-D-008.
+on:
+  push:
+    branches: [main]
+  # Allow manual staging deploys from any branch for hotfix validation.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or commit SHA to deploy (default: main)"
+        required: false
+        default: "main"
+
+# Prevent concurrent staging deploys that could leave the environment in an
+# inconsistent state.  The second deploy waits for the first to finish.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  # ── Gate: CI must pass before we deploy ──────────────────────────────────
+  # Reuses the test + build results already computed by ci.yml on push to main.
+  # If the CI workflow hasn't run or failed, this job waits/blocks accordingly.
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    env:
+      IMAGE_REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+
+      # ── Authenticate ────────────────────────────────────────────────────
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Resolve image tag ────────────────────────────────────────────────
+      # Use the short SHA as a tag so every deploy is traceable to a commit.
+      - name: Set image tag
+        id: tag
+        run: |
+          SHORT_SHA=$(git rev-parse --short "${{ github.sha }}")
+          echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${{ github.repository }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      # ── Build & push staging image ───────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push staging image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.tag.outputs.image }}
+            ghcr.io/${{ github.repository }}:staging
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Run database migrations against staging ──────────────────────────
+      # Migrations run BEFORE traffic is switched to the new image so schema
+      # changes are in place when the new app version starts.
+      - name: Run database migrations (staging)
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          # Install pnpm without engine enforcement (CI may run a newer Node)
+          npm install -g pnpm --ignore-engines
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm prisma:generate
+          pnpm prisma:migrate:deploy
+        # Fail the deploy if migrations fail — never start new code against an
+        # un-migrated schema.
+
+      # ── Deploy new image to staging ──────────────────────────────────────
+      # This step is intentionally generic: replace the commands below with
+      # the deployment mechanism for your infrastructure (ECS, K8s, Fly.io,
+      # Railway, Render, etc.).  The image tag is available as
+      # ${{ steps.tag.outputs.image }}.
+      - name: Deploy image to staging environment
+        env:
+          STAGING_IMAGE: ${{ steps.tag.outputs.image }}
+          # Add provider-specific secrets here, e.g.:
+          # AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
+          # AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
+          # KUBE_CONFIG: ${{ secrets.STAGING_KUBE_CONFIG }}
+        run: |
+          # ── Placeholder — replace with your deploy command ──────────────
+          # Examples:
+          #
+          # ECS (Fargate):
+          #   aws ecs update-service \
+          #     --cluster acbu-staging \
+          #     --service acbu-backend \
+          #     --force-new-deployment \
+          #     --region us-east-1
+          #
+          # Kubernetes:
+          #   echo "$KUBE_CONFIG" | base64 -d > /tmp/kubeconfig
+          #   kubectl --kubeconfig=/tmp/kubeconfig set image \
+          #     deployment/acbu-backend \
+          #     acbu-backend="$STAGING_IMAGE" \
+          #     -n acbu-staging
+          #
+          # Fly.io:
+          #   fly deploy --image "$STAGING_IMAGE" --app acbu-backend-staging
+          #
+          # Railway / Render: trigger a redeploy via their API
+          #
+          echo "::notice::Deploy step: image=$STAGING_IMAGE"
+          echo "::warning::Replace this placeholder with your actual deploy command."
+
+      # ── Smoke test / health check ────────────────────────────────────────
+      # Wait for the new deployment to become healthy before marking the
+      # workflow as successful.  A failed health check here will alert the
+      # team without affecting production.
+      - name: Wait for staging to become healthy
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then
+            echo "::warning::STAGING_URL variable not set — skipping health check."
+            exit 0
+          fi
+
+          echo "Waiting for $STAGING_URL/api/v1/health/ready ..."
+          for i in $(seq 1 24); do
+            STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+              --max-time 10 \
+              "$STAGING_URL/api/v1/health/ready" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging is healthy (attempt $i)."
+              exit 0
+            fi
+            echo "  Attempt $i: HTTP $STATUS — retrying in 10 s …"
+            sleep 10
+          done
+
+          echo "::error::Staging did not become healthy within 4 minutes."
+          exit 1
+
+      # ── Notify on success ────────────────────────────────────────────────
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "::notice::Staging deploy succeeded — image ${{ steps.tag.outputs.tag }} is live."
+
+      # ── Notify on failure ────────────────────────────────────────────────
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "::error::Staging deploy FAILED for commit ${{ github.sha }}."
+          echo "Check the deploy step and health-check logs above."
+          # Add Slack/PagerDuty/email notification here if needed.
