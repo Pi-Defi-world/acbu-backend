@@ -41,7 +41,7 @@ function serializeFiatAccount(acc: FiatAccountView) {
     usd_equivalent: acc.usd_equivalent,
     bank_name: acc.bank_name,
     account_number: acc.account_number,
-    account_name: acc.account_number,
+    account_name: acc.account_name,
     ledger_entries: acc.ledger_entries,
   };
 }
