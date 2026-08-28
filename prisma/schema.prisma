@@ -35,9 +35,6 @@ model Organization {
 model User {
   id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   stellarAddress         String?          @unique @db.VarChar(56)
-  kycStatus              String           @default("pending") @db.VarChar(20)
-  id                     String           @id @default(uuid()) @db.Uuid
-  stellarAddress         String?          @unique @db.VarChar(56)
   kycStatus              String           @default("pending") @map("kyc_status") @db.VarChar(20)
   kycVerifiedAt          DateTime?        @map("kyc_verified_at") @db.Timestamp(6)
   countryCode            String?          @map("country_code") @db.VarChar(3)
@@ -743,44 +740,4 @@ model RefreshToken {
   @@index([tokenHash], map: "idx_refresh_tokens_token_hash")
   @@index([expiresAt], map: "idx_refresh_tokens_expires_at")
   @@map("refresh_tokens")
-}
-
-model WeightDriftAudit {
-  id                           String                @id @default(uuid()) @db.Uuid
-  auditPeriodStart             DateTime              @map("audit_period_start") @db.Timestamp(6)
-  auditPeriodEnd               DateTime              @map("audit_period_end") @db.Timestamp(6)
-  totalCurrencies              Int                   @map("total_currencies")
-  currenciesExceedingThreshold Int                   @map("currencies_exceeding_threshold")
-  maxDriftPercent              Decimal               @map("max_drift_percent") @db.Decimal(5, 2)
-  status                       String                @default("pending") @db.VarChar(20) // pending | approved | rejected
-  diffReport                   Json?                 @map("diff_report")
-  createdBy                    String                @map("created_by") @db.Uuid
-  approvedBy                   String?               @map("approved_by") @db.Uuid
-  approvalNotes                String?               @map("approval_notes") @db.VarChar(1000)
-  approvedAt                   DateTime?             @map("approved_at") @db.Timestamp(6)
-  createdAt                    DateTime              @default(now()) @map("created_at") @db.Timestamp(6)
-  currencies                   WeightDriftCurrency[]
-
-  @@index([status], map: "idx_weight_drift_audit_status")
-  @@index([createdAt], map: "idx_weight_drift_audit_created_at")
-  @@index([status, createdAt(sort: Desc)], map: "idx_weight_drift_audit_status_created")
-  @@map("weight_drift_audits")
-}
-
-model WeightDriftCurrency {
-  id               String   @id @default(uuid()) @db.Uuid
-  auditId          String   @map("audit_id") @db.Uuid
-  currency         String   @db.VarChar(3)
-  policyWeight     Decimal  @map("policy_weight") @db.Decimal(5, 2)
-  actualWeight     Decimal  @map("actual_weight") @db.Decimal(5, 2)
-  driftPercent     Decimal  @map("drift_percent") @db.Decimal(5, 2)
-  exceedsThreshold Boolean  @map("exceeds_threshold")
-  recommendation   String?  @db.VarChar(500)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
-
-  audit WeightDriftAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
-
-  @@index([auditId], map: "idx_weight_drift_currency_audit_id")
-  @@index([currency], map: "idx_weight_drift_currency_currency")
-  @@map("weight_drift_currencies")
 }

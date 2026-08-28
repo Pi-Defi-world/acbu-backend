@@ -207,7 +207,7 @@ if (parsed.data.NODE_ENV === "production" && !isJestTest) {
   if (!process.env.BILLS_WEBHOOK_SECRET) missingFintechKeys.push("BILLS_WEBHOOK_SECRET");
   if (missingFintechKeys.length > 0) {
     throw new Error(
-      `Missing or placeholder required fintech API keys in production: ${invalidFintechKeys.join(", ")}. ` +
+      `Missing or placeholder required fintech API keys in production: ${missingFintechKeys.join(", ")}. ` +
         "Inject valid API keys via environment variables — never commit them to source control. " +
         "Rotate any key that may have been exposed before redeploying.",
     );
@@ -215,6 +215,28 @@ if (parsed.data.NODE_ENV === "production" && !isJestTest) {
 }
 
 const env = parsed.data;
+
+// Placeholder/example values that must not be used as real API keys.
+const PLACEHOLDER_KEY_PATTERNS = [
+  /^\s*$/, // empty or whitespace-only
+  /change.?me/i,
+  /your[-_].*key/i,
+  /example/i,
+  /placeholder/i,
+  // Common .env.example description strings (e.g. "Flutterwave secret key")
+  /^[A-Z][a-z]+ [A-Z]?[a-z]+ (key|secret|id)$/i,
+  /^MTN MoMo /i,
+];
+
+/**
+ * Returns true if the given value is absent or looks like a placeholder string
+ * that should not be used as a real API key.
+ */
+export function isPlaceholderKey(value: string | null | undefined): boolean {
+  if (value == null || value.trim() === "") return true;
+  const trimmed = value.trim();
+  return PLACEHOLDER_KEY_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
 
 export const config = {
   nodeEnv: env.NODE_ENV,
@@ -383,7 +405,7 @@ export const config = {
     nativeAssetCode: ((): string => {
       const explicit = env.STELLAR_NATIVE_ASSET_CODE?.trim();
       if (explicit) return explicit.toUpperCase();
-      const bootstrapProfile = env.TESTNET_CUSTODIAL_BOOTSTRAP.trim().toLowerCase();
+      const bootstrapProfile = (env.TESTNET_CUSTODIAL_BOOTSTRAP ?? "").trim().toLowerCase();
       return bootstrapProfile.includes("pi") ? "PI" : "XLM";
     })(),
     /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */

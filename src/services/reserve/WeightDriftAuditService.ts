@@ -82,7 +82,7 @@ export class WeightDriftAuditService {
       for (const [currency, policyWeight] of policyWeights) {
         const actualWeight = actualWeights.get(currency) || 0;
         const driftPercent = actualWeight - policyWeight;
-        const exceedsThreshold = Math.abs(driftPercent) >= DRIFT_THRESHOLD_PCT;
+        const exceedsThreshold = Math.abs(driftPercent) > DRIFT_THRESHOLD_PCT;
 
         if (exceedsThreshold) {
           exceedingCount++;
@@ -240,7 +240,7 @@ export class WeightDriftAuditService {
       return updated;
     });
 
-    return this.formatAuditReport(updatedAudit, audit.currencies);
+    return this.formatAuditReport(updatedAudit, updatedAudit.currencies ?? audit.currencies ?? []);
   }
 
   /**
