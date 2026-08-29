@@ -1,5 +1,5 @@
 # Stage 1: Builder
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 
 # Install build tools for native dependencies (e.g., bcrypt)
 RUN apk add --no-cache python3 make g++
@@ -20,7 +20,7 @@ RUN pnpm prisma:generate
 RUN pnpm build
 
 # Stage 2: Runner
-FROM node:22-alpine AS runner
+FROM node:26-alpine AS runner
 
 # Install build tools for native dependencies in prod
 RUN apk add --no-cache python3 make g++
