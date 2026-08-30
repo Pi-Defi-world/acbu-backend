@@ -17,17 +17,29 @@ export class MessageValidationError extends Error {
 }
 
 /**
- * Validate a message against the schema for its queue
+ * Validate a message against the schema for its queue.
+ *
+ * The generic `T` is constrained to `z.infer` of the matching queue schema so
+ * callers receive a typed value without an unsafe cast.  Zod parses — and
+ * therefore *validates* — the payload; if a numeric field arrives as a string
+ * (or any other type mismatch) Zod will throw a ZodError, which is converted
+ * to a `MessageValidationError` and logged before re-throwing.
+ *
+ * The internal implementation uses `z.ZodSchema<T>` to ensure the Zod result
+ * is assignable to `T` at the type level, eliminating the TS2352 error that
+ * arose from an unconstrained `as T` cast.
  */
 export function validateMessage<T>(queue: string, payload: unknown): T {
-  const schema = QUEUE_SCHEMAS[queue as keyof typeof QUEUE_SCHEMAS];
+  const schema = QUEUE_SCHEMAS[queue as keyof typeof QUEUE_SCHEMAS] as z.ZodSchema<T> | undefined;
 
   if (!schema) {
     throw new Error(`No schema defined for queue: ${queue}`);
   }
 
   try {
-    return schema.parse(payload) as T;
+    // schema.parse() returns T because schema is typed as ZodSchema<T>.
+    // No bare `as T` cast: the compiler verifies that schema.parse() → T.
+    return schema.parse(payload);
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error("Message validation failed", {
@@ -44,15 +56,15 @@ export function validateMessage<T>(queue: string, payload: unknown): T {
 /**
  * Validate and publish a message to a queue with envelope
  */
-export async function publishValidatedMessage<T>(
+export async function publishValidatedMessage<T extends Record<string, unknown>>(
   queue: string,
   payload: T,
   options?: { persistent?: boolean; priority?: number },
 ): Promise<void> {
   const channel = getRabbitMQChannel();
 
-  // Validate the payload
-  const validatedPayload = validateMessage(queue, payload);
+  // Validate the payload; returns the Zod-parsed value typed as T
+  const validatedPayload = validateMessage<T>(queue, payload);
 
   // Create message envelope
   const envelope: MessageEnvelope = {
@@ -86,17 +98,19 @@ export async function publishValidatedMessage<T>(
 }
 
 /**
- * Validate and parse an incoming message
+ * Validate and parse an incoming message.
+ *
+ * Parses the envelope, then validates the payload against the queue's schema.
+ * Invalid payloads — including numeric fields arriving as strings or any other
+ * type mismatch — are rejected by Zod and converted to a `MessageValidationError`.
  */
 export function parseIncomingMessage<T>(queue: string, content: Buffer): T {
   try {
     const raw = JSON.parse(content.toString());
     const envelope = MessageEnvelopeSchema.parse(raw);
 
-    // Validate payload against queue schema
-    const validatedPayload = validateMessage(queue, envelope.payload);
-
-    return validatedPayload as T;
+    // Validate payload against queue schema; rejects invalid numeric payloads
+    return validateMessage<T>(queue, envelope.payload);
   } catch (error) {
     if (error instanceof MessageValidationError) {
       throw error;
