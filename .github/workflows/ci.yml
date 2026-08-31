@@ -29,6 +29,10 @@ jobs:
       - name: Run security audit
         run: pnpm audit --audit-level high
 
+      - name: Run non-blocking audit report
+        if: always()
+        run: pnpm audit || true
+
       - name: Run ESLint
         run: pnpm lint
 
