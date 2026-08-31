@@ -107,13 +107,10 @@ describe("env validation", () => {
       ...ORIGINAL,
       ...REQUIRED_ENV,
       NODE_ENV: "production",
-      CHALLENGE_TOKEN_SECRET: "distinct-challenge-token-secret-32-chars",
-      USDC_ISSUER_TESTNET: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
-      USDC_ISSUER_MAINNET: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
-      S3_SCAN_WEBHOOK_SECRET: "change-me-in-production",
       CHALLENGE_TOKEN_SECRET: "production-challenge-token-secret-32chars-xyz",
       USDC_ISSUER_TESTNET: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
       USDC_ISSUER_MAINNET: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+      S3_SCAN_WEBHOOK_SECRET: "change-me-in-production",
       FLUTTERWAVE_SECRET_KEY: "test-flutterwave-secret",
       FLUTTERWAVE_WEBHOOK_SECRET: "test-flutterwave-webhook-secret",
       PAYSTACK_SECRET_KEY: "test-paystack-secret",
@@ -171,8 +168,8 @@ describe("env validation", () => {
       FLUTTERWAVE_WEBHOOK_SECRET: "test-flutterwave-webhook-secret",
       PAYSTACK_SECRET_KEY: "test-paystack-secret",
       BILLS_WEBHOOK_SECRET: "test-bills-webhook-secret",
-      USDC_ISSUER_TESTNET: "",
     };
+    delete process.env.USDC_ISSUER_TESTNET;
 
     expect(() => require("../src/config/env")).toThrow(
       /USDC_ISSUER_TESTNET/,
@@ -191,8 +188,8 @@ describe("env validation", () => {
       FLUTTERWAVE_WEBHOOK_SECRET: "test-flutterwave-webhook-secret",
       PAYSTACK_SECRET_KEY: "test-paystack-secret",
       BILLS_WEBHOOK_SECRET: "test-bills-webhook-secret",
-      USDC_ISSUER_MAINNET: "",
     };
+    delete process.env.USDC_ISSUER_MAINNET;
 
     expect(() => require("../src/config/env")).toThrow(
       /USDC_ISSUER_MAINNET/,
