@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v7
         if: steps.gate.outputs.should_run == 'true'
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: steps.gate.outputs.should_run == 'true'
         with:
           version: 9

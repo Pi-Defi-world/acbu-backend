@@ -36,7 +36,7 @@ jobs:
           RABBITMQ_PASSWORD: acbu_e2e_pw
         run: docker compose up -d --wait
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: "10.33.1"
 
