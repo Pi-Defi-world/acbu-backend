@@ -1,6 +1,9 @@
 /**
  * Rate limiting service for recovery attempts
  * Prevents brute force attacks and limits recovery attempts
+ * 
+ * PERSISTENCE: All recovery attempts are persisted to the database via RecoveryAttempt model.
+ * This ensures throttling persists across server restarts, addressing B-006 mitigation requirements.
  */
 import { prisma } from "../../config/database";
 import { logger } from "../../config/logger";
