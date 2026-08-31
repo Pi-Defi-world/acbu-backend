@@ -14,6 +14,7 @@ function setFiatWebhookDeprecationHeaders(res: Response): void {
 }
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import { z } from "zod";
 import { config } from "../config/env";
 import { logger, logFinancialEvent } from "../config/logger";
 import { prisma } from "../config/database";
@@ -31,9 +32,8 @@ const bypassEnabled =
 
 // Maximum allowed clock drift in seconds between the webhook timestamp and server time.
 // Rejects replayed webhooks that fall outside this window. Default: 300 s (±5 min).
-const WEBHOOK_TIMESTAMP_TOLERANCE_S = parseInt(
+const WEBHOOK_TIMESTAMP_TOLERANCE_S = z.coerce.number().int().min(1).max(86400).parse(
   process.env.WEBHOOK_TIMESTAMP_TOLERANCE_S || "300",
-  10,
 );
 
 /**
