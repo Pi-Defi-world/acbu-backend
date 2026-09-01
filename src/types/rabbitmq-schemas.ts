@@ -10,7 +10,11 @@ export const BaseEventSchema = z.object({
   contractId: z.string(),
   type: z.string(),
   data: z.record(z.unknown()),
-  ledger: z.number(),
+  // Coerce to number so that a non-numeric string is caught as a parse error
+  // rather than silently producing NaN.  Pure z.number() would reject strings
+  // outright too, but z.coerce.number() converts "123" → 123 while still
+  // rejecting "abc" (coercion produces NaN, which fails the number check).
+  ledger: z.coerce.number().int().nonnegative(),
   timestamp: z.string().datetime(),
 });
 
@@ -121,7 +125,8 @@ export type OtpSend = z.infer<typeof OtpSendSchema>;
 const ReserveAlertSchema = z.object({
   type: z.literal("reserve_alert"),
   health: z.string(),
-  overcollateralizationRatio: z.number(),
+  // Coerce so a stringified numeric value is caught rather than masking the type mistake.
+  overcollateralizationRatio: z.coerce.number().nonnegative(),
 });
 
 const WithdrawalStatusSchema = z.object({
@@ -129,7 +134,7 @@ const WithdrawalStatusSchema = z.object({
   userId: z.string().nullable(),
   status: z.string(),
   currency: z.string(),
-  amount: z.number(),
+  amount: z.coerce.number().nonnegative(),
   channel: z.array(z.string()).default(["email"]),
 });
 
@@ -137,7 +142,7 @@ const InvestmentWithdrawalReadySchema = z.object({
   type: z.literal("investment_withdrawal_ready"),
   userId: z.string().nullable().optional(),
   organizationId: z.string().nullable().optional(),
-  amountAcbu: z.number().default(0),
+  amountAcbu: z.coerce.number().nonnegative().default(0),
   timestamp: z.string().datetime().optional(),
 });
 
