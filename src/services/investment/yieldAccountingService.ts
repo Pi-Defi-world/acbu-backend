@@ -98,8 +98,10 @@ export async function accrueFromStrategies(days = 1, asOf: Date = new Date()): P
     const strategies = await prisma.investmentStrategy.findMany({ where: { status: "active" } });
 
     for (const s of strategies) {
-      if (!s.targetApyBps || s.targetApyBps <= 0) continue;
-      const principal = new Decimal(s.deployedNotionalUsd || 0);
+      // targetApyBps is nullable (Int?) — guard against null/undefined explicitly
+      if (s.targetApyBps == null || s.targetApyBps <= 0) continue;
+      // deployedNotionalUsd is a non-nullable Decimal with DB default 0; read directly
+      const principal = s.deployedNotionalUsd;
       if (principal.lte(0)) continue;
 
       const apy = new Decimal(s.targetApyBps).div(10000); // bps -> decimal (e.g., 250 -> 0.025)
