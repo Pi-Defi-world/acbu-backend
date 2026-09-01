@@ -1,16 +1,33 @@
-process.env.DATABASE_URL = "postgresql://test:test@localhost/test";
-process.env.MONGODB_URI = "mongodb://localhost/test";
-process.env.RABBITMQ_URL = "amqp://localhost";
-process.env.JWT_SECRET = "test-secret-key-for-clock-skew-tests";
-
-import jwt from "jsonwebtoken";
-import { signChallengeToken, verifyChallengeToken } from "../src/utils/jwt";
-
-const SECRET = "test-secret-key-for-clock-skew-tests";
-const AUDIENCE = "2fa_challenge";
-const ISSUER = "acbu/auth";
+jest.mock("dotenv", () => ({
+  config: jest.fn(),
+}));
 
 describe("B-065 — JWT clock skew / leeway handling", () => {
+  const ORIGINAL = process.env;
+  const REQUIRED_ENV = {
+    DATABASE_URL: "postgresql://test:test@localhost/test",
+    MONGODB_URI: "mongodb://localhost/test",
+    RABBITMQ_URL: "amqp://localhost",
+    JWT_SECRET: "test-secret-key-for-clock-skew-tests",
+  };
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env = { ...ORIGINAL, ...REQUIRED_ENV };
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL;
+  });
+
+  const SECRET = "test-secret-key-for-clock-skew-tests";
+  const AUDIENCE = "2fa_challenge";
+  const ISSUER = "acbu/auth";
+
+  // Import after env is set up
+  const jwt = require("jsonwebtoken");
+  const { signChallengeToken, verifyChallengeToken } = require("../src/utils/jwt");
+
   it("verifies a normally issued challenge token", () => {
     const token = signChallengeToken("user-abc");
     const payload = verifyChallengeToken(token);
