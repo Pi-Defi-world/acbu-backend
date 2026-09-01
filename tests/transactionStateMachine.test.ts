@@ -6,8 +6,8 @@ process.env.JWT_SECRET = "test-secret";
 import {
   assertValidTransition,
   isTerminalStatus,
-  TransactionStatus,
 } from "../src/utils/transactionStateMachine";
+import type { TransactionStatus } from "../src/utils/transactionStateMachine";
 
 describe("B-073 — Transaction status machine", () => {
   describe("assertValidTransition — valid transitions", () => {
