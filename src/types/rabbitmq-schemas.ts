@@ -157,6 +157,51 @@ export const WebhookJobSchema = z.object({
 
 export type WebhookJob = z.infer<typeof WebhookJobSchema>;
 
+// ===================== QUEUE-SPECIFIC PAYLOAD SCHEMAS =====================
+
+export const RebalancingInstructionSchema = z.object({
+  fromCurrency: z.string().min(1),
+  toCurrency: z.string().min(1),
+  amountUsd: z.number().nonnegative(),
+  rateFromUsd: z.number().positive(),
+  rateToUsd: z.number().positive(),
+  amountFrom: z.number().nonnegative(),
+  amountTo: z.number().nonnegative(),
+});
+
+export const RebalancingPayloadSchema = z.object({
+  eventId: z.string().min(1),
+  instructions: z.array(RebalancingInstructionSchema).default([]),
+  totalReserveValueUsd: z.number().nonnegative(),
+});
+
+export type RebalancingPayload = z.infer<typeof RebalancingPayloadSchema>;
+
+export const XlmToAcbuPayloadSchema = z.object({
+  onRampSwapId: z.string().min(1),
+  userId: z.string().min(1),
+  stellarAddress: z.string().min(1),
+  xlmAmount: z.string().min(1),
+  usdcEquivalent: z.string().min(1).optional(),
+});
+
+export type XlmToAcbuPayload = z.infer<typeof XlmToAcbuPayloadSchema>;
+
+export const UsdcConvertAndMintPayloadSchema = z.object({
+  onRampSwapId: z.string().min(1),
+});
+
+export type UsdcConvertAndMintPayload = z.infer<typeof UsdcConvertAndMintPayloadSchema>;
+
+export const StellarEventFailureSchema = z
+  .object({
+    reason: z.enum(["parse_failure", "handler_failure"]),
+    capturedAt: z.string().datetime(),
+  })
+  .passthrough();
+
+export type StellarEventFailure = z.infer<typeof StellarEventFailureSchema>;
+
 // ===================== MESSAGE VERSIONING =====================
 
 export const MessageEnvelopeSchema = z.object({
@@ -176,11 +221,15 @@ export const QUEUE_SCHEMAS = {
   [QUEUES.ACBU_LENDING_POOL_EVENTS]: LendingPoolEventSchema,
   [QUEUES.ACBU_SAVINGS_VAULT_EVENTS]: SavingsVaultEventSchema,
   [QUEUES.AUDIT_LOGS]: AuditLogSchema,
-  [QUEUES.OTP_SEND]: OtpSendSchema,
   [QUEUES.NOTIFICATIONS]: NotificationSchema,
+  [QUEUES.OTP_SEND]: OtpSendSchema,
+  [QUEUES.REBALANCING]: RebalancingPayloadSchema,
+  [QUEUES.STELLAR_EVENT_FAILURES]: StellarEventFailureSchema,
+  [QUEUES.USDC_CONVERSION]: MintEventSchema,
+  [QUEUES.USDC_CONVERT_AND_MINT]: UsdcConvertAndMintPayloadSchema,
   [QUEUES.WEBHOOKS]: WebhookJobSchema,
   [QUEUES.WITHDRAWAL_PROCESSING]: BurnEventSchema,
-  [QUEUES.USDC_CONVERSION]: MintEventSchema,
+  [QUEUES.XLM_TO_ACBU]: XlmToAcbuPayloadSchema,
 } as const;
 
 export type QueueName = keyof typeof QUEUE_SCHEMAS;
