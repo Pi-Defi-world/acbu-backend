@@ -23,6 +23,7 @@ envFiles.forEach((file) => {
 const envSchema = z.object({
   NODE_ENV: z.string().default("development"),
   WEBHOOK_SIGNATURE_BYPASS: z.string().optional(),
+  WEBHOOK_TIMESTAMP_TOLERANCE_MS: z.coerce.number().int().positive().default(300000),
   PORT: z.coerce.number().int().positive().max(65535).default(5000),
   API_VERSION: z.string().default("v1"),
   DATABASE_URL: z.string().min(1),
