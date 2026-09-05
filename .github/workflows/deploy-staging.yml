@@ -65,7 +65,7 @@ jobs:
 
       - name: Build and push staging image
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
