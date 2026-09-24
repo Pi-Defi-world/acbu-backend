@@ -12,10 +12,7 @@ const WEBHOOK_HEADER_SIGNATURE = "x-acbu-signature";
 const MAX_ATTEMPTS = 5; // terminal threshold; backoff is managed by the queue consumer
 
 export type WebhookEventType =
-  | "transaction.completed"
-  | "transaction.failed"
-  | "mint.completed"
-  | "burn.completed";
+  "transaction.completed" | "transaction.failed" | "mint.completed" | "burn.completed";
 
 export interface WebhookPayload {
   event: WebhookEventType;
@@ -23,10 +20,7 @@ export interface WebhookPayload {
   data: Record<string, unknown>;
 }
 
-function buildPayload(
-  eventType: WebhookEventType,
-  data: Record<string, unknown>,
-): WebhookPayload {
+function buildPayload(eventType: WebhookEventType, data: Record<string, unknown>): WebhookPayload {
   return {
     event: eventType,
     timestamp: new Date().toISOString(),
@@ -43,40 +37,68 @@ export async function enqueueWebhook(
   data: Record<string, unknown>,
   transactionId?: string,
 ): Promise<string | null> {
-  const url = config.webhook.url;
-  if (!url) {
+  const transaction = transactionId
+    ? await prisma.transaction.findUnique({
+        where: { id: transactionId },
+        select: { organizationId: true },
+      })
+    : null;
+  const endpoints = transaction?.organizationId
+    ? await prisma.webhookEndpoint.findMany({
+        where: { organizationId: transaction.organizationId, active: true },
+        select: { id: true, url: true, secret: true },
+      })
+    : [];
+  const destinations =
+    endpoints.length > 0
+      ? endpoints
+      : config.webhook.url
+        ? [{ id: null, url: config.webhook.url, secret: config.webhook.secret || null }]
+        : [];
+
+  if (destinations.length === 0) {
     logger.debug("Webhook URL not configured; skipping enqueue");
     return null;
   }
 
   const payload = buildPayload(eventType, data);
   const payloadStr = JSON.stringify(payload);
-  const signature = config.webhook.secret
-    ? signPayload(payloadStr, config.webhook.secret)
-    : null;
-
-  const webhook = await prisma.webhook.create({
-    data: {
-      eventType,
-      payload: payload as object,
-      signature,
-      status: "pending",
-      transactionId,
-    },
-  });
 
   const ch = await connectRabbitMQ();
   await ch.assertQueue(QUEUES.WEBHOOKS, { durable: true });
-  ch.sendToQueue(
-    QUEUES.WEBHOOKS,
-    Buffer.from(JSON.stringify({ webhookId: webhook.id })),
-    { persistent: true },
-  );
-  logger.info("Webhook enqueued", { webhookId: webhook.id, eventType });
-  return webhook.id;
+  let firstWebhookId: string | null = null;
+
+  for (const destination of destinations) {
+    const signature = destination.secret ? signPayload(payloadStr, destination.secret) : null;
+    const webhook = await prisma.webhook.create({
+      data: {
+        eventType,
+        payload: payload as object,
+        signature,
+        status: "pending",
+        transactionId,
+        endpointId: destination.id,
+        endpointUrl: destination.url,
+        endpointSecret: destination.secret,
+      },
+    });
+    firstWebhookId ??= webhook.id;
+    ch.sendToQueue(QUEUES.WEBHOOKS, Buffer.from(JSON.stringify({ webhookId: webhook.id })), {
+      persistent: true,
+    });
+    logger.info("Webhook enqueued", {
+      webhookId: webhook.id,
+      eventType,
+      endpointId: destination.id,
+    });
+  }
+
+  return firstWebhookId;
 }
 
-export async function deliverWebhook(webhookId: string): Promise<{ success: boolean; terminal: boolean }> {
+export async function deliverWebhook(
+  webhookId: string,
+): Promise<{ success: boolean; terminal: boolean }> {
   const webhook = await prisma.webhook.findUnique({
     where: { id: webhookId },
   });
@@ -95,7 +117,7 @@ export async function deliverWebhook(webhookId: string): Promise<{ success: bool
     return { success: false, terminal: true };
   }
 
-  const url = config.webhook.url;
+  const url = webhook.endpointUrl ?? config.webhook.url;
   if (!url) {
     await prisma.webhook.update({
       where: { id: webhookId },
@@ -107,8 +129,8 @@ export async function deliverWebhook(webhookId: string): Promise<{ success: bool
   const payloadStr = JSON.stringify(webhook.payload);
   const signature =
     webhook.signature ??
-    (config.webhook.secret
-      ? signPayload(payloadStr, config.webhook.secret)
+    ((webhook.endpointSecret ?? config.webhook.secret)
+      ? signPayload(payloadStr, webhook.endpointSecret ?? config.webhook.secret)
       : null);
 
   try {

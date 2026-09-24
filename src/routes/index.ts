@@ -10,6 +10,7 @@ import userRoutes from "./userRoutes";
 import recoveryRoutes from "./recoveryRoutes";
 import authRoutes from "./authRoutes";
 import webhookRoutes from "./webhookRoutes";
+import webhookEndpointRoutes from "./webhookEndpointRoutes";
 import mintRoutes from "./mintRoutes";
 import burnRoutes from "./burnRoutes";
 import ratesRoutes from "./ratesRoutes";
@@ -111,6 +112,7 @@ router.use("/kyc", kycRoutes);
 router.use("/kyc", kycValidatorRewardRoutes);
 router.use("/reports", reportRoutes);
 router.use("/webhooks", webhookRoutes);
+router.use("/webhooks", webhookEndpointRoutes);
 router.use("/compliance", complianceRoutes);
 router.use("/admin/weight-drift-audits", weightDriftAuditRoutes);
 
