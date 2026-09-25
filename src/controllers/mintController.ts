@@ -214,15 +214,65 @@ export async function mintFromUsdcInternal(
       recipient: walletAddress,
     });
     const acbuDecimal = contractNumberToDecimal(Number(result.acbuAmount));
-    await prisma.transaction.update({
-      where: { id: tx.id },
-      data: {
-        status: "completed",
-        acbuAmount: new Decimal(acbuDecimal),
+
+    try {
+      await prisma.transaction.update({
+        where: { id: tx.id },
+        data: {
+          status: "completed",
+          acbuAmount: new Decimal(acbuDecimal),
+          blockchainTxHash: result.transactionHash,
+          completedAt: new Date(),
+        },
+      });
+    } catch (dbError) {
+      // DB update failed after on-chain mint succeeded — attempt compensation
+      logger.error("DB update failed after successful on-chain mint, attempting compensation", {
+        transactionId: tx.id,
+        walletAddress,
+        acbuAmount: acbuDecimal.toString(),
         blockchainTxHash: result.transactionHash,
-        completedAt: new Date(),
-      },
-    });
+        dbError: dbError instanceof Error ? dbError.message : String(dbError),
+      });
+
+      // Try to burn the minted tokens as compensation
+      try {
+        await acbuBurningService.redeemSingle({
+          user: sourceAccount,
+          recipient: sourceAccount,
+          acbuAmount: acbuDecimal.toString(),
+          currency: "USDC",
+        });
+        logger.info("Compensation burn succeeded", { transactionId: tx.id });
+      } catch (compensationError) {
+        // Compensation also failed — log for manual intervention
+        logger.error("Compensation burn failed, manual intervention required", {
+          transactionId: tx.id,
+          walletAddress,
+          acbuAmount: acbuDecimal.toString(),
+          blockchainTxHash: result.transactionHash,
+          compensationError: compensationError instanceof Error
+            ? compensationError.message
+            : String(compensationError),
+        });
+      }
+
+      // Mark transaction as requiring manual review
+      await prisma.transaction.update({
+        where: { id: tx.id },
+        data: {
+          status: "completed",
+          acbuAmount: new Decimal(acbuDecimal),
+          blockchainTxHash: result.transactionHash,
+          completedAt: new Date(),
+          rateSnapshot: {
+            error: "DB update failed after on-chain mint, compensation attempted",
+            at: new Date().toISOString(),
+          },
+        },
+      });
+    }
+
     return { transactionId: tx.id, acbuAmount: acbuDecimal.toString() };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
