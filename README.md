@@ -193,9 +193,19 @@ pnpm test:coverage
 
 With **Prisma Accelerate** and **MongoDB Atlas**, the app does not use local PostgreSQL or MongoDB. Only RabbitMQ is required from Docker (or use a managed RabbitMQ). The compose file also defines optional `postgres` and `mongodb` services for migrations or local development.
 
+> **Security:** `docker-compose.yml` uses the `:?` error syntax for all service credentials — it will refuse to start if any of `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `RABBITMQ_USER`, or `RABBITMQ_PASSWORD` is absent. There are no built-in fallback passwords. Set all eight variables in your `.env` file before running any `docker-compose up` command.
+
+Before starting any Docker service, verify your secrets are present and not using placeholder values:
+
+```bash
+pnpm validate:secrets:docker
+# or
+bash scripts/validate-secrets.sh docker
+```
+
 ### Accessing Services
 
-- **RabbitMQ Management UI:** `http://localhost:15672` (username: acbu, password: acbu_password)
+- **RabbitMQ Management UI:** `http://localhost:15672` (username: value of `RABBITMQ_USER`, password: value of `RABBITMQ_PASSWORD`)
 - **Optional local Postgres:** `localhost:5432` (if running `docker-compose up -d postgres`)
 - **Optional local MongoDB:** `localhost:27017` (if running `docker-compose up -d mongodb`)
 
