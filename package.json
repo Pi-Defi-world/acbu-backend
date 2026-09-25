@@ -41,7 +41,9 @@
     "test:event-schema": "node --test scripts/check-event-schema.test.js",
     "postinstall": "node scripts/prisma-generate-if-needed.js && git config core.hooksPath scripts/hooks || true",
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0",
-    "changelog:update": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s"
+    "changelog:update": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s",
+    "validate:secrets": "bash scripts/validate-secrets.sh",
+    "validate:secrets:docker": "bash scripts/validate-secrets.sh docker"
   },
   "keywords": [
     "acbu",
