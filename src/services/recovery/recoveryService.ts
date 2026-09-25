@@ -7,7 +7,7 @@ import { Buffer } from "buffer";
 import { prisma } from "../../config/database";
 import { generateApiKey } from "../../middleware/auth";
 import { logger } from "../../config/logger";
-import { signChallengeToken, verifyChallengeToken } from "../../utils/jwt";
+import { signChallengeToken, verifyChallengeToken, revokeJti } from "../../utils/jwt";
 import { getRabbitMQChannel, QUEUES } from "../../config/rabbitmq";
 import {
   verifyDevice,
@@ -298,6 +298,12 @@ export async function verifyRecoveryOtp(
     where: { id: challenge.id },
     data: { usedAt: now },
   });
+
+  // Consume the challenge token by revoking its jti
+  if (payload.jti) {
+    const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 300;
+    revokeJti(payload.jti, exp);
+  }
 
   // Rotate existing sessions (revoke old API keys)
   await rotateUserSessions(payload.userId);

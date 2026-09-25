@@ -11,7 +11,7 @@ import { randomUUID } from "crypto";
 import { config } from "../../config/env";
 import { prisma } from "../../config/database";
 import { generateApiKey } from "../../middleware/auth";
-import { signChallengeToken, verifyChallengeToken } from "../../utils/jwt";
+import { signChallengeToken, verifyChallengeToken, revokeJti } from "../../utils/jwt";
 import { logger } from "../../config/logger";
 import { getRabbitMQChannel } from "../../config/rabbitmq";
 import { QUEUES } from "../../config/rabbitmq";
@@ -208,6 +208,11 @@ async function verifyMfaChallengeForUser(
     if (!valid) {
       throw new InvalidCodeError();
     }
+    // Consume the challenge token by revoking its jti
+    if (payload.jti) {
+      const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 300;
+      revokeJti(payload.jti, exp);
+    }
     return "totp";
   }
 
@@ -233,6 +238,11 @@ async function verifyMfaChallengeForUser(
       where: { id: challenge.id },
       data: { usedAt: now },
     });
+    // Consume the challenge token by revoking its jti
+    if (payload.jti) {
+      const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 300;
+      revokeJti(payload.jti, exp);
+    }
     return user.twoFaMethod;
   }
 
@@ -573,6 +583,12 @@ export async function verify2fa(params: Verify2faParams): Promise<Verify2faResul
       lockoutUntil: null,
     },
   });
+
+  // Consume the challenge token by revoking its jti
+  if (payload.jti) {
+    const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 300;
+    revokeJti(payload.jti, exp);
+  }
 
   const api_key = await generateApiKey(user.id, []);
   const wallet = await ensureWalletForUser(user.id);

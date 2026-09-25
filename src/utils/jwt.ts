@@ -161,9 +161,6 @@ export function verifyChallengeToken(token: string): ChallengePayload {
         });
         throw new Error("Challenge token has already been used");
       }
-      // Consume the token: add to deny-list until its natural expiry.
-      const exp = decoded.exp ?? Math.floor(Date.now() / 1000) + 300;
-      revokeJti(decoded.jti, exp);
     }
 
     return decoded;
