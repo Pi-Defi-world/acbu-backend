@@ -8,12 +8,7 @@ import { createHash } from "crypto";
 import { prisma } from "../../config/database";
 import { generateApiKey } from "../../middleware/auth";
 import { logger } from "../../config/logger";
-import {
-  revokeJti,
-  signChallengeToken,
-  verifyChallengeToken,
-  type ChallengePayload,
-} from "../../utils/jwt";
+import { signChallengeToken, verifyChallengeToken, revokeJti } from "../../utils/jwt";
 import { getRabbitMQChannel, QUEUES } from "../../config/rabbitmq";
 import {
   verifyDevice,
