@@ -49,14 +49,14 @@ Burn fees are charged when users convert ACBU tokens back to fiat currency. The 
 | Reserve Weight (% of Target) | Fee (BPS) | Fee (%) | Business Logic |
 |------------------------------|-----------|---------|----------------|
 | < 85% | 200 | 2.00% | Low reserves - strongly discourage burns |
-| 85% - 115% | 10 | 0.10% | Normal range - standard fee |
+| 85% - 115% | 30 | 0.30% | Normal range - standard fee |
 | > 115% | 5 | 0.05% | High reserves - encourage burns for rebalancing |
 
 #### Code Constants
 
 ```typescript
 // Location: src/services/feePolicy/feePolicyService.ts
-const BASE_BURN_FEE_BPS = 10;           // Normal fee (85-115%)
+const BASE_BURN_FEE_BPS = 30;           // Normal fee (85-115%)
 const LOW_RESERVE_BURN_FEE_BPS = 200;   // Low reserve fee (<85%)
 const HIGH_RESERVE_BURN_FEE_BPS = 5;    // High reserve fee (>115%)
 const LOW_RESERVE_THRESHOLD_PCT = 85;   // Lower boundary
@@ -116,7 +116,7 @@ This protects the system from becoming under-collateralized.
 The burn fee structure creates currency-specific rebalancing incentives:
 
 1. **Low Reserves (<85% of target)**: High fee (200 BPS) strongly discourages withdrawals of scarce currencies
-2. **Normal Reserves (85-115%)**: Standard fee (10 BPS) allows normal operations
+2. **Normal Reserves (85-115%)**: Standard fee (30 BPS) allows normal operations
 3. **High Reserves (>115%)**: Low fee (5 BPS) encourages withdrawals to rebalance the basket
 
 This automatically incentivizes users to help maintain the target basket composition.

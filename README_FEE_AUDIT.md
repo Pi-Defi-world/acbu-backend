@@ -76,7 +76,7 @@ Successfully completed comprehensive audit and refactoring of the ACBU fee calcu
 
 ### Burn Fees (ACBU → Fiat)
 - **Low Reserve** (<85% of target): 200 BPS (2.00%)
-- **Normal** (85-115% of target): 10 BPS (0.10%)
+- **Normal** (85-115% of target): 30 BPS (0.30%)
 - **High Reserve** (>115% of target): 5 BPS (0.05%) ← FIXED
 
 ### Spread

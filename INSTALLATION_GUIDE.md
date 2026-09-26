@@ -58,7 +58,7 @@ PASS  src/services/feePolicy/__tests__/feePolicyService.test.ts
     Standard Unit Tests
       ✓ returns high burn fee (200 BPS) when reserve is below 85% of target
       ✓ returns low burn fee (5 BPS) when reserve is above 115% of target
-      ✓ returns base burn fee (10 BPS) when reserve is between 85% and 115%
+      ✓ returns base burn fee (30 BPS) when reserve is between 85% and 115%
       ✓ throws error when currency not found in reserve status
       ✓ throws error when target weight is zero or negative
     Boundary Tests

@@ -11,7 +11,7 @@
  *
  * Burn Fees (based on currency reserve weight vs target):
  * - Low Reserve (<85% of target): 200 BPS (2.00%) - discourage burns
- * - Normal (85-115% of target): 10 BPS (0.10%) - standard fee
+ * - Normal (85-115% of target): 30 BPS (0.30%) - standard fee
  * - High Reserve (>115% of target): 5 BPS (0.05%) - encourage burns
  *
  * Spread:
@@ -30,8 +30,8 @@ const STRESSED_MINT_FEE_BPS = 50;
 /** Maximum mint fee cap (1.0% = 100). */
 const MAX_MINT_FEE_BPS = 100;
 
-/** Base burn fee BPS for normal reserves (0.1% = 10). */
-const BASE_BURN_FEE_BPS = 10;
+/** Base burn fee BPS for normal reserves (0.3% = 30). */
+const BASE_BURN_FEE_BPS = 30;
 /** Low reserve burn fee BPS - discourage burns when reserves are low (2% = 200). */
 const LOW_RESERVE_BURN_FEE_BPS = 200;
 /** High reserve burn fee BPS - encourage burns when reserves are high (0.05% = 5). */
@@ -98,7 +98,7 @@ export async function getMintFeeBps(_currency?: string): Promise<number> {
 /**
  * Get fee in basis points for burn (single-currency). Uses reserve weight vs target:
  * - Currency reserve < 85% of target → 200 BPS (discourage burns)
- * - Currency reserve 85-115% of target → 10 BPS (normal)
+ * - Currency reserve 85-115% of target → 30 BPS (normal)
  * - Currency reserve > 115% of target → 5 BPS (encourage burns)
  *
  * This creates the correct economic incentive: when a currency is scarce in reserves,
