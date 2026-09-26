@@ -68,7 +68,7 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
     );
   });
 
-  it("PROPERTY: Fee is one of exactly three valid values [5, 10, 200]", async () => {
+  it("PROPERTY: Fee is one of exactly three valid values [5, 30, 200]", async () => {
     await fc.assert(
       fc.asyncProperty(
         finiteDouble(0.01, 200),
@@ -87,7 +87,7 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
           const fee = await getBurnFeeBps("NGN");
 
           // Fee must be exactly one of the three tier values
-          expect([5, 10, 200]).toContain(fee);
+          expect([5, 30, 200]).toContain(fee);
         },
       ),
       { numRuns: 100 },
@@ -142,10 +142,10 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
   it("PROPERTY: Boundary consistency - fees at thresholds are deterministic", async () => {
     const testCases = [
       { pctOfTarget: 84.99, expectedFee: 200 },
-      { pctOfTarget: 85.0, expectedFee: 10 },
-      { pctOfTarget: 85.01, expectedFee: 10 },
-      { pctOfTarget: 114.99, expectedFee: 10 },
-      { pctOfTarget: 115.0, expectedFee: 10 },
+      { pctOfTarget: 85.0, expectedFee: 30 },
+      { pctOfTarget: 85.01, expectedFee: 30 },
+      { pctOfTarget: 114.99, expectedFee: 30 },
+      { pctOfTarget: 115.0, expectedFee: 30 },
       { pctOfTarget: 115.01, expectedFee: 5 },
     ];
 

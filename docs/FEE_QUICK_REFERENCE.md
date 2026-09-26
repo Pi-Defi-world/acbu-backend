@@ -22,7 +22,7 @@
 | Reserve Level | Fee | When to Apply |
 |---------------|-----|---------------|
 | **Low** (<85% of target) | **200 BPS** (2.00%) | Discourage burns |
-| **Normal** (85-115% of target) | **10 BPS** (0.10%) | Standard operations |
+| **Normal** (85-115% of target) | **30 BPS** (0.30%) | Standard operations |
 | **High** (>115% of target) | **5 BPS** (0.05%) | Encourage burns |
 
 **Code Location**: `src/services/feePolicy/feePolicyService.ts` → `getBurnFeeBps(currency)`
@@ -87,8 +87,8 @@ If a calculated fee falls outside this range, the system throws an error.
 ### Scenario 3: Normal Burn (NGN at 100% of target)
 - Reserve level: Normal
 - Amount: $10,000 ACBU
-- Fee: 10 BPS = $10.00
-- User receives: $9,990.00 worth of NGN
+- Fee: 30 BPS = $30.00
+- User receives: $9,970.00 worth of NGN
 
 ### Scenario 4: Low Reserve Burn (NGN at 70% of target)
 - Reserve level: Low
@@ -125,7 +125,7 @@ If a calculated fee falls outside this range, the system throws an error.
 Reserve Weight (% of Target)
     0%        85%       115%      200%
     |---------|---------|---------|
-    |   200   |   10    |    5    |
+    |   200   |   30    |    5    |
     |   BPS   |   BPS   |   BPS   |
     |---------|---------|---------|
      LOW      NORMAL     HIGH
@@ -154,7 +154,7 @@ const STRESSED_MINT_FEE_BPS = 50;
 const MAX_MINT_FEE_BPS = 100;
 
 // Burn Fees
-const BASE_BURN_FEE_BPS = 10;
+const BASE_BURN_FEE_BPS = 30;
 const LOW_RESERVE_BURN_FEE_BPS = 200;
 const HIGH_RESERVE_BURN_FEE_BPS = 5;
 
