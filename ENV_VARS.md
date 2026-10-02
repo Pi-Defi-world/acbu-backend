@@ -22,6 +22,31 @@ This file documents the environment variables required by the ACBU backend and t
 - Audit git history: `git log --all --source --full-history -- .env`
 - Force-push to remove sensitive commits (requires admin approval).
 
+## Docker service credentials
+
+These variables are consumed exclusively by `docker-compose.yml` to initialise
+the local Postgres, MongoDB, and RabbitMQ containers. There are **no built-in
+defaults** — Docker Compose will refuse to start a service if any variable is
+absent (`:?` error syntax is used throughout `docker-compose.yml`).
+
+> **Security:** Never reuse the placeholder strings from `.env.example` in any
+> shared or long-lived environment. Generate strong random passwords (e.g.
+> `openssl rand -base64 32`).
+
+| Variable | Service | Description |
+|---|---|---|
+| `POSTGRES_USER` | postgres | Database superuser name |
+| `POSTGRES_PASSWORD` | postgres | Database superuser password — must be strong |
+| `POSTGRES_DB` | postgres | Default database name |
+| `MONGO_USER` | mongodb | MongoDB root username |
+| `MONGO_PASSWORD` | mongodb | MongoDB root password — must be strong |
+| `MONGO_DB` | mongodb | Default MongoDB database name |
+| `RABBITMQ_USER` | rabbitmq | RabbitMQ default username |
+| `RABBITMQ_PASSWORD` | rabbitmq | RabbitMQ default password — must be strong |
+
+Run `bash scripts/validate-secrets.sh docker` to verify these are set and
+do not contain known placeholder values before starting the stack.
+
 ## Required variables
 
 - `DATABASE_URL`
