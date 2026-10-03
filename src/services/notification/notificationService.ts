@@ -39,10 +39,22 @@ export async function sendEmail(to: string, subject: string, body: string): Prom
   }
   if (cfg.emailProvider === "sendgrid" && cfg.sendgridApiKey) {
     try {
+      // `to` may be a single address or a comma-separated list (see
+      // weightDriftAuditJob.ts, which joins multiple configured admin
+      // recipients this way). SendGrid's API requires each recipient as its
+      // own { email } object in the array — passing the whole joined string
+      // as a single object's `email` field sends one malformed address
+      // instead of delivering to every recipient.
+      const recipients = to
+        .split(",")
+        .map((address) => address.trim())
+        .filter((address) => address.length > 0)
+        .map((email) => ({ email }));
+
       await axios.post(
         "https://api.sendgrid.com/v3/mail/send",
         {
-          personalizations: [{ to: [{ email: to }] }],
+          personalizations: [{ to: recipients }],
           from: {
             email: cfg.emailFrom,
             name: "ACBU",
@@ -57,7 +69,10 @@ export async function sendEmail(to: string, subject: string, body: string): Prom
           },
         },
       );
-      logger.info("Email sent via SendGrid", { to: to ? "***" : undefined });
+      logger.info("Email sent via SendGrid", {
+        to: to ? "***" : undefined,
+        recipientCount: recipients.length,
+      });
     } catch (e) {
       logger.error("SendGrid send failed", { error: e });
       throw e;
