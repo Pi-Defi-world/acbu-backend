@@ -288,3 +288,8 @@ The CI pipeline:
 ## License
 
 Apache License 2.0
+
+## Handsoff notes
+
+<!-- handsoff-issue-646 -->
+- #646: BE-018: verifyRecoveryOtp has no dedicated attempt-throttling on the OTP-guessing step
