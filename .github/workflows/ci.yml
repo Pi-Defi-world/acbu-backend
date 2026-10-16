@@ -56,11 +56,11 @@ jobs:
       POSTGRES_USER: acbu_test
       POSTGRES_PASSWORD: acbu_test_pw
       POSTGRES_DB: acbu_test
-      MONGO_USER: acbu_test
-      MONGO_PASSWORD: acbu_test_pw
+      MONGO_INITDB_ROOT_USERNAME: acbu_test
+      MONGO_INITDB_ROOT_PASSWORD: acbu_test_pw
       MONGO_DB: acbu_test
-      RABBITMQ_USER: acbu_test
-      RABBITMQ_PASSWORD: acbu_test_pw
+      RABBITMQ_DEFAULT_USER: acbu_test
+      RABBITMQ_DEFAULT_PASS: acbu_test_pw
       DATABASE_URL: postgresql://acbu_test:acbu_test_pw@localhost:5432/acbu_test
       MONGODB_URI: mongodb://acbu_test:acbu_test_pw@localhost:27017/acbu_test?authSource=admin
       RABBITMQ_URL: amqp://acbu_test:acbu_test_pw@localhost:5672
@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Start local dev infrastructure
-        run: docker compose up -d --wait
+        run: docker compose up -d --wait postgres mongodb rabbitmq
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:

@@ -1,45 +1,47 @@
-# Stage 1: Builder
-FROM node:26-alpine AS builder
+# Build the application and generate the Prisma client.
+FROM node:22-alpine AS builder
 
-# Install build tools for native dependencies (e.g., bcrypt)
 RUN apk add --no-cache python3 make g++
-
-# Setup pnpm
 RUN corepack enable && corepack prepare pnpm@10.33.1 --activate
 
 WORKDIR /app
 
-# Install dependencies first (caching layer)
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
+ENV SHADOW_DATABASE_URL="postgresql://build:build@localhost:5432/build_shadow"
+
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma/
 RUN pnpm install --frozen-lockfile
 
-# Copy source and build
 COPY . .
 RUN pnpm prisma:generate
 RUN pnpm build
 
-# Stage 2: Runner
-FROM node:26-alpine AS runner
+# Install production dependencies separately.
+FROM node:22-alpine AS production-deps
 
-# Install build tools for native dependencies in prod
 RUN apk add --no-cache python3 make g++
-
-# Setup pnpm
 RUN corepack enable && corepack prepare pnpm@10.33.1 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+
+# Run the compiled application without development dependencies.
+FROM node:22-alpine AS runner
+
+RUN apk add --no-cache libstdc++
 
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Install only production dependencies
-COPY package.json pnpm-lock.yaml ./
+COPY package.json ./
 COPY prisma ./prisma/
-RUN pnpm install --frozen-lockfile --prod
-RUN pnpm prisma:generate
-
-# Copy compiled dist from builder
+COPY --from=production-deps /app/node_modules ./node_modules
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/dist ./dist
 
 EXPOSE 5000
 
-CMD ["pnpm", "start"]
+CMD ["node", "dist/index.js"]
