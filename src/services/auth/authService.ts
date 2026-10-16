@@ -10,6 +10,7 @@ import { randomUUID, createHash } from "crypto";
 import { config } from "../../config/env";
 import { prisma } from "../../config/database";
 import { generateApiKey } from "../../middleware/auth";
+import { revokeApiKey } from "../../middleware/auth";
 import { signChallengeToken, verifyChallengeToken, revokeJti } from "../../utils/jwt";
 import { logger } from "../../config/logger";
 import { getRabbitMQChannel } from "../../config/rabbitmq";
@@ -134,6 +135,20 @@ const ADMIN_TIER = "enterprise";
 const BREAK_GLASS_DEFAULT_TTL_MINUTES = 15;
 const BREAK_GLASS_MAX_TTL_MINUTES = 60;
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+
+/**
+ * Revoke any previously issued api_key(s) tied to the given refresh-token family
+ * so that key rotation on refresh retires the old key instead of accumulating keys.
+ */
+async function revokePriorApiKeysForFamily(refreshTokenFamilyId: string): Promise<void> {
+  const priorKeys = await prisma.apiKey.findMany({
+    where: { refreshTokenFamilyId, revokedAt: null },
+    select: { id: true },
+  });
+  for (const key of priorKeys) {
+    await revokeApiKey(key.id);
+  }
+}
 const ADMIN_SCOPES = ["p2p:admin", "sme:admin", "gateway:admin", "enterprise:admin"] as const;
 
 function normalizeIdentifier(s: string): {

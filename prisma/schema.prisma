@@ -408,6 +408,7 @@ model ApiKey {
   expiresAt      DateTime? @map("expires_at") @db.Timestamp(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
   revokedAt      DateTime? @map("revoked_at") @db.Timestamp(6)
+  refreshTokenFamilyId String? @map("refresh_token_family_id") @db.Uuid
 
   user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization? @relation("OrganizationApiKeys", fields: [organizationId], references: [id], onDelete: Cascade)
@@ -416,6 +417,7 @@ model ApiKey {
   @@index([organizationId], name: "idx_api_keys_organization_id")
   @@index([keyType], name: "idx_api_keys_key_type")
   @@index([keyHash], name: "idx_api_keys_key_hash")
+  @@index([refreshTokenFamilyId], name: "idx_api_keys_refresh_token_family_id")
   @@map("api_keys")
 }
 
