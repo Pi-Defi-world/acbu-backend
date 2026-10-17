@@ -661,6 +661,7 @@ model SalarySchedule {
   status         String        @default("active") @db.VarChar(20)
   lastRunAt      DateTime?     @map("last_run_at") @db.Timestamp(6)
   nextRunAt      DateTime?     @map("next_run_at") @db.Timestamp(6)
+  lockedAt       DateTime?     @map("locked_at") @db.Timestamp(6)
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamp(6)
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
@@ -669,6 +670,7 @@ model SalarySchedule {
   @@index([organizationId], map: "idx_salary_schedule_org_id")
   @@index([status], map: "idx_salary_schedule_status")
   @@index([nextRunAt], map: "idx_salary_schedule_next_run")
+  @@index([status, nextRunAt, id], map: "idx_salary_schedule_status_next_run_id")
   @@map("salary_schedules")
 }
 
