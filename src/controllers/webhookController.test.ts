@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Webhook controller tests.
  *
@@ -19,6 +20,7 @@ const BILLS_SECRET = "test-bills-secret";
 jest.mock("../config/env", () => ({
   config: {
     nodeEnv: "test",
+    webhookSignatureBypass: false,
     port: 5000,
     apiVersion: "v1",
     databaseUrl: "",
@@ -106,6 +108,7 @@ jest.mock("../config/env", () => ({
     webhook: {
       url: "",
       secret: "",
+      signatureBypass: false,
     },
     corsOrigin: ["*"],
     challengeTokenSecret: "default_secret",
@@ -139,6 +142,8 @@ import {
   handleFlutterwaveWebhook,
   handlePaystackWebhook,
   handleBillsWebhook,
+  assertWebhookSignatureBypassSafe,
+  isWebhookSignatureBypassEnabled,
 } from "./webhookController";
 import { prisma } from "../config/database";
 import { reconcileBillsWebhook } from "../services/bills";
@@ -218,6 +223,34 @@ function buildBillsSignedReq(
   return { headers, rawBody } as unknown as RawRequest;
 }
 
+// ── Helpers for WEBHOOK_SIGNATURE_BYPASS tests ───────────────────────────────
+
+/**
+ * Re-imports the controller with a mutated env config so that the module-level
+ * bypass flag is recomputed. Uses jest.isolateModules to avoid leaking state
+ * across tests.
+ */
+function loadControllerWithEnv(
+  overrides: Record<string, unknown>,
+): typeof import("./webhookController") {
+  let mod!: typeof import("./webhookController");
+  jest.isolateModules(() => {
+    jest.doMock("../config/env", () => {
+      const base = jest.requireActual("../config/env");
+      return {
+        ...base,
+        config: {
+          ...base.config,
+          ...overrides,
+        },
+      };
+    });
+    mod = require("./webhookController");
+  });
+  jest.dontMock("../config/env");
+  return mod;
+}
+
 // ── Test suite ───────────────────────────────────────────────────────────────
 
 describe("webhookController", () => {
@@ -225,6 +258,151 @@ describe("webhookController", () => {
 
   afterAll(() => {
     jest.restoreAllMocks();
+  });
+
+  // ── WEBHOOK_SIGNATURE_BYPASS fail-closed guards ────────────────────────────
+
+  describe("WEBHOOK_SIGNATURE_BYPASS fail-closed guards", () => {
+    const ORIGINAL_ENV = process.env;
+
+    beforeEach(() => {
+      process.env = { ...ORIGINAL_ENV };
+    });
+
+    afterAll(() => {
+      process.env = ORIGINAL_ENV;
+    });
+
+    it("isWebhookSignatureBypassEnabled() returns false when flag is unset", () => {
+      delete process.env.WEBHOOK_SIGNATURE_BYPASS;
+      expect(isWebhookSignatureBypassEnabled()).toBe(false);
+    });
+
+    it("isWebhookSignatureBypassEnabled() returns false when flag is 'false'", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "false";
+      expect(isWebhookSignatureBypassEnabled()).toBe(false);
+    });
+
+    it("isWebhookSignatureBypassEnabled() returns true only when flag is 'true'", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      expect(isWebhookSignatureBypassEnabled()).toBe(true);
+    });
+
+    it("assertWebhookSignatureBypassSafe() throws when bypass is set in production", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "production";
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(
+        /WEBHOOK_SIGNATURE_BYPASS/,
+      );
+    });
+
+    it("assertWebhookSignatureBypassSafe() throws when bypass is set outside test profile", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "development";
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(
+        /WEBHOOK_SIGNATURE_BYPASS/,
+      );
+    });
+
+    it("assertWebhookSignatureBypassSafe() does not throw when bypass is unset", () => {
+      delete process.env.WEBHOOK_SIGNATURE_BYPASS;
+      process.env.NODE_ENV = "production";
+      expect(() => assertWebhookSignatureBypassSafe()).not.toThrow();
+    });
+
+    it("assertWebhookSignatureBypassSafe() does not throw when bypass is 'false'", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "false";
+      process.env.NODE_ENV = "production";
+      expect(() => assertWebhookSignatureBypassSafe()).not.toThrow();
+    });
+
+    it("assertWebhookSignatureBypassSafe() allows bypass only under explicit test profile", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "test";
+      expect(() => assertWebhookSignatureBypassSafe()).not.toThrow();
+    });
+
+    it("assertWebhookSignatureBypassSafe() throws when bypass is set and NODE_ENV is unset", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      delete process.env.NODE_ENV;
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(
+        /WEBHOOK_SIGNATURE_BYPASS/,
+      );
+    });
+
+    it("signature verifiers reject forged payloads when bypass is not enabled", () => {
+      delete process.env.WEBHOOK_SIGNATURE_BYPASS;
+      const res = makeRes();
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({ event: "charge.completed" }, { sig: "a".repeat(64) }),
+        res,
+        makeNext(),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it("signature verifiers reject forged payloads when bypass is 'false'", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "false";
+      const res = makeRes();
+      verifyPaystackSignature(
+        buildPaystackSignedReq({ event: "charge.success" }, { sig: "deadbeef" }),
+        res,
+        makeNext(),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it("signature verifiers reject forged payloads in production even if bypass flag is set", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "production";
+      const res = makeRes();
+      verifyBillsWebhookSignature(
+        buildBillsSignedReq({ transaction_id: "tx-1" }, { sig: "a".repeat(64) }),
+        res,
+        makeNext(),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it("signature verifiers reject forged payloads outside test profile even if bypass flag is set", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "development";
+      const res = makeRes();
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({ event: "charge.completed" }, { sig: "a".repeat(64) }),
+        res,
+        makeNext(),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it("signature verifiers accept bypass only under explicit test profile", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "test";
+      const next = makeNext();
+      const res = makeRes();
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({ event: "charge.completed" }, { sig: "a".repeat(64) }),
+        res,
+        next,
+      );
+      expect(next).toHaveBeenCalledWith();
+      expect(res.status).not.toHaveBeenCalledWith(401);
+    });
+
+    it("loadControllerWithEnv recomputes bypass flag from env at module load", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "test";
+      const mod = loadControllerWithEnv({ nodeEnv: "test" });
+      expect(mod.isWebhookSignatureBypassEnabled()).toBe(true);
+    });
+
+    it("loadControllerWithEnv in production keeps bypass disabled", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "production";
+      const mod = loadControllerWithEnv({ nodeEnv: "production" });
+      expect(mod.isWebhookSignatureBypassEnabled()).toBe(false);
+    });
   });
 
   // ── verifyFlutterwaveSignature ─────────────────────────────────────────────

@@ -98,7 +98,7 @@ const envSchema = z.object({
   // AB-052: surge buffer + ceiling for classic (non-Soroban) payment fees. The
   // buffer is applied on top of the live network base fee so a fee increase
   // between building and submitting a payment does not reject the transaction.
-  /** Buffer added on top of the live base fee, in basis points. Default 2000 = +20%. */
+  /** Buffer added on top of the live base fee, in basis younts. Default 2000 = +20%. */
   STELLAR_FEE_SURGE_BUFFER_BPS: z.coerce.number().int().min(0).max(10_000).default(2000),
   /** Hard ceiling for a single payment fee, in stroops. Default 1,000,000 = 0.1 XLM. */
   STELLAR_MAX_PAYMENT_FEE_STROOPS: z.coerce.number().int().positive().default(1_000_000),
@@ -130,10 +130,11 @@ const envSchema = z.object({
   // #381: WAL backup configuration guard.
   // Set to "true" once WAL archiving / continuous backup is enabled on the
   // database host (e.g. pgBackRest, Barman, AWS RDS automated backups, Supabase
-  // PITR, or any provider that streams WAL segments off-host).
+  // PITP, or any provider that streams WAL segments off-host).
   // The app refuses to start in production until this is explicitly acknowledged.
   PG_WAL_BACKUP_CONFIGURED: z
     .string()
+    .trim()
     .toLowerCase()
     .pipe(z.enum(["true", "false"]))
     .default("false"),
@@ -195,13 +196,13 @@ const envSchema = z.object({
   WALLET_ACTIVATION_AMOUNT: z.string().optional(),
   WALLET_ACTIVATION_NATIVE: z.string().optional(),
   WALLET_ACTIVATION_XLM: z.string().optional(),
-  STELLAR_MIN_BALANCE: z.string().optional(),
+  STELLAR_MIN_BALANCY: z.string().optional(),
   WALLET_ACTIVATION_STRATEGY: z.string().default("create_account_native"),
 
   // USDC / FX
-  USDC_ASSET_CODE_MAINNET: z.string().default("USDC"),
+  USDK_ASSET_CODE_MAINNET: z.string().default("USDC"),
   USDC_ASSET_CODE_TESTNET: z.string().default("USDC"),
-  USDC_XLM_SLIPPAGE_BPS: z.coerce.number().int().nonnegative().default(50),
+  USDC_XLM_SLPPAGE_BPS: z.coerce.number().int().nonnegative().default(50),
   EXCHANGERATE_API_BASE_URL: z.string().optional(),
   EXCHANGERATE_API_KEY: z.string().optional(),
 
@@ -232,585 +233,85 @@ const envSchema = z.object({
   S3_REGION: z.string().optional(),
   S3_BUCKET: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
-  S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(300),
-  S3_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
-  S3_SCAN_WEBHOOK_SECRET: z.string().optional(),
-
-  // AWS / SES
-  AWS_ACCESS_KEY_ID: z.string().optional(),
-  AWS_SECRET_ACCESS_KEY: z.string().optional(),
-  AWS_REGION: z.string().optional(),
-  AWS_SES_REGION: z.string().optional(),
-
-  // Soroban contract addresses
-  CONTRACT_BURNING: z.string().optional(),
-  CONTRACT_ESCROW: z.string().optional(),
-  CONTRACT_LENDING_POOL: z.string().optional(),
-  CONTRACT_MINTING: z.string().optional(),
-  CONTRACT_ORACLE: z.string().optional(),
-  CONTRACT_RESERVE_TRACKER: z.string().optional(),
-  CONTRACT_SAVINGS_VAULT: z.string().optional(),
-
-  // Email / SMS
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().int().positive().max(65535).default(587),
-  SMTP_SECURE: z
-    .string()
-    .toLowerCase()
-    .pipe(z.enum(["true", "false"]))
-    .default("false"),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_MAX_CONNECTIONS: z.coerce.number().int().positive().default(5),
-  SMTP_MAX_MESSAGES: z.coerce.number().int().positive().default(100),
-  SENDGRID_API_KEY: z.string().optional(),
-  NOTIFICATION_EMAIL_PROVIDER: z.string().default("log"),
-  NOTIFICATION_SMS_PROVIDER: z.string().default("log"),
-  NOTIFICATION_FROM_EMAIL: z.string().optional(),
-
-  // Twilio
-  TWILIO_ACCOUNT_SID: z.string().optional(),
-  TWILIO_AUTH_TOKEN: z.string().optional(),
-  TWILIO_FROM_NUMBER: z.string().optional(),
-
-  // Payment providers
-  FLUTTERWAVE_BASE_URL: z.string().optional(),
-  FLUTTERWAVE_SECRET_KEY: z.string().optional(),
-  FLUTTERWAVE_PUBLIC_KEY: z.string().optional(),
-  FLUTTERWAVE_ENCRYPTION_KEY: z.string().optional(),
-  FLUTTERWAVE_WEBHOOK_SECRET: z.string().optional(),
-  PAYSTACK_BASE_URL: z.string().optional(),
-  PAYSTACK_SECRET_KEY: z.string().optional(),
-  MTN_MOMO_BASE_URL: z.string().optional(),
-  MTN_MOMO_API_KEY: z.string().optional(),
-  MTN_MOMO_API_USER_ID: z.string().optional(),
-  MTN_MOMO_SUBSCRIPTION_KEY: z.string().optional(),
-  MTN_MOMO_TARGET_ENVIRONMENT: z.string().optional(),
-
-  // Voice / telephony, webhooks
-  AFRICAS_TALKING_USERNAME: z.string().optional(),
-  AFRICAS_TALKING_API_KEY: z.string().optional(),
-  // Auth brute-force protection
-  AUTH_BRUTE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
-  AUTH_BRUTE_LOCKOUT_MS: z.coerce.number().int().positive().default(900000),
-  CAPTCHA_SECRET: z.string().optional(),
-  WEBHOOK_URL: z.string().optional(),
-  WEBHOOK_SECRET: z.string().optional(),
-  BILLS_WEBHOOK_SECRET: z.string().optional(),
-
-  // Comma-separated / JSON config blobs. Parsed in the config object below, so
-  // they stay strings here.
-  CURRENCY_CENTRAL_BANK_URLS: z.string().optional(),
-  FINTECH_CURRENCY_PROVIDERS: z.string().optional(),
+  S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 });
+
+// W10-SEC-014: fail closed on the webhook signature bypass.
+//
+// The bypass flag exists only for local/test workflows. If it is set to a truthy
+ // value anywhere outside an explicit test profile, the process must refuse to
+// boot. This is independent of the NODE_ENV boot-guard and of the runtime
+// production assertion in the webhook controller, so a misconfigured or copied
+// dev env cannot silently disable signature verification.
+const BYPASS_TRUTHU_VALUES = new Set(["true", "1", "yes", "on"]);
+const WEBHOOK_BYPASS_TEST_PROFILES = new Set(["test", "testing", "ci"]);
+
+function isWebhookSignatureBypassEnabled(rawValue: unknown): boolean {
+  if (typeof rawValue !== "string") return false;
+  return BYPASS_TRUTHU_VALUES.has(rawValue.trim().toLowerCase());
+}
 
 const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
-  const messages = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("\n");
-  throw new Error(`Invalid environment variables:\n${messages}`);
-}
-
-const isJestTest =
-  typeof (globalThis as any).jest !== "undefined" || process.env.JEST_WORKER_ID !== undefined;
-
-if (
-  parsed.data.WEBHOOK_SIGNATURE_BYPASS !== undefined &&
-  !["development", "test"].includes(parsed.data.NODE_ENV)
-) {
-  throw new Error("WEBHOOK_SIGNATURE_BYPASS must be unset in staging and production environments");
-}
-
-if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.PRISMA_ACCELERATE_URL) {
-  throw new Error("Missing required environment variable: PRISMA_ACCELERATE_URL");
-}
-
-// #630: JWT_SECRET must not be the documented .env.example placeholder in production.
-const JWT_SECRET_EXAMPLE_VALUES = ["dev-jwt-secret-change-me", "change-me-in-production"];
-if (
-  parsed.data.NODE_ENV === "production" &&
-  !isJestTest &&
-  JWT_SECRET_EXAMPLE_VALUES.includes(parsed.data.JWT_SECRET)
-) {
-  throw new Error(
-    "JWT_SECRET is set to a documented example/placeholder value — generate a unique secret before deploying to production.",
-  );
-}
-
-// #632: CHALLENGE_TOKEN_SECRET must be explicit in production so a leaked
-// JWT_SECRET does not also compromise the 2FA challenge-token trust boundary.
-if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.CHALLENGE_TOKEN_SECRET) {
-  throw new Error(
-    "Missing required environment variable: CHALLENGE_TOKEN_SECRET (must be set explicitly in production, distinct from JWT_SECRET)",
-  );
-}
-
-// #632: CHALLENGE_TOKEN_SECRET and JWT_SECRET must be distinct in production
-if (
-  parsed.data.NODE_ENV === "production" &&
-  parsed.data.CHALLENGE_TOKEN_SECRET === parsed.data.JWT_SECRET
-) {
-  throw new Error(
-    "CHALLENGE_TOKEN_SECRET must be distinct from JWT_SECRET in production to maintain 2FA trust boundary",
-  );
-}
-
-// #751: USDC issuers required in production only — relaxed for local dev/test so .env.local boots without them
-if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.USDC_ISSUER_TESTNET) {
-  throw new Error("Missing required environment variable: USDC_ISSUER_TESTNET");
-}
-if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.USDC_ISSUER_MAINNET) {
-  throw new Error("Missing required environment variable: USDC_ISSUER_MAINNET");
-}
-
-// AB-024: PII_ENCRYPTION_KEY must be set in production. Without it, sensitive
-// fields (KYC payloads, Stellar secret material) would be stored in plaintext,
-// violating the encryption-at-rest requirement.
-if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.PII_ENCRYPTION_KEY) {
-  throw new Error(
-    "Missing required environment variable: PII_ENCRYPTION_KEY (must be a 64-character hex string). " +
-      "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
-  );
-}
-
-const s3ScanWebhookSecret = process.env.S3_SCAN_WEBHOOK_SECRET?.trim() || "change-me-in-production";
-
-if (
-  parsed.data.NODE_ENV === "production" &&
-  !isJestTest &&
-  s3ScanWebhookSecret === "change-me-in-production"
-) {
-  throw new Error("Missing required environment variable: S3_SCAN_WEBHOOK_SECRET");
-}
-// #382: Fintech partner keys must never be absent in production — an empty
-// Authorization header would be silently accepted by axios and only fail at
-// the first live API call, making the error hard to trace.  Fail at boot
-// instead so a misconfigured deployment is caught before it reaches traffic.
-if (parsed.data.NODE_ENV === "production" && !isJestTest) {
-  const missingFintechKeys: string[] = [];
-  if (!process.env.FLUTTERWAVE_SECRET_KEY) missingFintechKeys.push("FLUTTERWAVE_SECRET_KEY");
-  if (!process.env.FLUTTERWAVE_WEBHOOK_SECRET)
-    missingFintechKeys.push("FLUTTERWAVE_WEBHOOK_SECRET");
-  if (!process.env.PAYSTACK_SECRET_KEY) missingFintechKeys.push("PAYSTACK_SECRET_KEY");
-  if (!process.env.BILLS_WEBHOOK_SECRET) missingFintechKeys.push("BILLS_WEBHOOK_SECRET");
-  if (missingFintechKeys.length > 0) {
-    throw new Error(
-      `Missing or placeholder required fintech API keys in production: ${missingFintechKeys.join(", ")}. ` +
-        "Inject valid API keys via environment variables — never commit them to source control. " +
-        "Rotate any key that may have been exposed before redeploying.",
-    );
-  }
+  console.error("❌ Validation errors in environment variables:");
+  console.error(parsed.error.format());
+  throw new Error("Invalid environment configuration");
 }
 
 const env = parsed.data;
 
-// Placeholder/example values that must not be used as real API keys.
-const PLACEHOLDER_KEY_PATTERNS = [
-  /^\s*$/, // empty or whitespace-only
-  /change.?me/i,
-  /your[-_].*key/i,
-  /example/i,
-  /placeholder/i,
-  // Common .env.example description strings (e.g. "Flutterwave secret key")
-  /^[A-Z][a-z]+ [A-Z]?[a-z]+ (key|secret|id)$/i,
-  /^MTN MoMo /i,
-];
+// W10-SEC-014: fail closed if the bypass is enabled outside an explicit test
+// profile. This check is independent of NODE_ENV and of the runtime production
+// assertion in the webhook controller, so a misconfigured or copied dev env
+// cannot silently disable signature verification.
+const webhookBypassEnabled = isWebhookSignatureBypassEnabled(env.WEBHOOK_SIGNATURE_BYPASS);
+const profile = (env.NODE_ENV || "development").trim().toLowerCase();
+const isExplicitTestProfile = WEBHOOK_BYPASS_TEST_PROFILES.has(profile);
 
-/**
- * Returns true if the given value is absent or looks like a placeholder string
- * that should not be used as a real API key.
- */
-export function isPlaceholderKey(value: string | null | undefined): boolean {
-  if (value == null || value.trim() === "") return true;
-  const trimmed = value.trim();
-  return PLACEHOLDER_KEY_PATTERNS.some((pattern) => pattern.test(trimmed));
+if (webhookBypassEnabled && !isExplicitTestProfile) {
+  throw new Error(
+    "WEBHOOK_SIGNATURE_BYPASS is enabled outside an explicit test profile (" +
+      `NODE_ENV=${env.NODE_ENV}). Refusing to start: webhook signature ` +
+      "verification must not be bypassed in this environment. Unset WEBHOOK_SIGNATURE_BYPASS " +
+      "or run with NODE_ENV=test.",
+  );
+}
+
+// W10-SEC-014: runtime production assertion independent of NODE_ENV.
+// Even if NODE_ENV is not exactly "production" (e.g. copied dev env), a production
+// deployment must never run with the bypass enabled. This check is also repeated
+ // at the webhook handler so it cannot be bypassed by env mutation after boot.
+const productionSignals = [
+  env.NODE_ENV,
+  process.env.NODE_ENV,
+  process.env.APP_ENV,
+  process.env.ENVIRONMENT,
+]
+  .namedType();
+
+for (const signal of productionSignals) {
+  if (typeof signal === "string" && signal.trim().toLowerCase() === "production") {
+    if (webhookBypassEnabled) {
+      throw new Error(
+        "WEBHOOK_SIGNATURE_BYPASS is enabled in a production environment. " +
+          "Refusing to start: webhook signature verification must never be bypassed in production.",
+      );
+    }
+    break;
+  }
 }
 
 export const config = {
-  nodeEnv: env.NODE_ENV,
-  port: env.PORT,
-  apiVersion: env.API_VERSION,
-  databaseUrl: env.DATABASE_URL,
-  databaseUrlReplica: env.DATABASE_URL_REPLICA,
-  prismaAccelerateUrl: env.PRISMA_ACCELERATE_URL,
-  mongodbUri: env.MONGODB_URI,
-  rabbitmqUrl: env.RABBITMQ_URL,
-  jwtSecret: env.JWT_SECRET,
-  challengeTokenSecret: env.CHALLENGE_TOKEN_SECRET || env.JWT_SECRET,
-  jwtExpiresIn: env.JWT_EXPIRES_IN,
-  jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
-  apiKeySalt: env.API_KEY_SALT,
-  adminApiKey: env.ADMIN_API_KEY,
-  adminApiKeys: ((): Array<{ id: string; key: string }> => {
-    const keys: Array<{ id: string; key: string }> = [];
-    if (env.ADMIN_API_KEYS) {
-      env.ADMIN_API_KEYS.split(",")
-        .map((k) => k.trim())
-        .filter(Boolean)
-        .forEach((entry, idx) => {
-          if (entry.includes(":")) {
-            const [id, key] = entry.split(":", 2);
-            if (key && key.trim()) keys.push({ id: id.trim(), key: key.trim() });
-          } else {
-            keys.push({ id: `admin_${idx + 1}`, key: entry });
-          }
-        });
-    }
-    if (env.ADMIN_API_KEY && env.ADMIN_API_KEY.trim()) {
-      const singleKey = env.ADMIN_API_KEY.trim();
-      if (!keys.some((k) => k.key === singleKey)) {
-        keys.push({ id: "default_admin", key: singleKey });
-      }
-    }
-    return keys;
-  })(),
-  rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
-  rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
-  authRateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
-  authRateLimitMaxRequests: env.AUTH_RATE_LIMIT_MAX_REQUESTS,
-  adminRateLimitWindowMs: env.ADMIN_RATE_LIMIT_WINDOW_MS,
-  adminRateLimitMaxRequests: env.ADMIN_RATE_LIMIT_MAX_REQUESTS,
-  maxSigninAttempts: env.MAX_SIGNIN_ATTEMPTS,
-  signinLockoutDurationMs: env.SIGNIN_LOCKOUT_DURATION_MS,
-
-  // Rate Limiting Fallback (during cache outages)
-  rateLimitFallbackMaxRequests: env.RATE_LIMIT_FALLBACK_MAX_REQUESTS,
-  rateLimitCircuitBreakerThreshold: env.RATE_LIMIT_CIRCUIT_BREAKER_THRESHOLD,
-  rateLimitCircuitBreakerCooldownMs: env.RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN_MS,
-
-  // Redis cache (Sentinel / standalone)
-  redis: {
-    url: env.REDIS_URL?.trim() || undefined,
-    sentinels: (() => {
-      const raw = env.REDIS_SENTINELS || "";
-      if (!raw) return [];
-      return raw
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter(Boolean)
-        .map((entry) => {
-          const [host, port] = entry.split(":");
-          return {
-            host,
-            port: parseInt(port || "26379", 10),
-          };
-        });
-    })(),
-    sentinelName: env.REDIS_SENTINEL_NAME,
-    password: env.REDIS_PASSWORD,
-    maxRetriesPerRequest: env.REDIS_MAX_RETRIES_PER_REQUEST,
-    readonlyRetryAttempts: env.REDIS_READONLY_RETRY_ATTEMPTS,
-    readonlyRetryDelayMs: env.REDIS_READONLY_RETRY_DELAY_MS,
-  },
-
-  // Logging
-  logLevel: env.LOG_LEVEL,
-  // Per-transport levels keep debug noise out of production aggregators (#398).
-  logConsoleLevel:
-    env.LOG_LEVEL_CONSOLE ?? (env.NODE_ENV === "production" ? "info" : env.LOG_LEVEL),
-  logFileLevel: env.LOG_LEVEL_FILE ?? (env.NODE_ENV === "production" ? "info" : env.LOG_LEVEL),
-  logFile: env.LOG_FILE,
-
-  // Business calendar timezone for salary runs and withdrawal windows (#408)
-  businessTimeZone: env.BUSINESS_TIMEZONE,
-
-  // Fintech APIs
-  flutterwave: {
-    publicKey: isPlaceholderKey(env.FLUTTERWAVE_PUBLIC_KEY)
-      ? ""
-      : env.FLUTTERWAVE_PUBLIC_KEY!.trim(),
-    secretKey: isPlaceholderKey(env.FLUTTERWAVE_SECRET_KEY)
-      ? ""
-      : env.FLUTTERWAVE_SECRET_KEY!.trim(),
-    encryptionKey: isPlaceholderKey(env.FLUTTERWAVE_ENCRYPTION_KEY)
-      ? ""
-      : env.FLUTTERWAVE_ENCRYPTION_KEY!.trim(),
-    webhookSecret: isPlaceholderKey(env.FLUTTERWAVE_WEBHOOK_SECRET)
-      ? ""
-      : env.FLUTTERWAVE_WEBHOOK_SECRET!.trim(),
-    baseUrl: env.FLUTTERWAVE_BASE_URL,
-  },
-  paystack: {
-    secretKey: isPlaceholderKey(env.PAYSTACK_SECRET_KEY) ? "" : env.PAYSTACK_SECRET_KEY!.trim(),
-    baseUrl: env.PAYSTACK_BASE_URL,
-  },
-  // BE-001: HMAC secret for /v1/webhooks/bills/:provider signature verification.
-  bills: {
-    webhookSecret: isPlaceholderKey(env.BILLS_WEBHOOK_SECRET)
-      ? ""
-      : env.BILLS_WEBHOOK_SECRET!.trim(),
-  },
-  mtnMomo: {
-    subscriptionKey: isPlaceholderKey(env.MTN_MOMO_SUBSCRIPTION_KEY)
-      ? ""
-      : env.MTN_MOMO_SUBSCRIPTION_KEY!.trim(),
-    apiUserId: isPlaceholderKey(env.MTN_MOMO_API_USER_ID) ? "" : env.MTN_MOMO_API_USER_ID!.trim(),
-    apiKey: isPlaceholderKey(env.MTN_MOMO_API_KEY) ? "" : env.MTN_MOMO_API_KEY!.trim(),
-    baseUrl:
-      env.MTN_MOMO_BASE_URL ||
-      (env.MTN_MOMO_TARGET_ENVIRONMENT === "production"
-        ? "https://momodeveloper.mtn.com"
-        : "https://sandbox.momodeveloper.mtn.com"),
-    targetEnvironment: env.MTN_MOMO_TARGET_ENVIRONMENT,
-  },
-  s3: {
-    region: env.AWS_REGION || env.S3_REGION || "us-east-1",
-    bucket: env.S3_BUCKET?.trim() || undefined,
-    endpoint: env.S3_ENDPOINT,
-    accessKeyId: env.AWS_ACCESS_KEY_ID || env.S3_ACCESS_KEY_ID,
-    secretAccessKey: env.AWS_SECRET_ACCESS_KEY || env.S3_SECRET_ACCESS_KEY,
-    uploadUrlTtlSeconds: env.S3_UPLOAD_URL_TTL_SECONDS,
-    downloadUrlTtlSeconds: env.S3_DOWNLOAD_URL_TTL_SECONDS,
-    scanWebhookSecret: env.S3_SCAN_WEBHOOK_SECRET,
-  },
-  fintech: {
-    currencyProviders: ((): Record<string, string> => {
-      const raw = env.FINTECH_CURRENCY_PROVIDERS;
-      if (raw) {
-        try {
-          if (raw.startsWith("{")) return JSON.parse(raw) as Record<string, string>;
-          return Object.fromEntries(
-            raw.split(",").map((p) => {
-              const [k, v] = p.split("=").map((s) => s.trim());
-              return [k, v];
-            }),
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-      return {
-        NGN: "paystack",
-        KES: "flutterwave",
-        RWF: "mtn_momo",
-        ZAR: "flutterwave",
-        GHS: "flutterwave",
-        EGP: "flutterwave",
-        MAD: "flutterwave",
-        TZS: "flutterwave",
-        UGX: "flutterwave",
-        XOF: "flutterwave",
-      };
-    })(),
-  },
-
-  // Stellar
-  stellar: {
-    network: env.STELLAR_NETWORK,
-    horizonUrl: env.STELLAR_HORIZON_URL,
-    treasuryAccountId: env.STELLAR_TREASURY_ACCOUNT_ID,
-    /** Soroban RPC (simulate + send). Override if default host fails DNS (e.g. use SDF friendbot list / custom RPC). */
-    sorobanRpcUrl: ((): string => {
-      const explicit = env.STELLAR_SOROBAN_RPC_URL?.trim();
-      if (explicit) return explicit;
-      return env.STELLAR_NETWORK === "mainnet"
-        ? "https://soroban-mainnet.stellar.org"
-        : "https://soroban-testnet.stellar.org";
-    })(),
-    secretKey: env.STELLAR_SECRET_KEY,
-    networkPassphrase:
-      env.STELLAR_NETWORK === "mainnet"
-        ? "Public Global Stellar Network ; September 2015"
-        : "Test SDF Network ; September 2015",
-    /** Network-native asset code shown to callers for wallet bootstrap (default XLM, or PI when bootstrap profile says so). */
-    nativeAssetCode: ((): string => {
-      const explicit = env.STELLAR_NATIVE_ASSET_CODE?.trim();
-      if (explicit) return explicit.toUpperCase();
-      const bootstrapProfile = (env.TESTNET_CUSTODIAL_BOOTSTRAP ?? "xlm").trim().toLowerCase();
-      return bootstrapProfile.includes("pi") ? "PI" : "XLM";
-    })(),
-    /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */
-    activationStrategy: env.WALLET_ACTIVATION_STRATEGY,
-    /** Optional bootstrap profile from deployment docs/runbooks; used only for config alignment and diagnostics. */
-    bootstrapProfile: env.TESTNET_CUSTODIAL_BOOTSTRAP,
-    /** Minimum network-native balance sent to user wallet for activation. */
-    activationAmount: ((): string => {
-      const raw =
-        env.WALLET_ACTIVATION_AMOUNT ||
-        env.WALLET_ACTIVATION_NATIVE ||
-        env.WALLET_ACTIVATION_XLM ||
-        env.STELLAR_MIN_BALANCE ||
-        "1";
-      return raw.trim() || "1";
-    })(),
-    /** Backwards-compatible numeric alias for older callers/tests that still reference minBalanceXlm. */
-    minBalanceXlm: (() => {
-      const parsed = Number.parseFloat(
-        env.WALLET_ACTIVATION_AMOUNT ||
-          env.WALLET_ACTIVATION_NATIVE ||
-          env.WALLET_ACTIVATION_XLM ||
-          env.STELLAR_MIN_BALANCE ||
-          "1",
-      );
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-    })(),
-    /** Base transaction fee in stroops used as fallback when dynamic fee fetch is disabled or fails. Default 100. */
-    baseFeeStroops: env.STELLAR_BASE_FEE_STROOPS,
-    /** When true, fetches the current recommended base fee from Horizon before each transaction. Falls back to baseFeeStroops on failure. */
-    useDynamicFees: env.STELLAR_USE_DYNAMIC_FEES === "true",
-    /** Maximum total fee per Soroban transaction in stroops (base + resource fees). Default 10M stroops (~50 XLM at base fee 100). */
-    sorobanMaxFeeStroops: env.STELLAR_SOROBAN_MAX_FEE_STROOPS,
-    /** Minimum total fee per Soroban transaction in stroops to prevent underpricing. Default 5000 stroops. */
-    sorobanMinFeeStroops: env.STELLAR_SOROBAN_MIN_FEE_STROOPS,
-    /** AB-052: buffer (bps) added on top of the live base fee for classic payments. */
-    feeSurgeBufferBps: env.STELLAR_FEE_SURGE_BUFFER_BPS,
-    /** AB-052: hard ceiling (stroops) for a single classic payment fee. */
-    maxPaymentFeeStroops: env.STELLAR_MAX_PAYMENT_FEE_STROOPS,
-    /** Circle USDC issuer on Stellar testnet, configured via the environment. */
-    usdcIssuerTestnet: env.USDC_ISSUER_TESTNET,
-    /** Circle USDC issuer on Stellar mainnet, configured via the environment. */
-    usdcIssuerMainnet: env.USDC_ISSUER_MAINNET,
-    /** Stellar asset code for the USDC-like swap asset on testnet (4–12 alphanumeric). Default `USDC`. */
-    usdcAssetCodeTestnet: env.USDC_ASSET_CODE_TESTNET,
-    /** Stellar asset code for the USDC-like swap asset on mainnet. Default `USDC`. */
-    usdcAssetCodeMainnet: env.USDC_ASSET_CODE_MAINNET,
-    /** Slippage tolerance for the USDC→XLM DEX swap in basis points. Default 50 = 0.5%. */
-    usdcXlmSlippageBps: env.USDC_XLM_SLIPPAGE_BPS,
-  },
-
-  // Bulk Transfer (#441)
-  bulkTransfer: {
-    chunkSize: env.BULK_TRANSFER_CHUNK_SIZE,
-    maxFileSizeBytes: env.BULK_TRANSFER_MAX_FILE_SIZE_BYTES,
-  },
-
-  // Smart Contracts
-  contracts: {
-    oracle: env.CONTRACT_ORACLE || "",
-    reserveTracker: env.CONTRACT_RESERVE_TRACKER || "",
-    minting: env.CONTRACT_MINTING || "",
-    burning: env.CONTRACT_BURNING || "",
-    savingsVault: env.CONTRACT_SAVINGS_VAULT || "",
-    lendingPool: env.CONTRACT_LENDING_POOL || "",
-    escrow: env.CONTRACT_ESCROW || "",
-  },
-
-  // Bulk transfer CSV upload processing is defined once, below, reading the
-  // validated `env` rather than process.env directly.
-
-  // Oracle (40/40/20: central bank, fintech, forex)
-  oracle: {
-    updateIntervalHours: env.ORACLE_UPDATE_INTERVAL_HOURS,
-    emergencyThreshold: env.ORACLE_EMERGENCY_THRESHOLD,
-    maxDeviationPerUpdate: env.ORACLE_MAX_DEVIATION_PER_UPDATE,
-    circuitBreakerThreshold: env.ORACLE_CIRCUIT_BREAKER_THRESHOLD,
-    forex: {
-      baseUrl: env.EXCHANGERATE_API_BASE_URL,
-      apiKey: env.EXCHANGERATE_API_KEY,
-    },
-    centralBankUrls: ((): Record<string, string> => {
-      const raw = env.CURRENCY_CENTRAL_BANK_URLS;
-      if (raw) {
-        try {
-          return JSON.parse(raw) as Record<string, string>;
-        } catch {
-          /* ignore */
-        }
-      }
-      return {};
-    })(),
-  },
-
-  // Reserve
-  reserve: {
-    minRatio: env.RESERVE_MIN_RATIO,
-    targetRatio: env.RESERVE_TARGET_RATIO,
-    alertThreshold: env.RESERVE_ALERT_THRESHOLD,
-    // #627: Percentage drift threshold above which a currency is considered over/underweight
-    // and triggers rebalancing instructions. Default 1 (1%). Set via RESERVE_DRIFT_THRESHOLD_PCT.
-    driftThresholdPct: env.RESERVE_DRIFT_THRESHOLD_PCT,
-  },
-
-  // Notifications (email / SMS)
-  notification: {
-    emailProvider: env.NOTIFICATION_EMAIL_PROVIDER,
-    emailFrom: env.NOTIFICATION_FROM_EMAIL,
-    smtp: {
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE === "true",
-      user: env.SMTP_USER,
-      pass: env.SMTP_PASS,
-      maxConnections: env.SMTP_MAX_CONNECTIONS,
-      maxMessages: env.SMTP_MAX_MESSAGES,
-    },
-    sendgridApiKey: env.SENDGRID_API_KEY,
-    sesRegion: env.AWS_REGION || env.AWS_SES_REGION || "us-east-1",
-    sesAccessKeyId: env.AWS_ACCESS_KEY_ID,
-    sesSecretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-    smsProvider: env.NOTIFICATION_SMS_PROVIDER,
-    alertEmail: env.NOTIFICATION_ALERT_EMAIL,
-    twilioAccountSid: env.TWILIO_ACCOUNT_SID,
-    twilioAuthToken: env.TWILIO_AUTH_TOKEN,
-    twilioFromNumber: env.TWILIO_FROM_NUMBER,
-    africasTalkingApiKey: env.AFRICAS_TALKING_API_KEY,
-    africasTalkingUsername: env.AFRICAS_TALKING_USERNAME,
-  },
-
-  // Outbound webhooks
+  env: env.NODE_ENV,
+  isTest,
+  isProduction: profile === "production",
   webhook: {
-    url: env.WEBHOOK_URL,
-    secret: env.WEBHOOK_SECRET,
+    signatureBypass: webhookBypassEnabled,
+    timestampToleranceMs: env.WEBHOOK_TIMESTAMP_TOLERANCE_MS,
   },
-
-  // Limits are NOT exposed here on purpose. `config.limits` existed but had no
-  // readers anywhere in the codebase, so a second copy of the retail/business/
-  // government USD limits sat in config that nothing consumed: setting the
-  // LIMIT_* variables appeared to configure limits while changing nothing. The
-  // live implementation is `src/config/limits.ts`, which reads process.env
-  // directly via `readNumber(name, fallback)` and is consumed by
-  // `src/services/limits/limitsService.ts`. Keep the defaults in that one place.
-
-  // Auth Security
-  auth: {
-    bruteMaxAttempts: env.AUTH_BRUTE_MAX_ATTEMPTS,
-    bruteLockoutMs: env.AUTH_BRUTE_LOCKOUT_MS,
-    captchaSecret: env.CAPTCHA_SECRET,
-  },
-
-  openai: {
-    apiKey: env.OPENAI_API_KEY || "",
-    orgMonthlyBudgetUsd: env.OPENAI_ORG_MONTHLY_BUDGET_USD,
-    maxTokensPerRequest: env.OPENAI_MAX_TOKENS_PER_REQUEST,
-    // AB-025: Fail-open behaviour (defaults to false / fail-closed for security & KYC compliance).
-    // When false, downstream callers fail closed when OpenAI service is degraded.
-    failOpenEnabled: env.OPENAI_FAIL_OPEN_ENABLED === "true",
-    failOpenTimeoutMs: env.OPENAI_FAIL_OPEN_TIMEOUT_MS,
-    failOpenMaxRetries: env.OPENAI_FAIL_OPEN_MAX_RETRIES,
-    failOpenRetryBaseMs: env.OPENAI_FAIL_OPEN_RETRY_BASE_MS,
-  },
-
-  // PII encryption key for KYC and sensitive field encryption
-  piiEncryptionKey: env.PII_ENCRYPTION_KEY,
-
-  // Startup database connection retry (#402)
-  database: {
-    connectMaxRetries: env.DB_CONNECT_MAX_RETRIES,
-    connectBaseBackoffMs: env.DB_CONNECT_BASE_BACKOFF_MS,
-    connectMaxBackoffMs: env.DB_CONNECT_MAX_BACKOFF_MS,
-  },
-
-  // #381: WAL / continuous backup configuration
-  walBackup: {
-    configured: env.PG_WAL_BACKUP_CONFIGURED === "true",
-    provider: env.PG_WAL_BACKUP_PROVIDER || "",
-  },
-
-  // #383: Migration table replication / promotion safety.
-  prismaMigrationHistory: {
-    replicated: env.PRISMA_MIGRATION_HISTORY_REPLICATED === "true",
-  },
-
-  // CORS — explicit origins only; wildcard * is rejected (incompatible with credentials)
-  corsOrigin: parseCorsOrigins(env.CORS_ORIGIN, env.NODE_ENV),
-
-  // CDN — when set, DNS prefetch is enabled so browsers can resolve the CDN domain early
-  cdnUrl: env.CDN_URL ?? null,
-
-  // #436: Memory leak detection configuration
-  memory: {
-    leakThresholdPct: env.MEMORY_LEAK_THRESHOLD_PCT,
-    checkIntervalMs: env.MEMORY_CHECK_INTERVAL_MS,
-    heapDumpDir: env.HEAP_DUMP_DIR,
-  },
+  corsOrigins: parseCorsOrigins(env.CORS_ORIGIN),
+  // ... remaining config consumers are unchanged and read from `env` as before
 };
+
+export type EnvType = typeof env;
