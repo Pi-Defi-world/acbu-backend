@@ -39,6 +39,49 @@ export interface StrategyAllocation {
 }
 
 /**
+ * Custom error for policy violations (allocation exceeds limit).
+ */
+export class PolicyViolationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PolicyViolationError";
+  }
+}
+
+/**
+ * Custom error for invalid input validation failures.
+ */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
+/**
+ * Parse and validate a USD amount string as a finite Decimal.
+ *
+ * @throws ValidationError if the value is not a valid, finite Decimal.
+ */
+function parseFiniteAmountUsd(amountUsd: string, label: string): Decimal {
+  if (typeof amountUsd !== "string" || amountUsd.trim() === "") {
+    throw new ValidationError(`${label} must be a non-empty decimal string`);
+  }
+
+  if (!Decimal.isDecimal(amountUsd)) {
+    throw new ValidationError(`${label} must be a valid decimal number`);
+  }
+
+  const amount = new Decimal(amountUsd);
+
+  if (!amount.isFinite()) {
+    throw new ValidationError(`${label} must be a finite decimal number`);
+  }
+
+  return amount;
+}
+
+/**
  * Get total reserve value for the investment_savings segment (from ReserveTracker).
  */
 export async function getInvestmentSavingsReserveValueUsd(): Promise<number> {
@@ -102,11 +145,13 @@ export async function getStrategyAllocation(strategyId: string): Promise<Strateg
   });
 
   if (!strategy) {
-    throw new Error(`Strategy ${strategyId} not found`);
+    throw new ValidationError(`Strategy ${strategyId} not found`);
   }
 
   if (strategy.status !== "active") {
-    throw new Error(`Strategy ${strategy.name} is ${strategy.status}, not active`);
+    throw new PolicyViolationError(
+      `Strategy ${strategy.name} is ${strategy.status}, not active`,
+    );
   }
 
   const policyLimit = strategy.policyLimitUsd;
@@ -141,13 +186,14 @@ export async function getStrategyAllocation(strategyId: string): Promise<Strateg
  *
  * @param strategyId - UUID of the investment strategy
  * @param amountUsd - Amount to allocate (Decimal string)
+ * @throws ValidationError if amountUsd is not a finite decimal or is not positive
  * @throws PolicyViolationError if allocation would exceed limit
  */
 export async function allocateToStrategy(strategyId: string, amountUsd: string): Promise<void> {
-  const amount = new Decimal(amountUsd);
+  const amount = parseFiniteAmountUsd(amountUsd, "Allocation amount");
 
   if (amount.lte(0)) {
-    throw new Error("Allocation amount must be positive");
+    throw new ValidationError("Allocation amount must be positive");
   }
 
   // Use transaction to ensure atomicity
@@ -157,12 +203,12 @@ export async function allocateToStrategy(strategyId: string, amountUsd: string):
     });
 
     if (!strategy) {
-      throw new Error(`Strategy ${strategyId} not found`);
+      throw new ValidationError(`Strategy ${strategyId} not found`);
     }
 
     if (strategy.status !== "active") {
       throw new PolicyViolationError(
-        `Strategy ${strategy.name} is ${strategy.status}, cannot allocate`,
+        `Strategy ${strategy.name} is ${strategy.status}, cannot allocat`,
       );
     }
 
@@ -191,12 +237,13 @@ export async function allocateToStrategy(strategyId: string, amountUsd: string):
  *
  * @param strategyId - UUID of the investment strategy
  * @param amountUsd - Amount to release (Decimal string)
+ * @throws ValidationError if amountUsd is not a finite decimal or is not positive
  */
 export async function deallocateFromStrategy(strategyId: string, amountUsd: string): Promise<void> {
-  const amount = new Decimal(amountUsd);
+  const amount = parseFiniteAmountUsd(amountUsd, "Deallocation amount");
 
   if (amount.lte(0)) {
-    throw new Error("Deallocation amount must be positive");
+    throw new ValidationError("Deallocation amount must be positive");
   }
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -205,7 +252,7 @@ export async function deallocateFromStrategy(strategyId: string, amountUsd: stri
     });
 
     if (!strategy) {
-      throw new Error(`Strategy ${strategyId} not found`);
+      throw new ValidationError(`Strategy ${strategyId} not found`);
     }
 
     const newDeployed = Decimal.max(new Decimal(0), strategy.deployedNotionalUsd.sub(amount));
@@ -215,14 +262,4 @@ export async function deallocateFromStrategy(strategyId: string, amountUsd: stri
       data: { deployedNotionalUsd: newDeployed },
     });
   });
-}
-
-/**
- * Custom error for policy violations (allocation exceeds limit).
- */
-export class PolicyViolationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "PolicyViolationError";
-  }
 }
