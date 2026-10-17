@@ -162,12 +162,11 @@ const envSchema = z.object({
   BULK_TRANSFER_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(10485760),
 
   // Notifications (email / SMS)
-  // AB-045 (#995): the weekly weight-drift audit job addresses its report to
-  // `config.notification.alertEmail`, which is populated from this variable.
-  // The key was never declared in the schema, so Zod stripped it from the
-  // parsed env and the audit email silently never sent. Declared here as an
-  // optional, trimmed, comma-separated admin distribution list.
+  // AB-045 (#995) / W10-B-016: the weekly weight-drift audit job addresses its report to
+  // `config.notification.alertEmail`, which is populated from this variable or ADMIN_NOTIFICATION_EMAIL.
+  // Declared here as an optional, trimmed, comma-separated admin distribution list.
   NOTIFICATION_ALERT_EMAIL: z.string().trim().optional(),
+  ADMIN_NOTIFICATION_EMAIL: z.string().trim().optional(),
 
   // ---------------------------------------------------------------------------
   // Previously-undeclared variables
@@ -739,7 +738,8 @@ export const config = {
     sesAccessKeyId: env.AWS_ACCESS_KEY_ID,
     sesSecretAccessKey: env.AWS_SECRET_ACCESS_KEY,
     smsProvider: env.NOTIFICATION_SMS_PROVIDER,
-    alertEmail: env.NOTIFICATION_ALERT_EMAIL,
+    alertEmail: env.NOTIFICATION_ALERT_EMAIL || env.ADMIN_NOTIFICATION_EMAIL,
+    adminNotificationEmail: env.ADMIN_NOTIFICATION_EMAIL || env.NOTIFICATION_ALERT_EMAIL,
     twilioAccountSid: env.TWILIO_ACCOUNT_SID,
     twilioAuthToken: env.TWILIO_AUTH_TOKEN,
     twilioFromNumber: env.TWILIO_FROM_NUMBER,
