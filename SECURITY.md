@@ -44,6 +44,26 @@ Both jobs are configured as **required status checks** so PRs are blocked on
 critical findings. Shared workflow templates live in `ci/workflows/` and can be
 reused across the platform's repositories (see `ci/workflows/README.md`).
 
+## Dependency Vulnerability Scanning
+
+This repository gates every PR on dependency vulnerabilities using checks that
+require **no secrets**, so they always run — including on fork PRs, which never
+receive repository secrets:
+
+- **`pnpm audit --audit-level high`** — runs in the main CI workflow's Lint job
+  on every push and PR. Fails the build on any high-or-above severity finding
+  in the resolved dependency tree.
+- **Dependency Review** (`dependency-review.yml`, `actions/dependency-review-action`)
+  — runs on every PR and fails on high-or-above severity vulnerabilities newly
+  introduced by that PR's dependency changes.
+
+**Snyk** (`snyk.yml`) also runs a deeper scan, but only when the `SNYK_TOKEN`
+secret is configured and the PR is not from a fork (secrets are never exposed
+to fork PRs). When it cannot run it posts a clear skip notice to the job
+summary rather than showing a plain, unexplained green check. Snyk is a
+**supplementary** scan — the two checks above are what actually block a merge
+when Snyk itself does not run.
+
 ## Secret Scanning (Gitleaks)
 
 This repository uses **gitleaks** to detect secrets in the git history and block commits containing credentials.

@@ -27,7 +27,7 @@ describe("MintingService Compensation", () => {
     jest.clearAllMocks();
   });
 
-  it("marks tx FAILED if stellar throws", async () => {
+  it("marks tx failed if stellar throws", async () => {
     const service = new MintingService("contract-id");
     (contractClient.invokeContract as jest.Mock).mockRejectedValue(new Error("Stellar Fail"));
 
@@ -42,7 +42,7 @@ describe("MintingService Compensation", () => {
 
     expect(prisma.transaction.update).toHaveBeenCalledWith({
       where: { id: "123" },
-      data: { status: "FAILED" },
+      data: { status: "failed" },
     });
   });
 });

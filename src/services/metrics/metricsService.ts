@@ -8,6 +8,7 @@ import { basketService } from "../basket";
 import { fetchGdpUsd, fetchPopulation } from "./worldBankClient";
 import { BASKET_CURRENCIES, roundWeightsToExactBasisPoints } from "../../config/basket";
 import { Decimal } from "@prisma/client/runtime/library";
+import { decimalToNumber } from "../../utils/decimalUtils";
 
 const GDP_WEIGHT = 0.4;
 const TRADE_WEIGHT = 0.3;

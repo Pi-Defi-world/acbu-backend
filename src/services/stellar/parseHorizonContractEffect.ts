@@ -62,8 +62,7 @@ export function parseHorizonContractBalanceEffect(
 export function getOperationIdFromEffect(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const links = (data as Record<string, unknown>)._links as
-    | Record<string, { href?: string }>
-    | undefined;
+    Record<string, { href?: string }> | undefined;
   const href = links?.operation?.href;
   if (typeof href !== "string") return null;
   const id = href.split("/").filter(Boolean).pop();

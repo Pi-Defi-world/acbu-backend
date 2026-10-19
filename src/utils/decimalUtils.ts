@@ -76,6 +76,27 @@ export function calculateFee(amount: Decimal, feeBps: number): Decimal {
 }
 
 /**
+ * Convert a Decimal (decimal.js or Prisma) to a JS number at an API/reporting boundary.
+ *
+ * Routes through the exact string representation first so that values like
+ * Decimal("0.0007000") are serialised faithfully before the IEEE-754 cast.
+ * This avoids the precision loss that occurs when calling `.toNumber()` directly
+ * on values whose string form has more significant digits than a 64-bit float
+ * can represent.
+ *
+ * ONLY call this function at an explicit API-response or logging boundary.
+ * Never call it in the middle of financial arithmetic — keep the computation in
+ * Decimal throughout and only convert at the very last moment.
+ *
+ * @param value - A Decimal-like object (decimal.js Decimal or Prisma Decimal) or null/undefined
+ * @returns A JS number, or 0 if the value is null/undefined
+ */
+export function decimalToNumber(value: { toString(): string } | null | undefined): number {
+  if (value == null) return 0;
+  return Number(value.toString());
+}
+
+/**
  * Validate amount is within limits using Decimal precision
  * @param amount - Amount to validate
  * @param min - Minimum amount

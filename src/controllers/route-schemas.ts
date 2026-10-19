@@ -121,15 +121,17 @@ export const burnBodySchema = z.object({
 });
 
 // ─── Recovery ────────────────────────────────────────────────────────────────
-const deviceFingerprintSchema = z.object({
-  user_agent: z.string().optional(),
-  ip: z.string().optional(),
-  accept_language: z.string().optional(),
-  accept_encoding: z.string().optional(),
-  timezone: z.string().optional(),
-  screen_resolution: z.string().optional(),
-  platform: z.string().optional(),
-}).optional();
+const deviceFingerprintSchema = z
+  .object({
+    user_agent: z.string().optional(),
+    ip: z.string().optional(),
+    accept_language: z.string().optional(),
+    accept_encoding: z.string().optional(),
+    timezone: z.string().optional(),
+    screen_resolution: z.string().optional(),
+    platform: z.string().optional(),
+  })
+  .optional();
 
 export const unlockAppSchema = z.object({
   identifier: z.string().min(1),
@@ -150,11 +152,15 @@ export const postSalaryDisburseSchema = z.object({
   total_amount: z.string().optional(),
   currency: z.string().default("ACBU"),
   idempotency_key: z.string().optional(),
-  items: z.array(z.object({
-    recipient_id: z.string().uuid().optional(),
-    recipient_address: z.string().min(56).max(56),
-    amount: z.string(),
-  })).min(1),
+  items: z
+    .array(
+      z.object({
+        recipient_id: z.string().uuid().optional(),
+        recipient_address: z.string().min(56).max(56),
+        amount: z.string(),
+      }),
+    )
+    .min(1),
 });
 
 export const postSalaryScheduleSchema = z.object({
@@ -162,11 +168,15 @@ export const postSalaryScheduleSchema = z.object({
   name: z.string().min(1),
   cron: z.string().min(1),
   currency: z.string().default("ACBU"),
-  amount_config: z.array(z.object({
-    recipient_id: z.string().uuid().optional(),
-    recipient_address: z.string().min(56).max(56),
-    amount: z.string(),
-  })).min(1),
+  amount_config: z
+    .array(
+      z.object({
+        recipient_id: z.string().uuid().optional(),
+        recipient_address: z.string().min(56).max(56),
+        amount: z.string(),
+      }),
+    )
+    .min(1),
 });
 
 // ─── Investment ───────────────────────────────────────────────────────────────

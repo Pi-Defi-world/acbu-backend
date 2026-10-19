@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "weight_drift_audits" (
+CREATE TABLE IF NOT EXISTS "weight_drift_audits" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "audit_period_start" TIMESTAMP(6) NOT NULL,
     "audit_period_end" TIMESTAMP(6) NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE "weight_drift_audits" (
 );
 
 -- CreateTable
-CREATE TABLE "weight_drift_currencies" (
+CREATE TABLE IF NOT EXISTS "weight_drift_currencies" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "audit_id" UUID NOT NULL,
     "currency" VARCHAR(3) NOT NULL,

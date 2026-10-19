@@ -14,6 +14,7 @@ import { reserveTracker, ReserveTracker } from "../reserve/ReserveTracker";
 import type { Audience } from "../../middleware/auth";
 import { AppError } from "../../middleware/errorHandler";
 import { getStartOfZonedDay, getStartOfZonedMonth } from "../../utils/dateUtils";
+import { getAcbuUsdRate } from "../../utils/priceUtils";
 
 function buildActorWhere(userId: string | null, organizationId: string | null) {
   if (userId) {
@@ -35,6 +36,45 @@ function buildActorWhere(userId: string | null, organizationId: string | null) {
 }
 
 /**
+ * Sum the USD-equivalent value of deposits for the given actor since `since`.
+ *
+ * USDC deposits store their value in `usdcAmount`. Basket-currency deposits
+ * (NGN/etc.) store `usdcAmount = null` and instead carry their USD-equivalent
+ * value in `amountUsd`. Both must be counted so the deposit cap cannot be
+ * bypassed by funding through non-USDC rails.
+ */
+async function sumDepositsUsdSince(
+  since: Date,
+  whereActor: ReturnType<typeof buildActorWhere>,
+): Promise<Decimal> {
+  const [usdcAgg, basketAgg] = await Promise.all([
+    prisma.transaction.aggregate({
+      where: {
+        type: "mint",
+        status: { in: ["pending", "processing", "completed"] },
+        createdAt: { gte: since },
+        ...whereActor,
+      },
+      _sum: { usdcAmount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: {
+        type: "mint",
+        status: { in: ["pending", "processing", "completed"] },
+        createdAt: { gte: since },
+        usdcAmount: null,
+        ...whereActor,
+      },
+      _sum: { amountUsd: true },
+    }),
+  ]);
+
+  return new Decimal(usdcAgg._sum.usdcAmount ?? 0).plus(
+    new Decimal(basketAgg._sum.amountUsd ?? 0),
+  );
+}
+
+/**
  * Check deposit limits for the given actor (userId or organizationId) and audience.
  * Throws AppError if limit exceeded.
  */
@@ -50,29 +90,16 @@ export async function checkDepositLimits(
   const startOfMonth = getStartOfZonedMonth(now);
 
   const whereActor = buildActorWhere(userId, organizationId);
-  const mintedDaily = await prisma.transaction.aggregate({
-    where: {
-      type: "mint",
-      status: { in: ["pending", "processing", "completed"] },
-      createdAt: { gte: startOfDay },
-      ...whereActor,
-    },
-    _sum: { usdcAmount: true },
-  });
-  const mintedMonthly = await prisma.transaction.aggregate({
-    where: {
-      type: "mint",
-      status: { in: ["pending", "processing", "completed"] },
-      createdAt: { gte: startOfMonth },
-      ...whereActor,
-    },
-    _sum: { usdcAmount: true },
-  });
 
-  // For basket-currency deposits we may not have usdcAmount; use localAmount converted to USD if needed.
-  // Simplified: use amountUsd passed in (caller should pass USD equivalent).
-  const dailyUsd = new Decimal(mintedDaily._sum.usdcAmount ?? 0).plus(amountUsd);
-  const monthlyUsd = new Decimal(mintedMonthly._sum.usdcAmount ?? 0).plus(amountUsd);
+  // Include both USDC deposits (usdcAmount) and basket-currency deposits
+  // (usdcAmount = null, USD-equivalent in amountUsd) in the rolling aggregate.
+  const [mintedDailyUsd, mintedMonthlyUsd] = await Promise.all([
+    sumDepositsUsdSince(startOfDay, whereActor),
+    sumDepositsUsdSince(startOfMonth, whereActor),
+  ]);
+
+  const dailyUsd = mintedDailyUsd.plus(amountUsd);
+  const monthlyUsd = mintedMonthlyUsd.plus(amountUsd);
 
   if (dailyUsd.greaterThan(config.depositDailyUsd)) {
     throw new AppError(
@@ -90,7 +117,12 @@ export async function checkDepositLimits(
 
 /**
  * Check withdrawal (single-currency burn) limits for the given actor and audience.
- * Uses ACBU amounts (limits doc USD values treated as ACBU-equivalent for comparison when rate not applied).
+ *
+ * The configured caps (`withdrawalSingleCurrencyDailyUsd` /
+ * `withdrawalSingleCurrencyMonthlyUsd`) are denominated in USD, while the
+ * aggregated burn amounts are ACBU units. Convert the ACBU amounts to their
+ * USD-equivalent value before comparing so the limit is evaluated against the
+ * correct magnitude.
  * Throws AppError if limit exceeded.
  */
 export async function checkWithdrawalLimits(
@@ -130,13 +162,19 @@ export async function checkWithdrawalLimits(
   const dailyAcbu = new Decimal(burnedDaily._sum.acbuAmountBurned ?? 0).plus(amountAcbu);
   const monthlyAcbu = new Decimal(burnedMonthly._sum.acbuAmountBurned ?? 0).plus(amountAcbu);
 
-  if (dailyAcbu.greaterThan(config.withdrawalSingleCurrencyDailyUsd)) {
+  // Convert ACBU amounts to USD-equivalent before comparing against the
+  // USD-denominated withdrawal caps.
+  const acbuUsdRate = await getAcbuUsdRate();
+  const dailyUsd = dailyAcbu.mul(acbuUsdRate);
+  const monthlyUsd = monthlyAcbu.mul(acbuUsdRate);
+
+  if (dailyUsd.greaterThan(config.withdrawalSingleCurrencyDailyUsd)) {
     throw new AppError(
       `Withdrawal daily limit for ${currency} exceeded ($${config.withdrawalSingleCurrencyDailyUsd} equivalent).`,
       429,
     );
   }
-  if (monthlyAcbu.greaterThan(config.withdrawalSingleCurrencyMonthlyUsd)) {
+  if (monthlyUsd.greaterThan(config.withdrawalSingleCurrencyMonthlyUsd)) {
     throw new AppError(
       `Withdrawal monthly limit for ${currency} exceeded ($${config.withdrawalSingleCurrencyMonthlyUsd} equivalent).`,
       429,

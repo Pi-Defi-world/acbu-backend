@@ -63,13 +63,23 @@ jobs:
             targets: ''
             needs-token-wasm: 'false'
     steps:
-      - uses: actions/checkout@v7
+      - name: Resolve default branch
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          default=$(gh api repos/Pi-Defi-world/${{ matrix.repo.name }} --jq '.default_branch' 2>/dev/null || echo "")
+          ref="${default:-${{ matrix.repo.ref }}}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Resolved ref: $ref (fallback: ${{ matrix.repo.ref }})"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Pi-Defi-world/${{ matrix.repo.name }}
-          ref: ${{ matrix.repo.ref }}
+          ref: ${{ steps.resolve.outputs.ref }}
 
       - name: Install Rust ${{ env.MSRV }}
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         with:
           toolchain: ${{ env.MSRV }}
           targets: ${{ matrix.repo.targets }}

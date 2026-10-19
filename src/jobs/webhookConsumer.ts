@@ -11,7 +11,6 @@ import {
   deadLetterMessage,
   MessageValidationError,
 } from "../utils/rabbitmq-validation";
-import type { WebhookJob } from "../types/rabbitmq-schemas";
 
 const MAX_RETRIES = getQueueMaxRetries(QUEUES.WEBHOOKS);
 
@@ -39,8 +38,9 @@ export async function startWebhookConsumer(): Promise<void> {
       const retries = typeof headers["x-retries"] === "number" ? headers["x-retries"] : 0;
 
       try {
-        // Validate webhook message
-        const validatedPayload = parseIncomingMessage<WebhookJob>(QUEUES.WEBHOOKS, msg.content);
+        // Validate webhook message; the payload type is inferred from the queue
+        // constant (WebhookJob) rather than asserted by the caller.
+        const validatedPayload = parseIncomingMessage(QUEUES.WEBHOOKS, msg.content);
         const { webhookId } = validatedPayload;
 
         if (!webhookId) {

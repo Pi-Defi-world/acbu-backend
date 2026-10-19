@@ -1,18 +1,7 @@
 import { Asset, Keypair, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
 import { stellarClient } from "./client";
 import { getBaseFee } from "./feeManager";
-
-function getDemoFiatIssuer(): string {
-  const issuer = process.env.STELLAR_ACBU_ASSET_ISSUER;
-  if (!issuer) {
-    throw new Error("STELLAR_ACBU_ASSET_ISSUER is not configured");
-  }
-  return issuer;
-}
-
-function getAcbuAssetCode(): string {
-  return (process.env.STELLAR_ACBU_ASSET_CODE || "ACBU").trim().toUpperCase();
-}
+import { getAcbuAssetCode, getAcbuIssuer } from "../../config/acbuAsset";
 
 async function ensureAssetTrustline(params: {
   userSecret: string;
@@ -50,7 +39,7 @@ export async function ensureDemoFiatTrustline(params: {
   currency: string;
 }): Promise<{ added: boolean; txHash?: string }> {
   const code = params.currency.trim().toUpperCase();
-  const issuer = getDemoFiatIssuer();
+  const issuer = getAcbuIssuer();
   return ensureAssetTrustline({
     userSecret: params.userSecret,
     code,
@@ -64,6 +53,6 @@ export async function ensureAcbuTrustline(params: {
   return ensureAssetTrustline({
     userSecret: params.userSecret,
     code: getAcbuAssetCode(),
-    issuer: getDemoFiatIssuer(),
+    issuer: getAcbuIssuer(),
   });
 }

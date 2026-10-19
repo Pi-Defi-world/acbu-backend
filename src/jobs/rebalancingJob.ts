@@ -1,9 +1,18 @@
 /**
  * Daily rebalancing job: runs at 00:00 UTC, calls RebalancingEngine and optionally publishes to REBALANCING queue.
+ *
+ * AB-026: Uses a distributed MongoDB lock so only one instance executes the
+ * daily rebalance under horizontal scaling.
  */
 import { connectRabbitMQ, QUEUES } from "../config/rabbitmq";
 import { logger } from "../config/logger";
 import { rebalancingEngine } from "../services/reserve/RebalancingEngine";
+import { acquireJobLock, releaseJobLock } from "../utils/jobLock";
+
+const JOB_NAME = "daily-rebalancing";
+// Lock TTL is 23 h — expires before the next midnight run so a crashed instance
+// can never block the following day's execution indefinitely.
+const LOCK_TTL_S = 23 * 60 * 60;
 
 function getNextMidnightUtc(): number {
   const now = new Date();
@@ -13,6 +22,11 @@ function getNextMidnightUtc(): number {
 
 export async function startRebalancingScheduler(): Promise<void> {
   async function runOnce(): Promise<void> {
+    const acquired = await acquireJobLock(JOB_NAME, LOCK_TTL_S);
+    if (!acquired) {
+      logger.info("Rebalancing skipped — another instance holds the lock");
+      return;
+    }
     try {
       const result = await rebalancingEngine.run();
       if (result.instructions.length > 0) {
@@ -42,6 +56,8 @@ export async function startRebalancingScheduler(): Promise<void> {
       }
     } catch (e) {
       logger.error("Rebalancing run failed", { error: e });
+    } finally {
+      await releaseJobLock(JOB_NAME);
     }
   }
 
@@ -60,5 +76,7 @@ export async function startRebalancingScheduler(): Promise<void> {
   // Run initial check in background to avoid blocking server startup
   void runOnce();
   scheduleNext();
-  logger.info("Rebalancing scheduler started (daily at 00:00 UTC)");
+  logger.info("Rebalancing scheduler started (daily at 00:00 UTC)", {
+    lockTtlSeconds: LOCK_TTL_S,
+  });
 }

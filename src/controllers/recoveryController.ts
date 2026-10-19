@@ -1,7 +1,12 @@
 import { Response, NextFunction } from "express";
 import { z } from "zod";
 import { Request } from "express";
-import { unlockApp, verifyRecoveryOtp } from "../services/recovery/recoveryService";
+import {
+  RECOVERY_OTP_LOCKOUT_ERROR,
+  RECOVERY_OTP_UNAVAILABLE_ERROR,
+  unlockApp,
+  verifyRecoveryOtp,
+} from "../services/recovery/recoveryService";
 import { AppError } from "../middleware/errorHandler";
 import { DeviceFingerprint } from "../services/recovery/deviceVerification";
 
@@ -124,6 +129,9 @@ export async function postUnlockVerify(
     });
   } catch (e) {
     if (e instanceof z.ZodError) {
+      if (e.errors.some((issue) => issue.path[0] === "challenge_token")) {
+        return next(new AppError("Invalid or expired challenge", 401));
+      }
       const msg = e.errors.map((x) => x.message).join("; ");
       return next(new AppError(msg, 400));
     }
@@ -131,6 +139,8 @@ export async function postUnlockVerify(
       if (e.message === "Invalid or expired code" || e.message === "Invalid code")
         return next(new AppError(e.message, 401));
       if (e.message === "Invalid or expired challenge") return next(new AppError(e.message, 401));
+      if (e.message === RECOVERY_OTP_LOCKOUT_ERROR) return next(new AppError(e.message, 429));
+      if (e.message === RECOVERY_OTP_UNAVAILABLE_ERROR) return next(new AppError(e.message, 503));
     }
     next(e);
   }

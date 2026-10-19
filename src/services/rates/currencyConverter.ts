@@ -115,7 +115,7 @@ export async function convertLocalToUsd(
   const usdAmount = acbuAmount.mul(acbuUsdRate);
 
   // Return as number with precision
-  return usdAmount.toNumber();
+  return Number(usdAmount.toString());
 }
 
 /**

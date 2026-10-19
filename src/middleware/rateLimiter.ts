@@ -107,7 +107,6 @@ const enforceFallbackLimit = async (
   }
 };
 
-
 class MongoRateLimitStore implements Store {
   public readonly localKeys = false;
   public readonly prefix: string;
@@ -420,7 +419,11 @@ export const adminRateLimiter = createRateLimiter(
 const TWO_FA_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const TWO_FA_MAX_REQUESTS = 5;
 
-export const twoFaRateLimiter = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+export const twoFaRateLimiter = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   // Extract a user-scoped identifier from the request body.
   // For /signin: body.identifier (username/email/phone)
   // For /signin/verify-2fa: body.challenge_token (contains userId in jti prefix)

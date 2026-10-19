@@ -160,6 +160,57 @@ export class InvalidRefreshTokenError extends AuthenticationError {
   }
 }
 
+// ─── Stellar-specific errors ──────────────────────────────────────────────
+
+/**
+ * AB-052 (#1002): the network's base fee rose above the fee a transaction was
+ * built with, or above the configured per-payment ceiling, so the transfer was
+ * not submitted (or was rejected with `tx_insufficient_fee`). This is a
+ * transient, retryable condition rather than a client mistake: the funds never
+ * left the sender's account.
+ */
+export class StellarFeeSurgeError extends ServiceUnavailableError {
+  /** Base fee reported by the network when the surge was detected, in stroops. */
+  readonly networkFeeStroops: number | null;
+  /** Fee the transaction was built with, in stroops. Null when never built. */
+  readonly transactionFeeStroops: number | null;
+  /** Configured ceiling for a single payment fee, in stroops. */
+  readonly maxFeeStroops: number;
+  /** How the surge was detected. */
+  readonly detectedBy: "pre_submission_check" | "horizon_rejection" | "fee_pricing";
+
+  constructor(params: {
+    networkFeeStroops?: number | null;
+    transactionFeeStroops?: number | null;
+    maxFeeStroops: number;
+    detectedBy: StellarFeeSurgeError["detectedBy"];
+    message?: string;
+  }) {
+    const { networkFeeStroops, transactionFeeStroops, maxFeeStroops, detectedBy } = params;
+    const message =
+      params.message ??
+      (networkFeeStroops !== null && networkFeeStroops !== undefined
+        ? `Stellar fee surge: network base fee is ${networkFeeStroops} stroops and the payment fee ceiling is ${maxFeeStroops} stroops. ` +
+          `No transfer was submitted; retry when the network fee falls below the ceiling.`
+        : `Stellar fee surge: payment fee ceiling is ${maxFeeStroops} stroops. ` +
+          `No transfer was submitted; retry when the network fee falls below the ceiling.`);
+
+    super(message, "STELLAR_FEE_SURGE");
+
+    this.name = "StellarFeeSurgeError";
+    this.networkFeeStroops = networkFeeStroops ?? null;
+    this.transactionFeeStroops = transactionFeeStroops ?? null;
+    this.maxFeeStroops = maxFeeStroops;
+    this.detectedBy = detectedBy;
+    this.details = {
+      networkFeeStroops: this.networkFeeStroops,
+      transactionFeeStroops: this.transactionFeeStroops,
+      maxFeeStroops,
+      detectedBy,
+    };
+  }
+}
+
 // ─── Fiat-specific errors ───────────────────────────────────────────────
 
 export class InvalidCurrencyError extends ValidationError {

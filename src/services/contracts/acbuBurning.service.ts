@@ -78,7 +78,7 @@ export class BurningService {
     }
   }
 
-  async redeemBasket(params: RedeemBasketParams): Promise<
+  async redeemBasket(params: RedeemBasketParams): Promise<{
     transactionHash: string;
     localAmounts: string[];
   }> {

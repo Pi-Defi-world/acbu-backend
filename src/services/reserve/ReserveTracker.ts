@@ -9,6 +9,7 @@ import { acbuReserveTrackerService } from "../contracts";
 import { basketService } from "../basket";
 import { getRabbitMQChannel } from "../../config/rabbitmq";
 import { QUEUES } from "../../config/rabbitmq";
+import { getAcbuAssetConfig } from "../../config/acbuAsset";
 import { Decimal } from "@prisma/client/runtime/library";
 import { stellarClient } from "../stellar/client";
 import { contractClient, ContractClient } from "../stellar/contractClient";
@@ -270,10 +271,10 @@ export class ReserveTracker {
       if (latestReserve) {
         currencyStatuses.push({
           currency,
-          targetWeight: latestReserve.targetWeight.toNumber(),
-          actualWeight: latestReserve.actualWeight.toNumber(),
-          reserveAmount: latestReserve.reserveAmount.toNumber(),
-          reserveValueUsd: latestReserve.reserveValueUsd.toNumber(),
+          targetWeight: Number(latestReserve.targetWeight.toString()),
+          actualWeight: Number(latestReserve.actualWeight.toString()),
+          reserveAmount: Number(latestReserve.reserveAmount.toString()),
+          reserveValueUsd: Number(latestReserve.reserveValueUsd.toString()),
           weightDrift:
             latestReserve.actualWeight.toNumber() - latestReserve.targetWeight.toNumber(),
         });
@@ -378,8 +379,8 @@ export class ReserveTracker {
       _sum: { acbuAmountBurned: true },
     });
 
-    const totalMinted = minted._sum.acbuAmount?.toNumber() || 0;
-    const totalBurned = burned._sum.acbuAmountBurned?.toNumber() || 0;
+    const totalMinted = minted._sum.acbuAmount ? Number(minted._sum.acbuAmount.toString()) : 0;
+    const totalBurned = burned._sum.acbuAmountBurned ? Number(burned._sum.acbuAmountBurned.toString()) : 0;
 
     return Math.max(0, totalMinted - totalBurned);
   }
@@ -394,8 +395,8 @@ export class ReserveTracker {
   private async getTotalAcbuSupply(): Promise<number> {
     const ledgerSupply = await this.getTotalAcbuSupplyFromLedger();
 
-    const issuer = process.env.STELLAR_ACBU_ASSET_ISSUER;
-    const assetCode = process.env.STELLAR_ACBU_ASSET_CODE || "ACBU";
+    // Single source of truth for the ACBU code + issuer (see config/acbuAsset.ts).
+    const { code, issuer } = getAcbuAssetConfig();
 
     if (!issuer) {
       logger.warn("ACBU issuer not configured. Using ledger supply.");
@@ -404,7 +405,7 @@ export class ReserveTracker {
 
     try {
       const server = stellarClient.getServer();
-      const assets = await server.assets().forCode(assetCode).forIssuer(issuer).call();
+      const assets = await server.assets().forCode(code).forIssuer(issuer).call();
 
       if (assets.records.length === 0) {
         return ledgerSupply;
@@ -447,7 +448,7 @@ export class ReserveTracker {
       });
 
       if (latest) {
-        total += latest.reserveValueUsd.toNumber();
+        total += Number(latest.reserveValueUsd.toString());
       }
     }
 
@@ -464,7 +465,7 @@ export class ReserveTracker {
     });
 
     if (latestRate) {
-      return latestRate.rateUsd.toNumber();
+      return Number(latestRate.rateUsd.toString());
     }
 
     throw new Error(`Oracle rate not available for ${currency}`);

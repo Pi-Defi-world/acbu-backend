@@ -8,11 +8,26 @@ useDefault = true
 
 [allowlist]
 description = "Known safe paths and test fixtures"
+# Paths that are inherently safe to skip (examples, docs, generated fixtures).
 paths = [
   '''\.env\.example$''',
   '''\.env\.test$''',
   '''docs/''',
   '''.*\.md$''',
+]
+# Commit-scoped allowlist for test-fixture false positives.
+# These are dummy/placeholder values in unit tests and CI env blocks.
+# Pinned to exact commit SHAs so future commits to the same files are still scanned.
+commits = [
+  "dd42d72cff860971def0a40c896532b261b5bd5b",
+  "43bacf1c569c22f9368b0f5f7bb2164c90bf182f",
+  "6c5d0ce00d06e20aebb24c3401dcfbd14baff16e",
+  "df75e947e93cf7c3ea19ae9007ae0460cbd03360",
+  "9217df2706f3d8c51dbcb9c7d79a06e4aefe9ca7",
+  "27666a3bf0adb8eb9ccd84b7c9cb2aa43b11d467",
+  "4d6ac273483e4a31570126861055678f714e1d04",
+  "5923929f153c07b4c7f63bd59703b578c834432c",
+  "568795849a5081cfd4d3e6abfee9363226111c93",
 ]
 
 # Intentionally do NOT allowlist .env.local — it must not be committed.

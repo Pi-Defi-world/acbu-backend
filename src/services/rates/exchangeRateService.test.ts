@@ -123,6 +123,15 @@ describe("fetchExchangeRateUsd", () => {
     expect(mockedAxios.get).toHaveBeenCalledTimes(1);
     expect(getCachedExchangeRate("UGX")).toBeNull();
   });
+
+  it("rejects out-of-range upstream rates as unsafe", async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: { result: "success", conversion_rate: 1_000_000_000 },
+    });
+
+    await expect(fetchExchangeRateUsd("NGN")).resolves.toBeNull();
+    expect(getCachedExchangeRate("NGN")).toBeNull();
+  });
 });
 
 describe("setCachedExchangeRate", () => {

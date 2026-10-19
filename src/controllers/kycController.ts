@@ -96,9 +96,7 @@ export async function requestUploadUrl(
     const body = requestUploadUrlSchema.parse(req.body);
 
     // Generate a document ID if not provided
-    const documentId =
-      body.document_id ??
-      generateId();
+    const documentId = body.document_id ?? generateId();
 
     const result = await generateUploadUrl(userId, body.document_kind, documentId, body.mime_type);
 

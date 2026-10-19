@@ -10,10 +10,11 @@ import { randomUUID, createHash } from "crypto";
 import { config } from "../../config/env";
 import { prisma } from "../../config/database";
 import { generateApiKey } from "../../middleware/auth";
-import { signChallengeToken, verifyChallengeToken } from "../../utils/jwt";
+import { signChallengeToken, verifyChallengeToken, revokeJti } from "../../utils/jwt";
 import { logger } from "../../config/logger";
 import { getRabbitMQChannel } from "../../config/rabbitmq";
 import { generateId } from "../../utils/idGenerator";
+import { generateSecureOtp } from "../../utils/secureOtp";
 import { QUEUES } from "../../config/rabbitmq";
 import { ensureWalletForUser } from "../wallet/walletService";
 import { logAudit } from "../audit";
@@ -153,10 +154,6 @@ function normalizeIdentifier(s: string): {
   return { kind: "username", value: lower.replace(/\s/g, "") };
 }
 
-function generateOtpCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
 function isAdminTierUser(tier: string | null | undefined): boolean {
   return tier === ADMIN_TIER;
 }
@@ -187,7 +184,7 @@ async function verifyMfaChallengeForUser(
   challengeToken: string,
   code: string,
 ): Promise<"totp" | "sms" | "email"> {
-  const payload = verifyChallengeToken(challengeToken);
+  const payload = await verifyChallengeToken(challengeToken);
   if (payload.userId !== userId) {
     throw new InvalidOrExpiredChallengeError();
   }
@@ -207,6 +204,11 @@ async function verifyMfaChallengeForUser(
     const valid = totp.check(code, user.totpSecretEncrypted);
     if (!valid) {
       throw new InvalidCodeError();
+    }
+    // Consume the challenge token by revoking its jti
+    if (payload.jti) {
+      const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 300;
+      revokeJti(payload.jti, exp);
     }
     return "totp";
   }
@@ -233,6 +235,11 @@ async function verifyMfaChallengeForUser(
       where: { id: challenge.id },
       data: { usedAt: now },
     });
+    // Consume the challenge token by revoking its jti
+    if (payload.jti) {
+      const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 300;
+      revokeJti(payload.jti, exp);
+    }
     return user.twoFaMethod;
   }
 
@@ -394,7 +401,7 @@ export async function signin(params: SigninParams): Promise<SigninResult> {
       });
       const to = user.twoFaMethod === "email" ? u?.email : u?.phoneE164;
       if (!to) throw new TwoFactorChannelNotConfiguredError();
-      const code = generateOtpCode();
+      const code = generateSecureOtp();
       const codeHash = await bcrypt.hash(code, 10);
       await prisma.otpChallenge.create({
         data: {
@@ -481,7 +488,7 @@ export async function signin(params: SigninParams): Promise<SigninResult> {
  */
 export async function verify2fa(params: Verify2faParams): Promise<Verify2faResult> {
   const { challenge_token, code, ip } = params;
-  const payload = verifyChallengeToken(challenge_token);
+  const payload = await verifyChallengeToken(challenge_token);
 
   // Check brute force for 2FA
   const status = await authBruteGuard.getStatus(payload.userId, ip);
@@ -557,6 +564,12 @@ export async function verify2fa(params: Verify2faParams): Promise<Verify2faResul
       lockoutUntil: null,
     },
   });
+
+  // Consume the challenge token by revoking its jti
+  if (payload.jti) {
+    const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 300;
+    revokeJti(payload.jti, exp);
+  }
 
   const api_key = await generateApiKey(user.id, []);
   const wallet = await ensureWalletForUser(user.id);
@@ -634,7 +647,7 @@ export async function requestAdminMfaChallenge(
     if (!to) {
       throw new TwoFactorChannelNotConfiguredError();
     }
-    const code = generateOtpCode();
+    const code = generateSecureOtp();
     const codeHash = await bcrypt.hash(code, 10);
     await prisma.otpChallenge.create({
       data: {
@@ -897,9 +910,7 @@ export async function issueRefreshToken(
   const token = generateSecureRefreshToken();
   const tokenHash = await hashRefreshToken(token);
   const tokenFamilyId = generateId();
-  const expiresAt = new Date(
-    Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-  );
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
   await prisma.refreshToken.create({
     data: {
@@ -985,9 +996,7 @@ export async function refreshAccessToken(
   const newToken = generateSecureRefreshToken();
   const newTokenHash = await hashRefreshToken(newToken);
   const newTokenFamilyId = generateId();
-  const newExpiresAt = new Date(
-    Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-  );
+  const newExpiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
   await prisma.refreshToken.create({
     data: {

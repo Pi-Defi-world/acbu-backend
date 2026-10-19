@@ -2,32 +2,25 @@
 
 ## Prerequisites
 
-- Node.js v16+ installed
-- pnpm package manager (required)
-- PowerShell execution policy configured (or use Command Prompt)
+- Node.js v18+ installed
+- pnpm or npm package manager
 
 ## Installation Steps
 
-### Option 1: Using Command Prompt (Recommended for Windows)
+Open your terminal in the project root directory and run:
 
-Open Command Prompt (cmd.exe) and run:
-
-```cmd
-cd "C:\Users\machintosh\Documents\Fouth Wave\acbu-backend"
-pnpm add -D fast-check
+```bash
+pnpm install
+# or
+npm install
 ```
 
-### Option 2: Using PowerShell with Execution Policy
+To install `fast-check` for property-based testing:
 
-If you prefer PowerShell, first enable script execution:
-
-```powershell
-# Run PowerShell as Administrator
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# Then install
-cd "C:\Users\machintosh\Documents\Fouth Wave\acbu-backend"
+```bash
 pnpm add -D fast-check
+# or
+npm install --save-dev fast-check
 ```
 
 ## Verify Installation
@@ -58,7 +51,7 @@ PASS  src/services/feePolicy/__tests__/feePolicyService.test.ts
     Standard Unit Tests
       ✓ returns high burn fee (200 BPS) when reserve is below 85% of target
       ✓ returns low burn fee (5 BPS) when reserve is above 115% of target
-      ✓ returns base burn fee (10 BPS) when reserve is between 85% and 115%
+      ✓ returns base burn fee (30 BPS) when reserve is between 85% and 115%
       ✓ throws error when currency not found in reserve status
       ✓ throws error when target weight is zero or negative
     Boundary Tests

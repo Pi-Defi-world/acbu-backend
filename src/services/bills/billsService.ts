@@ -7,6 +7,7 @@ import { logger, logFinancialEvent } from "../../config/logger";
 import { logAudit } from "../audit";
 import { checkWithdrawalLimits, isCurrencyWithdrawalPaused } from "../limits/limitsService";
 import { enqueueWebhook } from "../webhook";
+import type { TransactionStatus } from "../../utils/transactionStateMachine";
 import { simulatedBillsPartner } from "./simulatedBillsPartner";
 import type {
   BillPaymentRequest,
@@ -48,7 +49,7 @@ function getWebhookEventType(provider: string, status: BillsWebhookStatus): stri
   return `bills:${provider}:${status}`;
 }
 
-function getTransactionStatusFromWebhook(status: BillsWebhookStatus): string {
+function getTransactionStatusFromWebhook(status: BillsWebhookStatus): TransactionStatus {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
   return "refunded";
@@ -413,7 +414,7 @@ export async function reconcileBillsWebhook(event: BillsWebhookEvent): Promise<{
     accountId: transaction.userId ?? transaction.id,
     idempotencyKey: transaction.id,
     correlationId: crypto.randomUUID(),
-    amount: Math.round((transaction.localAmount?.toNumber() ?? event.amount) * 100),
+    amount: Math.round((transaction.localAmount != null ? Number(transaction.localAmount.toString()) : event.amount) * 100),
     currency: transaction.localCurrency ?? event.currency,
     provider: event.provider,
     providerRef: event.providerReference,
@@ -452,7 +453,7 @@ export async function refundBillPayment(request: BillsRefundRequest): Promise<Bi
 
   const providerId = String(asJsonRecord(transaction.rateSnapshot).provider || DEFAULT_PROVIDER_ID);
   const provider = getBillsProvider(providerId);
-  const localAmount = transaction.localAmount?.toNumber() ?? 0;
+  const localAmount = transaction.localAmount != null ? Number(transaction.localAmount.toString()) : 0;
   const currency = transaction.localCurrency ?? "NGN";
 
   const refundResponse = await provider.refundBill({

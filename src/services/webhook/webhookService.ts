@@ -9,13 +9,50 @@ import { logger } from "../../config/logger";
 import { connectRabbitMQ, QUEUES } from "../../config/rabbitmq";
 
 const WEBHOOK_HEADER_SIGNATURE = "x-acbu-signature";
-const MAX_ATTEMPTS = 5; // terminal threshold; backoff is managed by the queue consumer
+
+export interface WebhookRetryPolicy {
+  maxAttempts: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+  multiplier: number;
+}
+
+const DEFAULT_RETRY_POLICY: WebhookRetryPolicy = {
+  maxAttempts: 5,
+  initialDelayMs: 1000,
+  maxDelayMs: 60_000,
+  multiplier: 2,
+};
+
+const ENDPOINT_RETRY_POLICIES: Array<{
+  matches: (hostname: string) => boolean;
+  policy: WebhookRetryPolicy;
+}> = [
+  {
+    matches: (hostname) => hostname.includes("partner") || hostname.includes("api"),
+    policy: {
+      maxAttempts: 8,
+      initialDelayMs: 2500,
+      maxDelayMs: 60_000,
+      multiplier: 2,
+    },
+  },
+];
+
+export function getRetryPolicyForUrl(url: string): WebhookRetryPolicy {
+  if (!url) return DEFAULT_RETRY_POLICY;
+
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    const policy = ENDPOINT_RETRY_POLICIES.find(({ matches }) => matches(hostname));
+    return policy?.policy ?? DEFAULT_RETRY_POLICY;
+  } catch {
+    return DEFAULT_RETRY_POLICY;
+  }
+}
 
 export type WebhookEventType =
-  | "transaction.completed"
-  | "transaction.failed"
-  | "mint.completed"
-  | "burn.completed";
+  "transaction.completed" | "transaction.failed" | "mint.completed" | "burn.completed";
 
 export interface WebhookPayload {
   event: WebhookEventType;
@@ -99,50 +136,80 @@ export async function deliverWebhook(
     return { success: false, terminal: true };
   }
 
+  const retryPolicy = getRetryPolicyForUrl(url);
+  let attempts = webhook.attempts;
   const payloadStr = JSON.stringify(webhook.payload);
   const signature =
     webhook.signature ??
     (config.webhook.secret ? signPayload(payloadStr, config.webhook.secret) : null);
 
-  try {
-    await axios.post(url, webhook.payload, {
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": webhookId,
-        ...(signature && { [WEBHOOK_HEADER_SIGNATURE]: signature }),
-      },
-      timeout: 10000,
-    });
-    await prisma.webhook.update({
-      where: { id: webhookId },
-      data: {
-        status: "completed",
-        attempts: webhook.attempts + 1,
-        lastAttemptAt: new Date(),
-      },
-    });
-    logger.info("Webhook delivered", {
-      webhookId,
-      url: url ? "***" : undefined,
-    });
-    return { success: true, terminal: false };
-  } catch (e) {
-    const attempts = webhook.attempts + 1;
-    const terminalFailure = attempts >= MAX_ATTEMPTS;
-    await prisma.webhook.update({
-      where: { id: webhookId },
-      data: {
-        status: terminalFailure ? "failed" : "pending",
+  while (attempts < retryPolicy.maxAttempts) {
+    const payloadStr = JSON.stringify(webhook.payload);
+    const signature =
+      webhook.signature ??
+      (config.webhook.secret
+        ? signPayload(payloadStr, config.webhook.secret)
+        : null);
+
+    try {
+      await axios.post(url, webhook.payload, {
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": webhookId,
+          ...(signature && { [WEBHOOK_HEADER_SIGNATURE]: signature }),
+        },
+        timeout: 10000,
+      });
+      attempts += 1;
+      await prisma.webhook.update({
+        where: { id: webhookId },
+        data: {
+          status: "completed",
+          attempts,
+          lastAttemptAt: new Date(),
+        },
+      });
+      logger.info("Webhook delivered", {
+        webhookId,
+        url: "***",
+      });
+      return { success: true, terminal: false };
+    } catch (e) {
+      attempts += 1;
+      const terminalFailure = attempts >= retryPolicy.maxAttempts;
+      await prisma.webhook.update({
+        where: { id: webhookId },
+        data: {
+          status: terminalFailure ? "failed" : "pending",
+          attempts,
+          lastAttemptAt: new Date(),
+        },
+      });
+
+      if (terminalFailure) {
+        logger.warn("Webhook delivery failed permanently", {
+          webhookId,
+          attempts,
+          retryPolicy,
+          error: e,
+        });
+        return { success: false, terminal: true };
+      }
+
+      const delayMs = Math.min(
+        retryPolicy.initialDelayMs * retryPolicy.multiplier ** (attempts - 1),
+        retryPolicy.maxDelayMs,
+      );
+      logger.warn("Webhook delivery failed; retrying with endpoint-specific backoff", {
+        webhookId,
         attempts,
-        lastAttemptAt: new Date(),
-      },
-    });
-    logger.warn("Webhook delivery failed", {
-      webhookId,
-      attempts,
-      terminalFailure,
-      error: e,
-    });
-    return { success: false, terminal: terminalFailure };
+        delayMs,
+        retryPolicy,
+        error: e,
+      });
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
+
+  return { success: false, terminal: true };
 }

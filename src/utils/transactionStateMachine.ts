@@ -1,12 +1,31 @@
 import { AppError } from "../middleware/errorHandler";
 
-export type TransactionStatus = "pending" | "processing" | "completed" | "failed";
+/**
+ * Every value `transactions.status` may hold. Mirrored by the
+ * `chk_transactions_status` CHECK constraint (migration
+ * 20260924000000_constrain_transaction_status) — keep both in sync.
+ */
+export const TRANSACTION_STATUSES = [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "refunded",
+] as const;
+
+export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
+
+export function isTransactionStatus(value: unknown): value is TransactionStatus {
+  return typeof value === "string" && (TRANSACTION_STATUSES as readonly string[]).includes(value);
+}
 
 const ALLOWED_TRANSITIONS: Record<TransactionStatus, TransactionStatus[]> = {
   pending: ["processing", "failed"],
   processing: ["completed", "failed"],
   completed: [],
   failed: [],
+  // Set by bills refund reconciliation (billsService); terminal.
+  refunded: [],
 };
 
 /**

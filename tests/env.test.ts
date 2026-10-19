@@ -89,6 +89,28 @@ describe("env validation", () => {
     expect(config.adminRateLimitMaxRequests).toBe(30);
   });
 
+  it("defaults OPENAI_FAIL_OPEN_ENABLED to false (AB-025 fail-closed)", () => {
+    delete process.env.OPENAI_FAIL_OPEN_ENABLED;
+
+    const { config } = require("../src/config/env");
+
+    expect(config.openai.failOpenEnabled).toBe(false);
+  });
+
+  it("enables fail-open when OPENAI_FAIL_OPEN_ENABLED is explicitly true (AB-025)", () => {
+    process.env.OPENAI_FAIL_OPEN_ENABLED = "TRUE";
+
+    const { config } = require("../src/config/env");
+
+    expect(config.openai.failOpenEnabled).toBe(true);
+  });
+
+  it("throws when OPENAI_FAIL_OPEN_ENABLED has invalid boolean string", () => {
+    process.env.OPENAI_FAIL_OPEN_ENABLED = "not-a-bool";
+
+    expect(() => require("../src/config/env")).toThrow(/OPENAI_FAIL_OPEN_ENABLED/);
+  });
+
   it("throws when LOG_LEVEL is invalid", () => {
     process.env.LOG_LEVEL = "invalid_level";
     expect(() => require("../src/config/env")).toThrow(/LOG_LEVEL/);
@@ -171,9 +193,7 @@ describe("env validation", () => {
     };
     delete process.env.USDC_ISSUER_TESTNET;
 
-    expect(() => require("../src/config/env")).toThrow(
-      /USDC_ISSUER_TESTNET/,
-    );
+    expect(() => require("../src/config/env")).toThrow(/USDC_ISSUER_TESTNET/);
   });
 
   it("throws in production when USDC_ISSUER_MAINNET is missing", () => {
@@ -191,9 +211,7 @@ describe("env validation", () => {
     };
     delete process.env.USDC_ISSUER_MAINNET;
 
-    expect(() => require("../src/config/env")).toThrow(
-      /USDC_ISSUER_MAINNET/,
-    );
+    expect(() => require("../src/config/env")).toThrow(/USDC_ISSUER_MAINNET/);
   });
 
   it("loads in production when USDC issuers are configured", () => {
@@ -218,5 +236,96 @@ describe("env validation", () => {
     expect(config.stellar.usdcIssuerMainnet).toBe(
       "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
     );
+  });
+
+  // AB-024: PII_ENCRYPTION_KEY enforcement
+  // Note: the production boot guard uses !isJestTest so it does not fire during
+  // Jest runs (by design — same pattern as all other production guards in env.ts).
+  // These tests therefore validate the Zod schema layer (format/length) and the
+  // config export value rather than the imperative guard itself.
+
+  it("rejects a PII_ENCRYPTION_KEY that is too short (AB-024)", () => {
+    process.env.PII_ENCRYPTION_KEY = "abc123"; // only 6 chars, must be 64
+    expect(() => require("../src/config/env")).toThrow(/PII_ENCRYPTION_KEY/);
+  });
+
+  it("rejects a PII_ENCRYPTION_KEY that contains non-hex characters (AB-024)", () => {
+    process.env.PII_ENCRYPTION_KEY = "z".repeat(64); // 'z' is not hex
+    expect(() => require("../src/config/env")).toThrow(/PII_ENCRYPTION_KEY/);
+  });
+
+  it("accepts a valid 64-char hex PII_ENCRYPTION_KEY and exposes it on config (AB-024)", () => {
+    const validKey = "a".repeat(64); // 64 × 'a' = valid lowercase hex
+    process.env.PII_ENCRYPTION_KEY = validKey;
+    const { config } = require("../src/config/env");
+    expect(config.piiEncryptionKey).toBe(validKey);
+  });
+
+  it("allows PII_ENCRYPTION_KEY to be absent in development (AB-024)", () => {
+    process.env = { ...ORIGINAL, ...REQUIRED_ENV, NODE_ENV: "development" };
+    delete process.env.PII_ENCRYPTION_KEY;
+    const { config } = require("../src/config/env");
+    expect(config.piiEncryptionKey).toBeUndefined();
+  });
+
+  // AB-052 (#1002): the Stellar fee knobs were read by `config.stellar.*` but
+  // never declared in the Zod schema, so Zod stripped them and every consumer
+  // saw `undefined` — `getBaseFee()` returned the string "undefined" and the
+  // transaction builder threw "[BigNumber Error] Not a number: undefined".
+  // Declaring them here is what makes the documented defaults real.
+  describe("Stellar fee configuration (AB-052)", () => {
+    const FEE_VARS = [
+      "STELLAR_BASE_FEE_STROOPS",
+      "STELLAR_USE_DYNAMIC_FEES",
+      "STELLAR_SOROBAN_MIN_FEE_STROOPS",
+      "STELLAR_SOROBAN_MAX_FEE_STROOPS",
+      "STELLAR_FEE_SURGE_BUFFER_BPS",
+      "STELLAR_MAX_PAYMENT_FEE_STROOPS",
+    ];
+
+    it("exposes numeric fee defaults instead of undefined when unset", () => {
+      FEE_VARS.forEach((key) => delete process.env[key]);
+
+      const { config } = require("../src/config/env");
+      expect(config.stellar.baseFeeStroops).toBe(100);
+      expect(config.stellar.useDynamicFees).toBe(false);
+      expect(config.stellar.sorobanMinFeeStroops).toBe(5000);
+      expect(config.stellar.sorobanMaxFeeStroops).toBe(10_000_000);
+      expect(config.stellar.feeSurgeBufferBps).toBe(2000);
+      expect(config.stellar.maxPaymentFeeStroops).toBe(1_000_000);
+    });
+
+    it("coerces fee values supplied as env strings", () => {
+      process.env.STELLAR_BASE_FEE_STROOPS = "250";
+      process.env.STELLAR_FEE_SURGE_BUFFER_BPS = "5000";
+      process.env.STELLAR_MAX_PAYMENT_FEE_STROOPS = "250000";
+      process.env.STELLAR_USE_DYNAMIC_FEES = "true";
+
+      const { config } = require("../src/config/env");
+      expect(config.stellar.baseFeeStroops).toBe(250);
+      expect(config.stellar.feeSurgeBufferBps).toBe(5000);
+      expect(config.stellar.maxPaymentFeeStroops).toBe(250000);
+      expect(config.stellar.useDynamicFees).toBe(true);
+    });
+
+    it("rejects a non-positive base fee rather than silently pricing at zero", () => {
+      process.env.STELLAR_BASE_FEE_STROOPS = "0";
+      expect(() => require("../src/config/env")).toThrow(/STELLAR_BASE_FEE_STROOPS/);
+    });
+
+    it("rejects a negative surge buffer", () => {
+      process.env.STELLAR_FEE_SURGE_BUFFER_BPS = "-1";
+      expect(() => require("../src/config/env")).toThrow(/STELLAR_FEE_SURGE_BUFFER_BPS/);
+    });
+
+    it("rejects a surge buffer above 100%", () => {
+      process.env.STELLAR_FEE_SURGE_BUFFER_BPS = "10001";
+      expect(() => require("../src/config/env")).toThrow(/STELLAR_FEE_SURGE_BUFFER_BPS/);
+    });
+
+    it("rejects a non-boolean STELLAR_USE_DYNAMIC_FEES", () => {
+      process.env.STELLAR_USE_DYNAMIC_FEES = "yes-please";
+      expect(() => require("../src/config/env")).toThrow(/STELLAR_USE_DYNAMIC_FEES/);
+    });
   });
 });

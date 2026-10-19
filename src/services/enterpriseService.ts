@@ -147,6 +147,16 @@ async function processRow(
   }
 
   try {
+    const sender = await prisma.user.findUnique({ where: { id: senderUserId } });
+    if (!sender) {
+      return {
+        rowIndex,
+        idempotencyKey,
+        status: "failure",
+        errorMessage: "Sender user not found",
+      };
+    }
+
     const transaction = await prisma.transaction.create({
       data: {
         userId: senderUserId,

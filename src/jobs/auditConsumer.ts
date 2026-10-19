@@ -7,7 +7,6 @@ import {
   deadLetterMessage,
   MessageValidationError,
 } from "../utils/rabbitmq-validation";
-import type { AuditLog } from "../types/rabbitmq-schemas";
 import { getQueueMaxRetries } from "./queueConfig";
 
 const MAX_RETRIES = getQueueMaxRetries(QUEUES.AUDIT_LOGS);
@@ -27,8 +26,9 @@ export async function startAuditConsumer() {
       const content = msg.content;
 
       try {
-        // Validate message using schema
-        const validatedEntry = parseIncomingMessage<AuditLog>(QUEUES.AUDIT_LOGS, content);
+        // Validate message using schema; the payload type is inferred from the
+        // queue constant (AuditLog) rather than asserted by the caller.
+        const validatedEntry = parseIncomingMessage(QUEUES.AUDIT_LOGS, content);
 
         let attempt = 0;
         let success = false;

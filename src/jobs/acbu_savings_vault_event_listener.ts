@@ -20,9 +20,7 @@ function isSavingsVaultEffectType(type: string): type is SavingsVaultEffectType 
   return (SAVINGS_VAULT_EFFECT_TYPES as readonly string[]).includes(type);
 }
 
-function sanitizeEventData(
-  data: Record<string, unknown>,
-): Record<string, unknown> {
+function sanitizeEventData(data: Record<string, unknown>): Record<string, unknown> {
   const { txHash, valid } = extractAndValidateTxHash(data);
   if (txHash === null || !valid) {
     const sanitized = { ...data };
@@ -92,11 +90,7 @@ export async function startSavingsVaultEventListener(): Promise<void> {
     }
   };
 
-  eventListener.listenToContractEvents(
-    contractId,
-    [...SAVINGS_VAULT_EFFECT_TYPES],
-    handler,
-  );
+  eventListener.listenToContractEvents(contractId, [...SAVINGS_VAULT_EFFECT_TYPES], handler);
   logger.info("Savings vault event listener registered with validation", {
     contractId,
     effectTypes: SAVINGS_VAULT_EFFECT_TYPES,

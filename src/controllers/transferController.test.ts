@@ -26,6 +26,9 @@ jest.mock("../config/logger", () => ({
 }));
 
 import { createTransfer } from "../services/transfer/transferService";
+import { StellarFeeSurgeError } from "../errors";
+import { AppError } from "../middleware/errorHandler";
+import { decodeCursor } from "../middleware/pagination";
 
 const makeRes = () => {
   const res = { status: jest.fn(), json: jest.fn() } as unknown as Response;
@@ -35,6 +38,36 @@ const makeRes = () => {
 };
 
 const makeNext = () => jest.fn() as jest.MockedFunction<NextFunction>;
+
+/**
+ * Build a fake AuthRequest.
+ *
+ * Express's `Request` always provides `header()` and `get()`, and the transfer
+ * endpoints read both (`getIfMatchHeader` calls `req.header`,
+ * `extractIdempotencyKey` prefers `req.get`). Hand-rolled request literals that
+ * omit them die with `TypeError: req.header is not a function` before reaching
+ * the code under test, so provide sensible defaults and let callers override.
+ */
+const makeReq = (
+  overrides: {
+    body?: unknown;
+    query?: unknown;
+    apiKey?: { userId: string | null } | undefined;
+    /** Overrides the default `get()` used by extractIdempotencyKey. */
+    get?: jest.Mock;
+    /** Overrides the default `header()` used by getIfMatchHeader. */
+    header?: jest.Mock;
+  } = {},
+): AuthRequest =>
+  ({
+    body: {},
+    query: {},
+    apiKey: { userId: "u1" },
+    headers: {},
+    ...overrides,
+    header: overrides.header ?? jest.fn().mockReturnValue(undefined),
+    get: overrides.get ?? jest.fn().mockReturnValue(undefined),
+  }) as unknown as AuthRequest;
 
 describe("transferController", () => {
   beforeEach(() => jest.clearAllMocks());
@@ -113,19 +146,36 @@ describe("transferController", () => {
         status: "pending",
       });
       const res = makeRes();
-      await postTransfers(
-        {
-          body: { to: "@bob", amount_acbu: "10.5" },
-          apiKey: { userId: "u1" },
-        } as unknown as AuthRequest,
-        res,
-        makeNext(),
-      );
+      await postTransfers(makeReq({ body: { to: "@bob", amount_acbu: "10.5" } }), res, makeNext());
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({
         transaction_id: "tx-1",
         status: "pending",
       });
+    });
+
+    it("forwards a fee surge as a retryable 503 rather than a 500 (AB-052)", async () => {
+      // createTransfer rethrows StellarFeeSurgeError after marking the row
+      // failed. It must reach the error handler as an AppError so the client
+      // gets 503 + STELLAR_FEE_SURGE and knows to retry, not a 500.
+      (createTransfer as jest.Mock).mockRejectedValue(
+        new StellarFeeSurgeError({
+          networkFeeStroops: 2_000_000,
+          transactionFeeStroops: 1_000_000,
+          maxFeeStroops: 1_000_000,
+          detectedBy: "fee_pricing",
+        }),
+      );
+      const res = makeRes();
+      const next = makeNext();
+      await postTransfers(makeReq({ body: { to: "@bob", amount_acbu: "10" } }), res, next);
+
+      // Nothing was written to the success path.
+      expect(res.status).not.toHaveBeenCalled();
+      const forwarded = (next as jest.Mock).mock.calls[0][0];
+      expect(forwarded).toBeInstanceOf(AppError);
+      expect(forwarded).toMatchObject({ statusCode: 503, code: "STELLAR_FEE_SURGE" });
+      expect((forwarded as StellarFeeSurgeError).networkFeeStroops).toBe(2_000_000);
     });
 
     it("passes the Idempotency-Key header into transfer creation", async () => {
@@ -135,11 +185,10 @@ describe("transferController", () => {
       });
       const res = makeRes();
       await postTransfers(
-        {
+        makeReq({
           body: { to: "@bob", amount_acbu: "10.5" },
-          apiKey: { userId: "u1" },
           get: jest.fn().mockReturnValue("idem-transfer"),
-        } as unknown as AuthRequest,
+        }),
         res,
         makeNext(),
       );
@@ -159,14 +208,7 @@ describe("transferController", () => {
         new Error("Recipient not found or not available"),
       );
       const next = makeNext();
-      await postTransfers(
-        {
-          body: { to: "@nobody", amount_acbu: "10" },
-          apiKey: { userId: "u1" },
-        } as unknown as AuthRequest,
-        makeRes(),
-        next,
-      );
+      await postTransfers(makeReq({ body: { to: "@nobody", amount_acbu: "10" } }), makeRes(), next);
       expect((next as jest.Mock).mock.calls[0][0]).toMatchObject({
         statusCode: 404,
       });
@@ -176,10 +218,7 @@ describe("transferController", () => {
       (createTransfer as jest.Mock).mockRejectedValue(new Error("Sender user not found"));
       const next = makeNext();
       await postTransfers(
-        {
-          body: { to: "@bob", amount_acbu: "10" },
-          apiKey: { userId: "ghost" },
-        } as unknown as AuthRequest,
+        makeReq({ body: { to: "@bob", amount_acbu: "10" }, apiKey: { userId: "ghost" } }),
         makeRes(),
         next,
       );
@@ -191,14 +230,7 @@ describe("transferController", () => {
     it("returns 400 on self-transfer attempt", async () => {
       (createTransfer as jest.Mock).mockRejectedValue(new Error("Cannot transfer to yourself"));
       const next = makeNext();
-      await postTransfers(
-        {
-          body: { to: "@self", amount_acbu: "10" },
-          apiKey: { userId: "u1" },
-        } as unknown as AuthRequest,
-        makeRes(),
-        next,
-      );
+      await postTransfers(makeReq({ body: { to: "@self", amount_acbu: "10" } }), makeRes(), next);
       expect((next as jest.Mock).mock.calls[0][0]).toMatchObject({
         statusCode: 400,
       });
@@ -274,7 +306,14 @@ describe("transferController", () => {
       );
       const body = (res.json as jest.Mock).mock.calls[0][0];
       expect(body.transfers).toHaveLength(2);
-      expect(body.next_cursor).toBe("tx-1"); // last id of first page
+      // next_cursor is an opaque, scope-bound cursor, not a raw id (#405).
+      // Round-trip it instead of hardcoding the encoded value, so this stays
+      // correct if the cursor payload or signing changes, and so it actually
+      // verifies the cursor is bound to this user.
+      expect(body.next_cursor).not.toBe("tx-1");
+      expect(decodeCursor(body.next_cursor, "u1")).toBe("tx-1");
+      // Another user's scope must not decode it.
+      expect(() => decodeCursor(body.next_cursor, "someone-else")).toThrow(AppError);
     });
 
     it("returns 400 when limit exceeds maximum (100)", async () => {

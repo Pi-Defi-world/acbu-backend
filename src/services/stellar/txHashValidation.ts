@@ -7,18 +7,13 @@ export function isValidStellarTxHash(hash: string): boolean {
   return typeof hash === "string" && STELLAR_TX_HASH_REGEX.test(hash);
 }
 
-export function extractTxHashFromEffect(
-  data: Record<string, unknown>,
-): string | null {
-  const raw =
-    data.transaction_hash ?? data.transaction_id ?? data.tx_hash;
+export function extractTxHashFromEffect(data: Record<string, unknown>): string | null {
+  const raw = data.transaction_hash ?? data.transaction_id ?? data.tx_hash;
   if (typeof raw === "string" && isValidStellarTxHash(raw)) {
     return raw;
   }
 
-  const links = data._links as
-    | Record<string, { href?: string }>
-    | undefined;
+  const links = data._links as Record<string, { href?: string }> | undefined;
   const txHref = links?.transaction?.href;
   if (typeof txHref === "string") {
     const match = txHref.match(/\/([a-f0-9]{64})$/i);
@@ -28,9 +23,10 @@ export function extractTxHashFromEffect(
   return null;
 }
 
-export function extractAndValidateTxHash(
-  data: Record<string, unknown>,
-): { txHash: string | null; valid: boolean } {
+export function extractAndValidateTxHash(data: Record<string, unknown>): {
+  txHash: string | null;
+  valid: boolean;
+} {
   const txHash = extractTxHashFromEffect(data);
   if (txHash === null) {
     return { txHash: null, valid: true };
@@ -44,9 +40,7 @@ export function extractAndValidateTxHash(
  * carry transaction_hash on the effect body; the canonical source is the
  * operation resource referenced via _links.operation.
  */
-export async function resolveTxHashFromOperation(
-  operationId: string,
-): Promise<string | null> {
+export async function resolveTxHashFromOperation(operationId: string): Promise<string | null> {
   try {
     const op = await (stellarClient
       .getServer()
@@ -71,12 +65,8 @@ export async function resolveTxHashFromOperation(
 /**
  * Extract operation id from _links.operation.href on a Horizon effect.
  */
-export function getOperationIdFromEffectData(
-  data: Record<string, unknown>,
-): string | null {
-  const links = data._links as
-    | Record<string, { href?: string }>
-    | undefined;
+export function getOperationIdFromEffectData(data: Record<string, unknown>): string | null {
+  const links = data._links as Record<string, { href?: string }> | undefined;
   const href = links?.operation?.href;
   if (typeof href !== "string") return null;
   const id = href.split("/").filter(Boolean).pop();
@@ -109,9 +99,7 @@ export async function resolveTxHash(
 /**
  * Verify a transaction hash exists on the Stellar network.
  */
-export async function verifyTxHashOnChain(
-  txHash: string,
-): Promise<boolean> {
+export async function verifyTxHashOnChain(txHash: string): Promise<boolean> {
   if (!isValidStellarTxHash(txHash)) return false;
   try {
     await stellarClient.getTransaction(txHash);

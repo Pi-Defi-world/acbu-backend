@@ -115,4 +115,14 @@ describe("redisService READONLY failover handling", () => {
     await expect(service.set("rate:user:2", "1")).rejects.toThrow(/READONLY/);
     expect(getRedisFailoverMetrics().readonlyRetries).toBe(2);
   });
+
+  it("claims a key atomically with setNx (SET ... NX EX)", async () => {
+    mockSet.mockResolvedValueOnce("OK").mockResolvedValueOnce(null);
+
+    const service = new RedisService();
+    await expect(service.setNx("jwt:jti:abc", "1", 60)).resolves.toBe(true);
+    await expect(service.setNx("jwt:jti:abc", "1", 60)).resolves.toBe(false);
+
+    expect(mockSet).toHaveBeenCalledWith("jwt:jti:abc", "1", "EX", 60, "NX");
+  });
 });

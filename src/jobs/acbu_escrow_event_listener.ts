@@ -6,22 +6,23 @@ import { getContractAddresses } from "../config/contracts";
 import { logger } from "../config/logger";
 import { escrowEventProducer } from "./producers";
 import { extractAndValidateTxHash } from "../services/stellar/txHashValidation";
+import type { EscrowEvent } from "../types/rabbitmq-schemas";
 
-const ESCROW_EFFECT_TYPES = [
-  "contract_credited",
-  "contract_debited",
-  "contract_effect",
-] as const;
+const ESCROW_EFFECT_TYPES = ["contract_credited", "contract_debited", "contract_effect"] as const;
 
 type EscrowEffectType = (typeof ESCROW_EFFECT_TYPES)[number];
 
+/**
+ * Narrow an inbound effect type to the closed union the queue schema accepts.
+ * `EscrowEvent["type"]` is a z.enum, so publishing a bare `string` is a type
+ * error — and would let an unvalidated value reach consumers if the filter in
+ * `listenToContractEvents` ever changes.
+ */
 function isEscrowEffectType(type: string): type is EscrowEffectType {
   return (ESCROW_EFFECT_TYPES as readonly string[]).includes(type);
-const ESCROW_EFFECT_TYPES = ["contract_credited", "contract_debited", "contract_effect"];
+}
 
-function sanitizeEventData(
-  data: Record<string, unknown>,
-): Record<string, unknown> {
+function sanitizeEventData(data: Record<string, unknown>): Record<string, unknown> {
   const { txHash, valid } = extractAndValidateTxHash(data);
   if (txHash === null || !valid) {
     const sanitized = { ...data };
@@ -47,6 +48,12 @@ export async function startEscrowEventListener(): Promise<void> {
       // explicitly anyway rather than casting past the compiler.
       if (!isEscrowEffectType(event.type)) {
         logger.warn("Escrow event with unexpected type reached handler", {
+          type: event.type,
+          ledger: event.ledger,
+        });
+        return;
+      }
+
       const rawData = (event.data || {}) as Record<string, unknown>;
       const { txHash, valid } = extractAndValidateTxHash(rawData);
 
@@ -61,7 +68,7 @@ export async function startEscrowEventListener(): Promise<void> {
 
       const sanitizedData = sanitizeEventData(rawData);
 
-      const validatedEvent = {
+      const validatedEvent: EscrowEvent = {
         contractId: event.contractId,
         type: event.type,
         data: sanitizedData,
@@ -84,12 +91,9 @@ export async function startEscrowEventListener(): Promise<void> {
     }
   };
 
-  eventListener.listenToContractEvents(
-    contractId,
-    [...ESCROW_EFFECT_TYPES],
-    handler,
-  );
-  eventListener.listenToContractEvents(contractId, ESCROW_EFFECT_TYPES, handler);
+  // Register the handler exactly once: EventListener appends to its "*" handler
+  // list, so a second registration makes every escrow effect publish twice.
+  eventListener.listenToContractEvents(contractId, [...ESCROW_EFFECT_TYPES], handler);
   logger.info("Escrow event listener registered with validation", {
     contractId,
     effectTypes: ESCROW_EFFECT_TYPES,

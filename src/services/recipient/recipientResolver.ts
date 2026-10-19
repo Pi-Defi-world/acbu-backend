@@ -5,6 +5,7 @@
  */
 import { prisma } from "../../config/database";
 import { logger } from "../../config/logger";
+import { isValidStellarAddress } from "../../utils/stellar";
 import type { ResolveResult, RecipientQuery, RecipientQueryKind } from "./types";
 
 const STELLAR_ADDRESS_LENGTH = 56;
@@ -132,8 +133,10 @@ export async function resolveRecipient(
 }
 
 /**
- * Resolve alias to stellarAddress (internal use by transfer service).
- * Returns null if not found or hidden by privacy.
+ * Resolve alias or raw address to stellarAddress (internal use by transfer service).
+ * Re-validates the Stellar address format and checksum to prevent transfers
+ * to corrupted or invalid addresses.
+ * Returns null if not found, hidden by privacy, or if the address is invalid.
  */
 export async function resolveRecipientToStellarAddress(
   q: string,
@@ -141,6 +144,12 @@ export async function resolveRecipientToStellarAddress(
 ): Promise<string | null> {
   const parsed = normalizeRecipientQuery(q);
   if (parsed.kind === "address") {
+    if (!isValidStellarAddress(parsed.value)) {
+      logger.warn("resolveRecipientToStellarAddress: raw stellar address failed validation", {
+        address: parsed.value.slice(0, 4) + "..." + parsed.value.slice(-4),
+      });
+      return null;
+    }
     return parsed.value;
   }
   const res = await resolveRecipient(q, callerUserId);
@@ -149,5 +158,18 @@ export async function resolveRecipientToStellarAddress(
     where: { id: res.userId },
     select: { stellarAddress: true },
   });
-  return user?.stellarAddress ?? null;
+  const address = user?.stellarAddress;
+  if (!address) {
+    return null;
+  }
+  if (!isValidStellarAddress(address)) {
+    logger.error(
+      "resolveRecipientToStellarAddress: resolved user has invalid or corrupted stellarAddress",
+      {
+        userId: res.userId,
+      },
+    );
+    return null;
+  }
+  return address;
 }

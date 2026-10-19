@@ -40,6 +40,13 @@ jest.mock("../../config/logger", () => ({
   },
 }));
 
+jest.mock("../reserve/ReserveTracker", () => ({
+  ReserveTracker: {
+    SEGMENT_TRANSACTIONS: "transactions",
+    SEGMENT_INVESTMENT_SAVINGS: "investment_savings",
+  },
+}));
+
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 
 describe("TreasuryService", () => {
@@ -204,12 +211,13 @@ describe("TreasuryService", () => {
         },
       ] as any);
 
-      // Calculated: $1000.05 USD (within 0.01% tolerance)
+      // ACBU units intentionally differ from the USD value used for reconciliation.
       mockPrisma.transaction.findMany.mockResolvedValue([
         {
           type: "transfer",
           localCurrency: "NGN",
-          acbuAmount: new Decimal("1000.05"),
+          usdcAmount: new Decimal("1000.05"),
+          acbuAmount: new Decimal("1500"),
           acbuAmountBurned: null,
         },
       ] as any);
@@ -219,6 +227,7 @@ describe("TreasuryService", () => {
       const result = await getEnterpriseTreasury(undefined, 0.01);
 
       expect(result.reconciliation.isReconciled).toBe(true);
+      expect(result.reconciliation.calculatedTotal).toBeCloseTo(1000.05, 2);
       expect(result.reconciliation.discrepancyPercentage).toBeLessThan(0.01);
     });
 
@@ -241,6 +250,7 @@ describe("TreasuryService", () => {
         {
           type: "transfer",
           localCurrency: "NGN",
+          usdcAmount: new Decimal("1100"),
           acbuAmount: new Decimal("1100"),
           acbuAmountBurned: null,
         },
@@ -262,18 +272,21 @@ describe("TreasuryService", () => {
         {
           type: "mint",
           localCurrency: "NGN",
+          usdcAmount: new Decimal("500"),
           acbuAmount: new Decimal("500"),
           acbuAmountBurned: null,
         },
         {
           type: "burn",
           localCurrency: "NGN",
+          usdcAmount: new Decimal("200"),
           acbuAmount: null,
           acbuAmountBurned: new Decimal("200"),
         },
         {
           type: "transfer",
           localCurrency: "NGN",
+          usdcAmount: new Decimal("100"),
           acbuAmount: new Decimal("100"),
           acbuAmountBurned: null,
         },
@@ -294,12 +307,14 @@ describe("TreasuryService", () => {
         {
           type: "transfer",
           localCurrency: null, // No currency
+          usdcAmount: new Decimal("100"),
           acbuAmount: new Decimal("100"),
           acbuAmountBurned: null,
         },
         {
           type: "transfer",
           localCurrency: "NGN",
+          usdcAmount: new Decimal("200"),
           acbuAmount: new Decimal("200"),
           acbuAmountBurned: null,
         },
@@ -431,6 +446,7 @@ describe("TreasuryService", () => {
         {
           type: "transfer",
           localCurrency: "NGN",
+          usdcAmount: new Decimal("5000"),
           acbuAmount: new Decimal("5000"),
           acbuAmountBurned: null,
         },
@@ -510,6 +526,7 @@ describe("TreasuryService", () => {
         {
           type: "transfer",
           localCurrency: "NGN",
+          usdcAmount: new Decimal("1005"),
           acbuAmount: new Decimal("1005"), // 0.5% discrepancy
           acbuAmountBurned: null,
         },

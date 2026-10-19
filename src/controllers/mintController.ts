@@ -30,7 +30,7 @@ import { enqueueUsdcConvertAndMint } from "../jobs/usdcConvertAndMintJob";
 import { AppError } from "../middleware/errorHandler";
 import { ErrorCodes } from "../types/errorCodes";
 import { convertLocalToUsd } from "../services/rates";
-import { extractIdempotencyKey } from "../utils/idempotency";
+import { extractIdempotencyKey, scopeIdempotencyKey } from "../utils/idempotency";
 import { assertUserWalletAddress } from "../services/wallet/walletService";
 import { logger } from "../config/logger";
 import {
@@ -221,15 +221,66 @@ export async function mintFromUsdcInternal(
       recipient: walletAddress,
     });
     const acbuDecimal = contractNumberToDecimal(Number(result.acbuAmount));
-    await prisma.transaction.update({
-      where: { id: tx.id },
-      data: {
-        status: "completed",
-        acbuAmount: new Decimal(acbuDecimal),
+
+    try {
+      await prisma.transaction.update({
+        where: { id: tx.id },
+        data: {
+          status: "completed",
+          acbuAmount: new Decimal(acbuDecimal),
+          blockchainTxHash: result.transactionHash,
+          completedAt: new Date(),
+        },
+      });
+    } catch (dbError) {
+      // DB update failed after on-chain mint succeeded — attempt compensation
+      logger.error("DB update failed after successful on-chain mint, attempting compensation", {
+        transactionId: tx.id,
+        walletAddress,
+        acbuAmount: acbuDecimal.toString(),
         blockchainTxHash: result.transactionHash,
-        completedAt: new Date(),
-      },
-    });
+        dbError: dbError instanceof Error ? dbError.message : String(dbError),
+      });
+
+      // Try to burn the minted tokens as compensation
+      try {
+        await acbuBurningService.redeemSingle({
+          user: sourceAccount,
+          recipient: sourceAccount,
+          acbuAmount: acbuDecimal.toString(),
+          currency: "USDC",
+        });
+        logger.info("Compensation burn succeeded", { transactionId: tx.id });
+      } catch (compensationError) {
+        // Compensation also failed — log for manual intervention
+        logger.error("Compensation burn failed, manual intervention required", {
+          transactionId: tx.id,
+          walletAddress,
+          acbuAmount: acbuDecimal.toString(),
+          blockchainTxHash: result.transactionHash,
+          compensationError:
+            compensationError instanceof Error
+              ? compensationError.message
+              : String(compensationError),
+        });
+      }
+
+      // Mark transaction as requiring manual review
+      await prisma.transaction.update({
+        where: { id: tx.id },
+        data: {
+          status: "completed",
+          acbuAmount: new Decimal(acbuDecimal),
+          blockchainTxHash: result.transactionHash,
+          completedAt: new Date(),
+          rateSnapshot: {
+            error: "DB update failed after on-chain mint, compensation attempted",
+            at: new Date().toISOString(),
+          },
+        },
+      });
+    }
+
     return { transactionId: tx.id, acbuAmount: acbuDecimal.toString() };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -323,7 +374,7 @@ export async function depositFromBasketCurrency(
     }
 
     const amountDecimal = parseMonetaryString(amount, "amount");
-    const amountNum = amountDecimal.toNumber(); // Only convert at boundary for existing code
+    const amountNum = Number(amountDecimal.toString()); // Reporting boundary: convert via string to preserve exact value
     const userId = req.apiKey?.userId;
 
     if (!userId) {
@@ -363,7 +414,16 @@ export async function depositFromBasketCurrency(
       req.apiKey?.organizationId ?? null,
     );
 
-    const idempotencyKey = extractIdempotencyKey(req) ?? fintech_tx_id ?? undefined;
+    // Idempotency keys are scoped to the requesting user (Pi-Defi-world/
+    // acbu-backend#985): Transaction.idempotencyKey is globally unique, so an
+    // unscoped partner fintech_tx_id would let two users collide on the same
+    // key — the second user would receive a 202 referencing the first user's
+    // transaction (status/existence disclosure) and their own deposit would
+    // be blocked.
+    const rawIdempotencyKey = extractIdempotencyKey(req) ?? fintech_tx_id ?? undefined;
+    const idempotencyKey = rawIdempotencyKey
+      ? scopeIdempotencyKey(userId, rawIdempotencyKey)
+      : undefined;
     if (idempotencyKey) {
       const existingTx = await prisma.transaction.findUnique({
         where: { idempotencyKey },
@@ -398,7 +458,7 @@ export async function depositFromBasketCurrency(
           localAmount: new Decimal(amountDecimal),
           rateSnapshot: {
             deposit_currency: currency,
-            amount: amountDecimal.toNumber(),
+            amount: Number(amountDecimal.toString()),
             timestamp: new Date().toISOString(),
           },
         },
@@ -432,6 +492,57 @@ export async function depositFromBasketCurrency(
       throw createError;
     }
 
+    try {
+      const acbuAmountInfo = await convertLocalToUsdWithPrecision(
+        amountDecimal.toString(),
+        currency,
+      );
+      const sourceAccount = stellarClient.getKeypair()?.publicKey();
+      if (!sourceAccount) {
+        throw new Error("No source account available");
+      }
+
+      const mintResult = await acbuMintingService.mintFromBasket({
+        txId: tx.id,
+        user: sourceAccount,
+        recipient: wallet_address,
+        acbuAmount: decimalToContractNumber(acbuAmountInfo.acbuEquivalent).toString(),
+      });
+      const acbuNum = contractNumberToDecimal(Number(mintResult.acbuAmount));
+
+      await prisma.transaction.update({
+        where: { id: tx.id },
+        data: {
+          status: "completed",
+          acbuAmount: new Decimal(acbuNum),
+          blockchainTxHash: mintResult.transactionHash,
+          completedAt: new Date(),
+          rateSnapshot: {
+            deposit_currency: currency,
+            amount: amountDecimal.toNumber(),
+            acbu_amount: acbuNum.toNumber(),
+            transaction_hash: mintResult.transactionHash,
+            timestamp: new Date().toISOString(),
+          },
+        },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      await prisma.transaction.update({
+        where: { id: tx.id },
+        data: {
+          status: "failed",
+          rateSnapshot: {
+            deposit_currency: currency,
+            amount: amountDecimal.toNumber(),
+            error: message,
+            at: new Date().toISOString(),
+          },
+        },
+      });
+      throw err;
+    }
+
     await logAudit({
       eventType: "transaction",
       entityType: "transaction",
@@ -440,7 +551,7 @@ export async function depositFromBasketCurrency(
       newValue: {
         type: "mint",
         currency,
-        amount: amountDecimal.toNumber(),
+        amount: Number(amountDecimal.toString()),
         wallet_address: wallet_address ? "***" : undefined,
       },
       performedBy: req.apiKey?.userId ?? undefined,
@@ -451,9 +562,8 @@ export async function depositFromBasketCurrency(
       currency,
       amount: amountDecimal.toString(),
       wallet_address: wallet_address ? "***" : undefined,
-      status: "pending",
-      message:
-        "Deposit received. Complete payment to the designated account for your currency; ACBU will be minted after confirmation.",
+      status: "completed",
+      message: "Deposit received and ACBU has been minted to the wallet.",
     });
   } catch (error) {
     next(error);

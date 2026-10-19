@@ -159,8 +159,18 @@ export class CacheService {
       if (!result) return null;
       return result.value as T;
     } catch (error) {
+      // Duplicate key error (code 11000) occurs during upsert when the filter condition
+      // (value.field < max) is not met for an existing key. This represents hitting the cap.
+      const isDuplicateKeyError =
+        (error as any)?.code === 11000 ||
+        ((error as any)?.name === "MongoServerError" && (error as any)?.code === 11000);
+
+      if (isDuplicateKeyError) {
+        return null;
+      }
+
       logger.error("Cache increment error", { key, error });
-      return null;
+      throw error;
     }
   }
 }

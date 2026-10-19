@@ -119,7 +119,7 @@ export async function computeSyntheticBasketOneAcbuForBasket(
       where: { currency },
       orderBy: { timestamp: "desc" },
     });
-    const r = latest?.medianRate.toNumber() ?? 0;
+    const r = latest?.medianRate != null ? Number(latest.medianRate.toString()) : 0;
     if (r > 0) {
       usdPerLocal[currency] = r;
     }

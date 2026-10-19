@@ -149,3 +149,12 @@ describe("scanMigrations (real repo files)", () => {
     expect(findings).toEqual([]);
   });
 });
+
+describe("Prisma localAmount precision", () => {
+  it("uses sub-cent precision for persisted local currency amounts", () => {
+    const fs = require("fs");
+    const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
+
+    expect(schema).toMatch(/localAmount\s+Decimal\?\s+@map\("local_amount"\)\s+@db\.Decimal\(20,\s*8\)/);
+  });
+});

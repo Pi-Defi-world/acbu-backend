@@ -119,9 +119,7 @@ export async function registerOnRampSwap(
       correlationId,
       timestamp: new Date().toISOString(),
       environment: (process.env.NODE_ENV ?? "development") as
-        | "production"
-        | "staging"
-        | "development",
+        "production" | "staging" | "development",
     });
     await enqueueXlmToAcbu({
       onRampSwapId: swap.id,

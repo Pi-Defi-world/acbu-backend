@@ -113,7 +113,6 @@ function rejectIfJwtToken(token: string): void {
   }
 }
 
-
 /**
  * Middleware to validate API key
  */

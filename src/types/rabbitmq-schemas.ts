@@ -1,6 +1,5 @@
-import { z } from 'zod';
-import { QUEUES } from '../config/rabbitmq';
-
+import { z } from "zod";
+import { QUEUES } from "../config/rabbitmq";
 
 const STELLAR_TX_HASH_REGEX = /^[a-f0-9]{64}$/i;
 

@@ -200,7 +200,7 @@ export const burnAcbu = async (
           },
         });
 
-        logAudit("BURN_SUCCESS", {
+        await logAudit("BURN_SUCCESS", {
           userId: req.apiKey.userId,
           acbuAmount: acbuAmount.toString(),
           currency: body.currency,
@@ -223,7 +223,7 @@ export const burnAcbu = async (
           data: { status: "FAILED" },
         });
 
-        logAudit("BURN_FAILED", {
+        await logAudit("BURN_FAILED", {
           userId: req.apiKey.userId,
           acbuAmount: acbuAmount.toString(),
           reason: contractError instanceof Error ? contractError.message : "Unknown error",

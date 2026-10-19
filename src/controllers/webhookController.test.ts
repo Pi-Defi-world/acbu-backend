@@ -169,8 +169,7 @@ function buildFlutterwaveSignedReq(
   opts?: { sig?: string; ts?: string; contentType?: string },
 ) {
   const rawBody = Buffer.from(JSON.stringify(body));
-  const sig =
-    opts?.sig ?? crypto.createHmac("sha256", FW_SECRET).update(rawBody).digest("hex");
+  const sig = opts?.sig ?? crypto.createHmac("sha256", FW_SECRET).update(rawBody).digest("hex");
   const headers: Record<string, string> = {
     "verif-hash": sig,
     "x-flw-timestamp": opts?.ts ?? validTimestamp(),
@@ -188,8 +187,7 @@ function buildPaystackSignedReq(
   opts?: { sig?: string; ts?: string; contentType?: string },
 ) {
   const rawBody = Buffer.from(JSON.stringify(body));
-  const sig =
-    opts?.sig ?? crypto.createHmac("sha512", PS_SECRET).update(rawBody).digest("hex");
+  const sig = opts?.sig ?? crypto.createHmac("sha512", PS_SECRET).update(rawBody).digest("hex");
   const headers: Record<string, string> = {
     "x-paystack-signature": sig,
     "x-paystack-timestamp": opts?.ts ?? validTimestamp(),
@@ -207,8 +205,7 @@ function buildBillsSignedReq(
   opts?: { sig?: string; ts?: string; contentType?: string },
 ) {
   const rawBody = Buffer.from(JSON.stringify(body));
-  const sig =
-    opts?.sig ?? crypto.createHmac("sha256", BILLS_SECRET).update(rawBody).digest("hex");
+  const sig = opts?.sig ?? crypto.createHmac("sha256", BILLS_SECRET).update(rawBody).digest("hex");
   const headers: Record<string, string> = {
     "x-bills-signature": sig,
     "x-bills-timestamp": opts?.ts ?? validTimestamp(),
@@ -259,7 +256,10 @@ describe("webhookController", () => {
     it("returns 401 when verif-hash header is absent", () => {
       const res = makeRes();
       verifyFlutterwaveSignature(
-        { headers: { "x-flw-timestamp": validTimestamp(), "content-type": "application/json" }, rawBody: Buffer.from("{}") } as unknown as RawRequest,
+        {
+          headers: { "x-flw-timestamp": validTimestamp(), "content-type": "application/json" },
+          rawBody: Buffer.from("{}"),
+        } as unknown as RawRequest,
         res,
         makeNext(),
       );
@@ -272,7 +272,13 @@ describe("webhookController", () => {
     it("returns 400 when rawBody is missing", () => {
       const res = makeRes();
       verifyFlutterwaveSignature(
-        { headers: { "verif-hash": "abc", "x-flw-timestamp": validTimestamp(), "content-type": "application/json" } } as unknown as RawRequest,
+        {
+          headers: {
+            "verif-hash": "abc",
+            "x-flw-timestamp": validTimestamp(),
+            "content-type": "application/json",
+          },
+        } as unknown as RawRequest,
         res,
         makeNext(),
       );
@@ -294,7 +300,10 @@ describe("webhookController", () => {
     it("returns 401 when x-flw-timestamp header is absent", () => {
       const res = makeRes();
       verifyFlutterwaveSignature(
-        { headers: { "verif-hash": "abc", "content-type": "application/json" }, rawBody: Buffer.from("{}") } as unknown as RawRequest,
+        {
+          headers: { "verif-hash": "abc", "content-type": "application/json" },
+          rawBody: Buffer.from("{}"),
+        } as unknown as RawRequest,
         res,
         makeNext(),
       );
@@ -378,21 +387,13 @@ describe("webhookController", () => {
   describe("verifyPaystackSignature", () => {
     it("calls next() on a valid HMAC-SHA512 signature", () => {
       const next = makeNext();
-      verifyPaystackSignature(
-        buildPaystackSignedReq({ event: "charge.success" }),
-        makeRes(),
-        next,
-      );
+      verifyPaystackSignature(buildPaystackSignedReq({ event: "charge.success" }), makeRes(), next);
       expect(next).toHaveBeenCalledWith();
     });
 
     it("returns 401 on mismatched signature", () => {
       const res = makeRes();
-      verifyPaystackSignature(
-        buildPaystackSignedReq({}, { sig: "deadbeef" }),
-        res,
-        makeNext(),
-      );
+      verifyPaystackSignature(buildPaystackSignedReq({}, { sig: "deadbeef" }), res, makeNext());
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Invalid signature" }),
@@ -402,7 +403,10 @@ describe("webhookController", () => {
     it("returns 401 when x-paystack-signature header is absent", () => {
       const res = makeRes();
       verifyPaystackSignature(
-        { headers: { "x-paystack-timestamp": validTimestamp(), "content-type": "application/json" }, rawBody: Buffer.from("{}") } as unknown as RawRequest,
+        {
+          headers: { "x-paystack-timestamp": validTimestamp(), "content-type": "application/json" },
+          rawBody: Buffer.from("{}"),
+        } as unknown as RawRequest,
         res,
         makeNext(),
       );
@@ -415,7 +419,13 @@ describe("webhookController", () => {
     it("returns 400 when rawBody is missing", () => {
       const res = makeRes();
       verifyPaystackSignature(
-        { headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": validTimestamp(), "content-type": "application/json" } } as unknown as RawRequest,
+        {
+          headers: {
+            "x-paystack-signature": "abc",
+            "x-paystack-timestamp": validTimestamp(),
+            "content-type": "application/json",
+          },
+        } as unknown as RawRequest,
         res,
         makeNext(),
       );
@@ -427,7 +437,10 @@ describe("webhookController", () => {
     it("returns 401 when x-paystack-timestamp header is absent", () => {
       const res = makeRes();
       verifyPaystackSignature(
-        { headers: { "x-paystack-signature": "abc", "content-type": "application/json" }, rawBody: Buffer.from("{}") } as unknown as RawRequest,
+        {
+          headers: { "x-paystack-signature": "abc", "content-type": "application/json" },
+          rawBody: Buffer.from("{}"),
+        } as unknown as RawRequest,
         res,
         makeNext(),
       );
@@ -489,11 +502,7 @@ describe("webhookController", () => {
       const res = makeRes();
       const opts: { sig?: string; contentType?: string } = { contentType };
       if (!shouldPass) opts.sig = "abc";
-      verifyPaystackSignature(
-        buildPaystackSignedReq({ event: "charge.success" }, opts),
-        res,
-        next,
-      );
+      verifyPaystackSignature(buildPaystackSignedReq({ event: "charge.success" }, opts), res, next);
       if (shouldPass) {
         expect(next).toHaveBeenCalled();
       } else {
@@ -512,7 +521,10 @@ describe("webhookController", () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({ id: "wh-1" });
       const res = makeRes();
       await handlePaystackWebhook(
-        { headers: {}, body: { event: "charge.success", data: { reference: "ref-1", status: "success" } } } as Request,
+        {
+          headers: {},
+          body: { event: "charge.success", data: { reference: "ref-1", status: "success" } },
+        } as Request,
         res,
         makeNext(),
       );
@@ -582,7 +594,10 @@ describe("webhookController", () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({ id: "wh-2" });
       const res = makeRes();
       await handleFlutterwaveWebhook(
-        { headers: {}, body: { event: "charge.completed", data: { tx_ref: "ref-2", status: "successful" } } } as Request,
+        {
+          headers: {},
+          body: { event: "charge.completed", data: { tx_ref: "ref-2", status: "successful" } },
+        } as Request,
         res,
         makeNext(),
       );
@@ -645,11 +660,7 @@ describe("webhookController", () => {
   describe("verifyBillsWebhookSignature", () => {
     it("calls next() on a valid HMAC-SHA256 signature", () => {
       const next = makeNext();
-      verifyBillsWebhookSignature(
-        buildBillsSignedReq({ transaction_id: "tx-1" }),
-        makeRes(),
-        next,
-      );
+      verifyBillsWebhookSignature(buildBillsSignedReq({ transaction_id: "tx-1" }), makeRes(), next);
       expect(next).toHaveBeenCalledWith();
     });
 
@@ -664,11 +675,7 @@ describe("webhookController", () => {
       const res = makeRes();
       const opts: { sig?: string; contentType?: string } = { contentType };
       if (!shouldPass) opts.sig = "abc";
-      verifyBillsWebhookSignature(
-        buildBillsSignedReq({ transaction_id: "tx-1" }, opts),
-        res,
-        next,
-      );
+      verifyBillsWebhookSignature(buildBillsSignedReq({ transaction_id: "tx-1" }, opts), res, next);
       if (shouldPass) {
         expect(next).toHaveBeenCalled();
       } else {

@@ -111,7 +111,7 @@ export class MintingService {
         try {
           await prisma.transaction.update({
             where: { id: (params as any).txId },
-            data: { status: "FAILED" },
+            data: { status: "failed" },
           });
           logger.info(`Compensated: Marked transaction ${(params as any).txId} as FAILED`);
         } catch (dbError) {
@@ -170,7 +170,7 @@ export class MintingService {
         try {
           await prisma.transaction.update({
             where: { id: (params as any).txId },
-            data: { status: "FAILED" },
+            data: { status: "failed" },
           });
           logger.info(`Compensated: Marked transaction ${(params as any).txId} as FAILED`);
         } catch (dbError) {
@@ -230,7 +230,7 @@ export class MintingService {
         try {
           await prisma.transaction.update({
             where: { id: (params as any).txId },
-            data: { status: "FAILED" },
+            data: { status: "failed" },
           });
           logger.info(`Compensated: Marked transaction ${(params as any).txId} as FAILED`);
         } catch (dbError) {
@@ -288,7 +288,7 @@ export class MintingService {
         try {
           await prisma.transaction.update({
             where: { id: (params as any).txId },
-            data: { status: "FAILED" },
+            data: { status: "failed" },
           });
           logger.info(`Compensated: Marked transaction ${(params as any).txId} as FAILED`);
         } catch (dbError) {
@@ -333,7 +333,7 @@ export class MintingService {
         try {
           await prisma.transaction.update({
             where: { id: (params as any).txId },
-            data: { status: "FAILED" },
+            data: { status: "failed" },
           });
           logger.info(`Compensated: Marked transaction ${(params as any).txId} as FAILED`);
         } catch (dbError) {

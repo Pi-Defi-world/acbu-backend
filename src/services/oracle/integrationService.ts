@@ -114,7 +114,7 @@ export async function fetchAndStoreRates(): Promise<void> {
         where: { currency },
         orderBy: { timestamp: "desc" },
       });
-      const prevRateNum = prevRate?.medianRate.toNumber();
+      const prevRateNum = prevRate?.medianRate != null ? Number(prevRate.medianRate.toString()) : undefined;
       const maxDeviation = config.oracle.maxDeviationPerUpdate ?? 0.05;
       const circuitThreshold = config.oracle.circuitBreakerThreshold ?? 0.1;
 

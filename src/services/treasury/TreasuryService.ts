@@ -27,9 +27,9 @@ type DecimalLike = { toString: () => string } | null | undefined;
 
 interface TransactionAggregate {
   currency: string;
-  totalMinted: number;
-  totalBurned: number;
-  netTransferred: number;
+  totalMintedUsd: number;
+  totalBurnedUsd: number;
+  netTransferredUsd: number;
   transactionCount: number;
 }
 
@@ -162,8 +162,7 @@ async function aggregateTransactionsBySegment(): Promise<Map<string, Transaction
     select: {
       type: true,
       localCurrency: true,
-      acbuAmount: true,
-      acbuAmountBurned: true,
+      usdcAmount: true,
     },
   });
 
@@ -177,18 +176,18 @@ async function aggregateTransactionsBySegment(): Promise<Map<string, Transaction
 
     const existing = aggregates.get(currency) ?? {
       currency,
-      totalMinted: 0,
-      totalBurned: 0,
-      netTransferred: 0,
+      totalMintedUsd: 0,
+      totalBurnedUsd: 0,
+      netTransferredUsd: 0,
       transactionCount: 0,
     };
 
     if (tx.type === "mint") {
-      existing.totalMinted += decimalToNumber(tx.acbuAmount);
+      existing.totalMintedUsd += decimalToNumber(tx.usdcAmount);
     } else if (tx.type === "burn") {
-      existing.totalBurned += decimalToNumber(tx.acbuAmountBurned);
+      existing.totalBurnedUsd += decimalToNumber(tx.usdcAmount);
     } else if (tx.type === "transfer") {
-      existing.netTransferred += decimalToNumber(tx.acbuAmount);
+      existing.netTransferredUsd += decimalToNumber(tx.usdcAmount);
     }
 
     existing.transactionCount += 1;
@@ -224,20 +223,20 @@ async function getLatestReservesBySegment(): Promise<Map<string, ReserveSnapshot
  * Reconcile calculated total against ledger total with tolerance
  */
 function reconcileTotals(
-  ledgerTotal: number,
-  calculatedTotal: number,
+  ledgerTotalUsd: number,
+  calculatedTotalUsd: number,
   tolerancePercentage: number = DEFAULT_TOLERANCE_PERCENTAGE,
 ): ReconciliationResult {
-  const discrepancy = Math.abs(ledgerTotal - calculatedTotal);
-  const discrepancyPercentage = ledgerTotal > 0 ? (discrepancy / ledgerTotal) * 100 : 0;
+  const discrepancy = Math.abs(ledgerTotalUsd - calculatedTotalUsd);
+  const discrepancyPercentage = ledgerTotalUsd > 0 ? (discrepancy / ledgerTotalUsd) * 100 : 0;
 
   const isReconciled = discrepancyPercentage <= tolerancePercentage;
   const warnings: string[] = [];
 
   if (!isReconciled) {
-    const warningMsg = `Treasury reconciliation FAILED: Ledger Total USD ${ledgerTotal.toFixed(
+    const warningMsg = `Treasury reconciliation FAILED: Ledger Total USD ${ledgerTotalUsd.toFixed(
       2,
-    )} vs Calculated Total USD ${calculatedTotal.toFixed(2)}, discrepancy ${discrepancyPercentage.toFixed(
+    )} vs Calculated Total USD ${calculatedTotalUsd.toFixed(2)}, discrepancy ${discrepancyPercentage.toFixed(
       4,
     )}% (tolerance: ${tolerancePercentage}%)`;
     warnings.push(warningMsg);
@@ -251,8 +250,8 @@ function reconcileTotals(
   }
 
   return {
-    ledgerTotal,
-    calculatedTotal,
+    ledgerTotal: ledgerTotalUsd,
+    calculatedTotal: calculatedTotalUsd,
     discrepancy,
     discrepancyPercentage,
     isReconciled,
@@ -381,12 +380,16 @@ export async function getEnterpriseTreasury(
       });
     }
 
-    // Reconciliation: Ledger (Reserves) vs Calculated (Transactions)
-    const calculatedTotal = Array.from(txAggregates.values()).reduce(
-      (sum, tx) => sum + tx.totalMinted - tx.totalBurned + tx.netTransferred,
+    // Reconciliation: ledger USD reserves vs calculated USD transaction values.
+    const calculatedTotalUsd = Array.from(txAggregates.values()).reduce(
+      (sum, tx) => sum + tx.totalMintedUsd - tx.totalBurnedUsd + tx.netTransferredUsd,
       0,
     );
-    const reconciliation = reconcileTotals(totalBalanceUsd, calculatedTotal, tolerancePercentage);
+    const reconciliation = reconcileTotals(
+      totalBalanceUsd,
+      calculatedTotalUsd,
+      tolerancePercentage,
+    );
 
     const result: EnterpriseTreasuryResult = {
       totalBalanceUsd,

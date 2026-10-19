@@ -123,12 +123,12 @@ export async function getBankAccounts(userId: string): Promise<FiatAccountView[]
   for (const row of faucetRows) {
     const c = row.localCurrency ?? "";
     if (!balances.has(c) || !row.localAmount) continue;
-    balances.set(c, (balances.get(c) ?? 0) + row.localAmount.toNumber());
+    balances.set(c, (balances.get(c) ?? 0) + Number(row.localAmount.toString()));
   }
 
   const usdRates = new Map<string, number>();
   for (const r of latestRates) {
-    usdRates.set(r.currency, r.rateUsd.toNumber());
+    usdRates.set(r.currency, Number(r.rateUsd.toString()));
   }
 
   return BASKET_CURRENCIES.map((currency) => {
@@ -429,7 +429,7 @@ export async function simulateOffRamp(
     throw new Error(`Rate not found for currency ${currency}`);
   }
 
-  const fiatAmount = acbuAmount * acbuPerLocal.toNumber();
+  const fiatAmount = acbuAmount * Number(acbuPerLocal.toString());
 
   const addresses = getContractAddresses();
   if (!addresses.burning) {

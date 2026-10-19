@@ -7,58 +7,21 @@
  * - Challenge tokens have aud: "2fa_challenge" and iss: "acbu/auth"
  * - API session tokens have aud: "api_session" and are signed with a different (optional) secret
  * - Verification enforces audience to prevent token confusion
- * - jti (JWT ID) uniqueness is enforced via an in-process deny-list (#288)
- *   so a stolen token replayed within its 5-minute window is rejected.
- *   For multi-instance deployments swap the in-process Map for a shared Redis SET.
+ * - jti (JWT ID) uniqueness is enforced via a deny-list shared through Redis
+ *   (#288, #984), so a stolen token replayed within its 5-minute window is
+ *   rejected even when the replay lands on a different instance.
  */
 import jwt from "jsonwebtoken";
 import { config } from "../config/env";
 import { logger } from "../config/logger";
 import { EXPECTED_JWT_TYP, verifyJwt } from "../middleware/authMiddleware";
+import { consumeJti, isJtiRevoked, revokeJti } from "./jtiDenyList";
 
 // ---------------------------------------------------------------------------
-// JTI deny-list — fixes #288
+// JTI deny-list — fixes #288; shared across instances via Redis (#984).
+// `consumeJti` performs an atomic SET NX so concurrent replays cannot both win.
 // ---------------------------------------------------------------------------
-
-interface DenyEntry {
-  expiresAt: number; // Unix ms
-}
-
-const jtiDenyList = new Map<string, DenyEntry>();
-
-/** Prune expired entries to prevent unbounded memory growth. */
-function pruneExpiredJtis(): void {
-  const now = Date.now();
-  for (const [jti, entry] of jtiDenyList.entries()) {
-    if (entry.expiresAt <= now) {
-      jtiDenyList.delete(jti);
-    }
-  }
-}
-
-// Prune every 5 minutes — matches the challenge token lifetime.
-const jtiPruneTimer = setInterval(pruneExpiredJtis, 5 * 60 * 1000);
-jtiPruneTimer.unref();
-
-/**
- * Add a jti to the deny-list until its natural expiry.
- * @param jti - The JWT ID to revoke.
- * @param exp - Token expiry in Unix *seconds* (from JWT payload).
- */
-export function revokeJti(jti: string, exp: number): void {
-  jtiDenyList.set(jti, { expiresAt: exp * 1000 });
-}
-
-/**
- * Returns true if the jti has already been used (is in the deny-list).
- */
-export function isJtiRevoked(jti: string): boolean {
-  pruneExpiredJtis();
-  return jtiDenyList.has(jti);
-}
-
-/** Exposed for testing only. */
-export { jtiDenyList };
+export { consumeJti, isJtiRevoked, revokeJti };
 
 const CHALLENGE_EXPIRY = "5m";
 const CHALLENGE_AUDIENCE = "2fa_challenge";
@@ -66,6 +29,7 @@ const CHALLENGE_ISSUER = "acbu/auth";
 
 export interface ChallengePayload {
   userId: string;
+  otpChallengeId?: string;
   aud?: string;
   iss?: string;
   iat?: number;
@@ -91,11 +55,15 @@ function getChallengeSecret(): string {
  * Sign a 2FA challenge token for the given user (short-lived JWT).
  * Includes aud and iss claims for strict purpose binding.
  */
-export function signChallengeToken(userId: string): string {
+export function signChallengeToken(
+  userId: string,
+  options: { otpChallengeId?: string } = {},
+): string {
   const secret = getChallengeSecret();
 
   const payload: ChallengePayload = {
     userId,
+    ...(options.otpChallengeId ? { otpChallengeId: options.otpChallengeId } : {}),
     aud: CHALLENGE_AUDIENCE,
     iss: CHALLENGE_ISSUER,
   };
@@ -113,7 +81,10 @@ export function signChallengeToken(userId: string): string {
  * Enforces jti uniqueness — a token can only be used once (#288).
  * Throws if invalid, expired, already used, or used for wrong purpose.
  */
-export function verifyChallengeToken(token: string): ChallengePayload {
+export async function verifyChallengeToken(
+  token: string,
+  options: { consumeJti?: boolean } = {},
+): Promise<ChallengePayload> {
   const secret = getChallengeSecret();
 
   try {
@@ -152,18 +123,23 @@ export function verifyChallengeToken(token: string): ChallengePayload {
       }
     }
 
-    // jti replay check — fixes #288
+    // jti replay check — #288 (in-process) / #984 (shared across instances).
+    // `consumeJti` is an atomic SET NX, so exactly one of several racing
+    // instances observes `firstUse === true`.
     if (decoded.jti) {
-      if (isJtiRevoked(decoded.jti)) {
+      const exp = decoded.exp ?? Math.floor(Date.now() / 1000) + 300;
+      const firstUse =
+        options.consumeJti === false
+          ? !(await isJtiRevoked(decoded.jti))
+          : await consumeJti(decoded.jti, exp);
+
+      if (!firstUse) {
         logger.warn("Challenge token jti already used (replay attempt)", {
           jti: decoded.jti,
           userId: decoded.userId,
         });
         throw new Error("Challenge token has already been used");
       }
-      // Consume the token: add to deny-list until its natural expiry.
-      const exp = decoded.exp ?? Math.floor(Date.now() / 1000) + 300;
-      revokeJti(decoded.jti, exp);
     }
 
     return decoded;

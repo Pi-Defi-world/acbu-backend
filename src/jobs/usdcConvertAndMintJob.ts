@@ -22,6 +22,15 @@ export interface UsdcConvertAndMintPayload {
   onRampSwapId: string;
 }
 
+export interface UsdcConvertAndMintOptions {
+  /**
+   * True when the consumer has no retries left for this message. Determines
+   * whether a failure parks the swap in `failed` (terminal) or releases the
+   * claim back to `pending_convert` so a redelivery can pick it up.
+   */
+  finalAttempt?: boolean;
+}
+
 export async function startUsdcConvertAndMintConsumer(): Promise<void> {
   const ch = await connectRabbitMQ();
   await assertQueueWithDLQ(QUEUE);
@@ -36,7 +45,10 @@ export async function startUsdcConvertAndMintConsumer(): Promise<void> {
 
       try {
         const body = JSON.parse(msg.content.toString()) as UsdcConvertAndMintPayload;
-        await processUsdcConvertAndMint(body);
+        // The consumer redelivers this message up to MAX_RETRIES times. Only the
+        // attempt that exhausts that budget may mark the swap terminally failed;
+        // every earlier attempt has to leave it claimable again.
+        await processUsdcConvertAndMint(body, { finalAttempt: retries >= MAX_RETRIES - 1 });
         ch.ack(msg);
       } catch (e) {
         logger.error("USDC convert-and-mint job failed", { error: e });
@@ -76,8 +88,12 @@ export async function startUsdcConvertAndMintConsumer(): Promise<void> {
   logger.info("USDC convert-and-mint consumer started", { queue: QUEUE });
 }
 
-export async function processUsdcConvertAndMint(payload: UsdcConvertAndMintPayload): Promise<void> {
+export async function processUsdcConvertAndMint(
+  payload: UsdcConvertAndMintPayload,
+  options: UsdcConvertAndMintOptions = {},
+): Promise<void> {
   const { onRampSwapId } = payload;
+  const { finalAttempt = false } = options;
   // Atomically claim the swap: only one worker wins when status=pending_convert.
   // updateMany returns { count: 0 } if another worker already transitioned it.
   const claimed = await prisma.onRampSwap.updateMany({
@@ -114,20 +130,35 @@ export async function processUsdcConvertAndMint(payload: UsdcConvertAndMintPaylo
     // ── Step 1: swap USDC→XLM on the Stellar DEX ────────────────────────────
     // This is the real conversion: minting must NOT proceed unless this
     // on-chain transaction is confirmed. swapUsdcToXlm throws on any failure.
-    const { xlmReceived, txHash: swapTxHash } = await swapUsdcToXlm(usdcAmount);
+    //
+    // xlmAmount is written only after the swap returns, so a non-null value
+    // means an earlier attempt already moved the funds on-chain. Redoing the
+    // swap would spend the same USDC twice, so resume at minting instead.
+    let xlmReceived: number;
+    if (swap.xlmAmount !== null) {
+      xlmReceived = Number(swap.xlmAmount);
+      logger.info("USDC→XLM swap already confirmed; resuming at mint", {
+        onRampSwapId,
+        usdcAmount,
+        xlmReceived,
+      });
+    } else {
+      const { xlmReceived: swapped, txHash: swapTxHash } = await swapUsdcToXlm(usdcAmount);
+      xlmReceived = swapped;
 
-    // Persist the XLM amount obtained so the record reflects actual reserves.
-    await prisma.onRampSwap.update({
-      where: { id: onRampSwapId },
-      data: { xlmAmount: new Decimal(xlmReceived) },
-    });
+      // Persist the XLM amount obtained so the record reflects actual reserves.
+      await prisma.onRampSwap.update({
+        where: { id: onRampSwapId },
+        data: { xlmAmount: new Decimal(xlmReceived) },
+      });
 
-    logger.info("USDC→XLM swap confirmed; proceeding to mint ACBU", {
-      onRampSwapId,
-      usdcAmount,
-      xlmReceived,
-      swapTxHash,
-    });
+      logger.info("USDC→XLM swap confirmed; proceeding to mint ACBU", {
+        onRampSwapId,
+        usdcAmount,
+        xlmReceived,
+        swapTxHash,
+      });
+    }
 
     // ── Step 2: mint ACBU to the user's Stellar wallet ───────────────────────
     const { transactionId, acbuAmount } = await mintFromUsdcInternal(
@@ -153,11 +184,16 @@ export async function processUsdcConvertAndMint(payload: UsdcConvertAndMintPaylo
       transactionId,
     });
   } catch (e) {
+    // Hand the swap back to `pending_convert` unless this was the last attempt.
+    // Keeping it in `failed` while the message is redelivered made retries a
+    // no-op: the claim below only matches `pending_convert`, so every retry
+    // found nothing to do and the deposit stayed stuck until an operator
+    // intervened.
     await prisma.onRampSwap.update({
       where: { id: onRampSwapId },
-      data: { status: "failed" },
+      data: { status: finalAttempt ? "failed" : "pending_convert" },
     });
-    logger.error("USDC convert-and-mint failed", { onRampSwapId, error: e });
+    logger.error("USDC convert-and-mint failed", { onRampSwapId, finalAttempt, error: e });
     throw e;
   }
 }

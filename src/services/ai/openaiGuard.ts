@@ -183,6 +183,7 @@ export async function guardedChat(params: GuardedChatParams): Promise<GuardedCha
   logger.debug("[openaiGuard] Sending request", { orgId, userId, model });
 
   // Wrapper that applies timeout, retries, and optionally fails-open.
+  // AB-025: Defaults to fail-closed (failOpen === false) so unverified requests are rejected during degradation.
   const timeoutMs = config.openai.failOpenTimeoutMs ?? 2000;
   const maxRetries = config.openai.failOpenMaxRetries ?? 2;
   const retryBaseMs = config.openai.failOpenRetryBaseMs ?? 500;

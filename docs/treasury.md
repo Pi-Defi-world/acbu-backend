@@ -26,8 +26,7 @@ Records all mint, burn, and transfer operations affecting treasury:
 SELECT 
   type,
   local_currency,
-  acbu_amount,
-  acbu_amount_burned,
+  usdc_amount,
   status,
   created_at
 FROM transactions
@@ -36,10 +35,10 @@ WHERE status IN ('completed', 'processing')
 ```
 
 **Aggregation Logic**:
-- `MINT` operations: Add to minted total
-- `BURN` operations: Subtract from balance
-- `TRANSFER` operations: Net movement
-- Results grouped by currency
+- `MINT` operations: Add `usdc_amount` to minted total (USD value minted)
+- `BURN` operations: Subtract `usdc_amount` from balance (USD value burned)
+- `TRANSFER` operations: Add `usdc_amount` as net movement (USD value transferred)
+- Results grouped by currency, all values in USD
 
 #### 2. Reserves (Reserves Table)
 
@@ -117,12 +116,12 @@ The system uses the following precedence when resolving data:
 
 3. Aggregate Transactions
    ├─ Group by local_currency
-   ├─ Sum minted - burned + transferred
-   └─ Store calculated total
+   ├─ Sum minted - burned + transferred (all from usdc_amount, in USD)
+   └─ Store calculatedTotalUsd per currency
 
 4. Reconcile
-   ├─ Ledger Total = Sum of all reserve_value_usd
-   ├─ Calculated Total = Sum of net transactions
+   ├─ Ledger Total (USD) = Sum of all reserve_value_usd
+   ├─ Calculated Total (USD) = Sum of net usdc_amount transactions per currency
    ├─ Discrepancy % = |Ledger - Calculated| / Ledger * 100
    └─ isReconciled = Discrepancy % ≤ Tolerance %
 

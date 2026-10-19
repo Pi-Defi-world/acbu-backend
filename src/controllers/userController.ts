@@ -26,6 +26,7 @@ export const patchMeSchema = z.object({
     .optional()
     .nullable(),
   privacy_hide_from_search: z.boolean().optional(),
+  current_passcode: z.string().min(1).max(64).optional(),
   passcode: z.string().min(8).max(64).optional(), // set or update passcode for Tier-1 recovery
 });
 
@@ -85,19 +86,65 @@ export async function patchMe(req: AuthRequest, res: Response, next: NextFunctio
       throw new AppError("User-scoped API key required", 401);
     }
     const body = patchMeSchema.parse(req.body);
+
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        phoneE164: true,
+        emailVerifiedAt: true,
+        phoneVerifiedAt: true,
+        passcodeHash: true,
+      },
+    });
+    if (!currentUser) {
+      throw new AppError("User not found", 404);
+    }
+
     const data: {
       username?: string;
       email?: string | null;
+      emailVerifiedAt?: Date | null;
       phoneE164?: string | null;
+      phoneVerifiedAt?: Date | null;
       privacyHideFromSearch?: boolean;
       passcodeHash?: string | null;
     } = {};
+
     if (body.username !== undefined) data.username = body.username;
-    if (body.email !== undefined) data.email = body.email;
-    if (body.phone_e164 !== undefined) data.phoneE164 = body.phone_e164;
+
+    // Contact changes: reset verification flag on contact change or removal
+    if (body.email !== undefined) {
+      data.email = body.email;
+      if (body.email !== currentUser.email || body.email === null) {
+        data.emailVerifiedAt = null;
+      }
+    }
+
+    if (body.phone_e164 !== undefined) {
+      data.phoneE164 = body.phone_e164;
+      if (body.phone_e164 !== currentUser.phoneE164 || body.phone_e164 === null) {
+        data.phoneVerifiedAt = null;
+      }
+    }
+
     if (body.privacy_hide_from_search !== undefined)
       data.privacyHideFromSearch = body.privacy_hide_from_search;
-    if (body.passcode !== undefined) data.passcodeHash = await bcrypt.hash(body.passcode, 10);
+
+    // Passcode change: require current-passcode if passcode is already set
+    if (body.passcode !== undefined) {
+      if (currentUser.passcodeHash) {
+        if (!body.current_passcode) {
+          throw new AppError("Current passcode is required to change passcode", 400);
+        }
+        const isMatch = await bcrypt.compare(body.current_passcode, currentUser.passcodeHash);
+        if (!isMatch) {
+          throw new AppError("Invalid current passcode", 401);
+        }
+      }
+      data.passcodeHash = await bcrypt.hash(body.passcode, 10);
+    }
 
     const user = await prisma.user.update({
       where: { id: userId },

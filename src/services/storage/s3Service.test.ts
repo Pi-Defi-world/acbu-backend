@@ -7,13 +7,51 @@
  *  - MIME type validation per document kind
  */
 
+import { config } from "../../config/env";
+import * as s3Service from "./s3Service";
 import {
   buildObjectKey,
   assertKeyOwnership,
+  assertScanAllowsDownload,
   ALLOWED_MIME_TYPES,
   ALL_ALLOWED_MIME_TYPES,
   requireConfiguredS3Bucket,
+  generateDownloadUrl,
+  getObjectScanStatus,
 } from "./s3Service";
+
+const mockS3Send = jest.fn();
+
+jest.mock("@aws-sdk/client-s3", () => {
+  class MockHeadObjectCommand {
+    constructor(public input: Record<string, unknown>) {}
+  }
+  class MockGetObjectCommand {
+    constructor(public input: Record<string, unknown>) {}
+  }
+  class MockGetObjectTaggingCommand {
+    constructor(public input: Record<string, unknown>) {}
+  }
+  class MockPutObjectCommand {
+    constructor(public input: Record<string, unknown>) {}
+  }
+  class MockPutObjectTaggingCommand {
+    constructor(public input: Record<string, unknown>) {}
+  }
+
+  return {
+    S3Client: jest.fn(() => ({ send: mockS3Send })),
+    HeadObjectCommand: MockHeadObjectCommand,
+    GetObjectCommand: MockGetObjectCommand,
+    GetObjectTaggingCommand: MockGetObjectTaggingCommand,
+    PutObjectCommand: MockPutObjectCommand,
+    PutObjectTaggingCommand: MockPutObjectTaggingCommand,
+  };
+});
+
+jest.mock("@aws-sdk/s3-request-presigner", () => ({
+  getSignedUrl: jest.fn().mockResolvedValue("https://example.com/download"),
+}));
 
 // ── buildObjectKey ────────────────────────────────────────────────────────────
 
@@ -101,6 +139,28 @@ describe("ALLOWED_MIME_TYPES", () => {
   });
 });
 
+// ── assertScanAllowsDownload ─────────────────────────────────────────────────
+
+describe("assertScanAllowsDownload", () => {
+  it("allows a document the scanner marked clean", () => {
+    expect(() => assertScanAllowsDownload("clean")).not.toThrow();
+  });
+
+  it("blocks a document the scanner marked infected", () => {
+    expect(() => assertScanAllowsDownload("infected")).toThrow(/failed virus scan/);
+  });
+
+  it("blocks a document whose scan has not finished", () => {
+    expect(() => assertScanAllowsDownload("pending")).toThrow(/pending virus scan/);
+  });
+
+  it("blocks an unrecognised status rather than serving the object", () => {
+    for (const status of ["unknown", "", "CLEAN", "quarantined"]) {
+      expect(() => assertScanAllowsDownload(status)).toThrow();
+    }
+  });
+});
+
 // ── requireConfiguredS3Bucket ────────────────────────────────────────────────
 
 describe("requireConfiguredS3Bucket", () => {
@@ -112,5 +172,39 @@ describe("requireConfiguredS3Bucket", () => {
     expect(() => requireConfiguredS3Bucket(bucket as string | undefined)).toThrow(
       "S3 bucket is not configured",
     );
+  });
+});
+
+describe("download access control", () => {
+  beforeEach(() => {
+    mockS3Send.mockReset();
+    config.nodeEnv = "production";
+    config.s3 = {
+      ...config.s3,
+      bucket: "test-bucket",
+    };
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    config.nodeEnv = "test";
+    config.s3 = {
+      ...config.s3,
+      bucket: undefined,
+    };
+  });
+
+  it("rejects download URLs when scan status is unknown", async () => {
+    jest.spyOn(s3Service, "getObjectScanStatus").mockResolvedValue("unknown");
+
+    await expect(
+      generateDownloadUrl("user-abc", "kyc/user-abc/passport/doc-123"),
+    ).rejects.toThrow(/virus scan|unavailable|blocked/i);
+  });
+
+  it("treats scan lookup failures as pending/blocked instead of safe", async () => {
+    mockS3Send.mockRejectedValueOnce(new Error("scan service unavailable"));
+
+    await expect(getObjectScanStatus("kyc/user-abc/passport/doc-123")).resolves.toBe("pending");
   });
 });

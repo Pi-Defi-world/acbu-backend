@@ -20,8 +20,20 @@ interface CacheEntry {
   expiresAt: number;
 }
 
+const MIN_REASONABLE_EXCHANGE_RATE = 1e-8;
+const MAX_REASONABLE_EXCHANGE_RATE = 1_000_000;
+
 const cache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<number | null>>();
+
+export function isReasonableExchangeRate(rate: number): boolean {
+  return (
+    Number.isFinite(rate) &&
+    rate > 0 &&
+    rate >= MIN_REASONABLE_EXCHANGE_RATE &&
+    rate <= MAX_REASONABLE_EXCHANGE_RATE
+  );
+}
 
 export function resolveExchangeRateCacheTtlMs(success: boolean): number {
   return success ? POSITIVE_TTL_MS : NEGATIVE_TTL_MS;
@@ -82,6 +94,16 @@ async function fetchFromExternalApi(currency: string): Promise<number | null> {
   });
 
   if (data.result === "success" && typeof data.conversion_rate === "number") {
+    if (!isReasonableExchangeRate(data.conversion_rate)) {
+      logger.warn("Exchange rate API returned a value outside sane bounds", {
+        currency,
+        conversionRate: data.conversion_rate,
+        min: MIN_REASONABLE_EXCHANGE_RATE,
+        max: MAX_REASONABLE_EXCHANGE_RATE,
+      });
+      return null;
+    }
+
     return data.conversion_rate;
   }
 

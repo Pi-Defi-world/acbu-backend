@@ -42,7 +42,6 @@ export async function postInvestmentWithdrawRequest(
       throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
     const { amount_acbu, audience, forced_removal } = parsed.data;
-    const amountNum = Number(amount_acbu);
     const timing = await getInvestmentWithdrawalTiming();
 
     if (audience === "business") {
@@ -67,7 +66,7 @@ export async function postInvestmentWithdrawRequest(
         userId: userId ?? undefined,
         organizationId: organizationId ?? undefined,
         audience,
-        amountAcbu: new Decimal(amountNum),
+        amountAcbu: new Decimal(amount_acbu),
         status: "requested",
         forcedRemoval: audience === "business" && forced_removal === true,
         feePercent,
@@ -81,7 +80,7 @@ export async function postInvestmentWithdrawRequest(
       status: "requested",
       amount_acbu: amount_acbu,
       available_at: availableAt.toISOString(),
-      fee_percent: feePercent?.toNumber() ?? null,
+      fee_percent: feePercent?.toString() ?? null,
       message:
         audience === "retail"
           ? "Funds will be available in 24 hours. You will receive a notification when ready."

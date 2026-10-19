@@ -37,6 +37,7 @@ const envSchema = z.object({
   JWT_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().nonnegative().default(30),
   API_KEY_SALT: z.string().default(""),
   ADMIN_API_KEY: z.string().optional(),
+  ADMIN_API_KEYS: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce
@@ -77,11 +78,44 @@ const envSchema = z.object({
   USDC_ISSUER_TESTNET: z.string().trim().min(1).optional(),
   USDC_ISSUER_MAINNET: z.string().trim().min(1).optional(),
   STELLAR_TREASURY_ACCOUNT_ID: z.string().trim().min(1).optional(),
+  TESTNET_CUSTODIAL_BOOTSTRAP: z.string().default("xlm"),
   CORS_ORIGIN: z.string().optional(),
   CDN_URL: z.string().url().optional(),
 
-  // B-063: Fail-open controls for OpenAI degradation scenarios.
-  OPENAI_FAIL_OPEN_ENABLED: z.string().default("true"),
+  // AB-052 (#1002): Stellar fee configuration. These were read by
+  // `config.stellar.*` but never declared here, so Zod stripped them from
+  // `parsed.data` and every consumer observed `undefined` — `getBaseFee()`
+  // returned the literal string "undefined" whenever dynamic fees were off
+  // (the default) and `TransactionBuilder.build()` then threw
+  // "[BigNumber Error] Not a number: undefined". The documented defaults in
+  // ENV_VARS.md were never actually applied. Same class of bug as AB-045.
+  /** Base transaction fee in stroops used as fallback when dynamic fetch is disabled or fails. */
+  STELLAR_BASE_FEE_STROOPS: z.coerce.number().int().positive().default(100),
+  /** Minimum total fee per Soroban transaction in stroops, to prevent underpricing. */
+  STELLAR_SOROBAN_MIN_FEE_STROOPS: z.coerce.number().int().positive().default(5000),
+  /** Maximum total fee per Soroban transaction in stroops (base + resource fees). */
+  STELLAR_SOROBAN_MAX_FEE_STROOPS: z.coerce.number().int().positive().default(10_000_000),
+  // AB-052: surge buffer + ceiling for classic (non-Soroban) payment fees. The
+  // buffer is applied on top of the live network base fee so a fee increase
+  // between building and submitting a payment does not reject the transaction.
+  /** Buffer added on top of the live base fee, in basis points. Default 2000 = +20%. */
+  STELLAR_FEE_SURGE_BUFFER_BPS: z.coerce.number().int().min(0).max(10_000).default(2000),
+  /** Hard ceiling for a single payment fee, in stroops. Default 1,000,000 = 0.1 XLM. */
+  STELLAR_MAX_PAYMENT_FEE_STROOPS: z.coerce.number().int().positive().default(1_000_000),
+  /** When true, the base fee is read live from Horizon instead of using STELLAR_BASE_FEE_STROOPS. */
+  STELLAR_USE_DYNAMIC_FEES: z
+    .string()
+    .toLowerCase()
+    .pipe(z.enum(["true", "false"]))
+    .default("false"),
+
+  // B-063 / AB-025: Fail-open controls for OpenAI degradation scenarios.
+  // Defaults to "false" (fail-closed) so KYC/moderation checks reject unverified requests during degradation.
+  OPENAI_FAIL_OPEN_ENABLED: z
+    .string()
+    .toLowerCase()
+    .pipe(z.enum(["true", "false"]))
+    .default("false"),
   OPENAI_FAIL_OPEN_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   OPENAI_FAIL_OPEN_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
   OPENAI_FAIL_OPEN_RETRY_BASE_MS: z.coerce.number().int().positive().default(500),
@@ -126,6 +160,148 @@ const envSchema = z.object({
 
   BULK_TRANSFER_CHUNK_SIZE: z.coerce.number().int().positive().default(100),
   BULK_TRANSFER_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(10485760),
+
+  // Notifications (email / SMS)
+  // AB-045 (#995): the weekly weight-drift audit job addresses its report to
+  // `config.notification.alertEmail`, which is populated from this variable.
+  // The key was never declared in the schema, so Zod stripped it from the
+  // parsed env and the audit email silently never sent. Declared here as an
+  // optional, trimmed, comma-separated admin distribution list.
+  NOTIFICATION_ALERT_EMAIL: z.string().trim().optional(),
+
+  // ---------------------------------------------------------------------------
+  // Previously-undeclared variables
+  // ---------------------------------------------------------------------------
+  // Every key below was read from the parsed env (i.e. `env.FOO`) but was never
+  // declared here. Zod strips undeclared keys, so each of these was silently
+  // `undefined` at runtime, and because the read failed to type-check its type
+  // fell back to `any` -- which also suppressed type-checking in every consumer
+  // downstream. This is the same defect class as AB-045 above, at scale.
+  //
+  // Defaults below are taken from the values already documented in ENV_VARS.md,
+  // .env.example and docs/fees.md; nothing here is newly invented. Where a
+  // default was not documented the key is declared `.optional()` so the value
+  // stays `undefined` exactly as before, with the fallback left in the config
+  // object below (or in src/config/limits.ts for the LIMIT_* keys).
+
+  // Stellar chain
+  STELLAR_NETWORK: z.string().default("testnet"),
+  STELLAR_HORIZON_URL: z.string().optional(),
+  STELLAR_SOROBAN_RPC_URL: z.string().optional(),
+  STELLAR_SECRET_KEY: z.string().optional(),
+  STELLAR_NATIVE_ASSET_CODE: z.string().optional(),
+  // These four are fallbacks for one another; `config.stellar.activationAmount`
+  // applies the "1" default and validates it, so they stay plain strings here.
+  WALLET_ACTIVATION_AMOUNT: z.string().optional(),
+  WALLET_ACTIVATION_NATIVE: z.string().optional(),
+  WALLET_ACTIVATION_XLM: z.string().optional(),
+  STELLAR_MIN_BALANCE: z.string().optional(),
+  WALLET_ACTIVATION_STRATEGY: z.string().default("create_account_native"),
+
+  // USDC / FX
+  USDC_ASSET_CODE_MAINNET: z.string().default("USDC"),
+  USDC_ASSET_CODE_TESTNET: z.string().default("USDC"),
+  USDC_XLM_SLIPPAGE_BPS: z.coerce.number().int().nonnegative().default(50),
+  EXCHANGERATE_API_BASE_URL: z.string().optional(),
+  EXCHANGERATE_API_KEY: z.string().optional(),
+
+  // Reserve ratios (docs/fees.md, ENV_VARS.md)
+  RESERVE_MIN_RATIO: z.coerce.number().positive().default(1.02),
+  RESERVE_TARGET_RATIO: z.coerce.number().positive().default(1.05),
+  RESERVE_ALERT_THRESHOLD: z.coerce.number().positive().default(1.02),
+  RESERVE_DRIFT_THRESHOLD_PCT: z.coerce.number().nonnegative().default(1),
+
+  // Oracle
+  ORACLE_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().positive().default(0.1),
+  ORACLE_EMERGENCY_THRESHOLD: z.coerce.number().positive().default(0.05),
+  ORACLE_MAX_DEVIATION_PER_UPDATE: z.coerce.number().positive().default(0.05),
+  ORACLE_UPDATE_INTERVAL_HOURS: z.coerce.number().int().positive().default(6),
+
+  // Redis
+  REDIS_URL: z.string().optional(),
+  REDIS_PASSWORD: z.string().optional(),
+  REDIS_SENTINELS: z.string().optional(),
+  REDIS_SENTINEL_NAME: z.string().optional(),
+  REDIS_MAX_RETRIES_PER_REQUEST: z.coerce.number().int().nonnegative().default(3),
+  REDIS_READONLY_RETRY_ATTEMPTS: z.coerce.number().int().nonnegative().default(3),
+  REDIS_READONLY_RETRY_DELAY_MS: z.coerce.number().int().nonnegative().default(100),
+
+  // S3 / object storage
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_REGION: z.string().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_ENDPOINT: z.string().optional(),
+  S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  S3_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  S3_SCAN_WEBHOOK_SECRET: z.string().optional(),
+
+  // AWS / SES
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  AWS_REGION: z.string().optional(),
+  AWS_SES_REGION: z.string().optional(),
+
+  // Soroban contract addresses
+  CONTRACT_BURNING: z.string().optional(),
+  CONTRACT_ESCROW: z.string().optional(),
+  CONTRACT_LENDING_POOL: z.string().optional(),
+  CONTRACT_MINTING: z.string().optional(),
+  CONTRACT_ORACLE: z.string().optional(),
+  CONTRACT_RESERVE_TRACKER: z.string().optional(),
+  CONTRACT_SAVINGS_VAULT: z.string().optional(),
+
+  // Email / SMS
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().max(65535).default(587),
+  SMTP_SECURE: z
+    .string()
+    .toLowerCase()
+    .pipe(z.enum(["true", "false"]))
+    .default("false"),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_MAX_CONNECTIONS: z.coerce.number().int().positive().default(5),
+  SMTP_MAX_MESSAGES: z.coerce.number().int().positive().default(100),
+  SENDGRID_API_KEY: z.string().optional(),
+  NOTIFICATION_EMAIL_PROVIDER: z.string().default("log"),
+  NOTIFICATION_SMS_PROVIDER: z.string().default("log"),
+  NOTIFICATION_FROM_EMAIL: z.string().optional(),
+
+  // Twilio
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+
+  // Payment providers
+  FLUTTERWAVE_BASE_URL: z.string().optional(),
+  FLUTTERWAVE_SECRET_KEY: z.string().optional(),
+  FLUTTERWAVE_PUBLIC_KEY: z.string().optional(),
+  FLUTTERWAVE_ENCRYPTION_KEY: z.string().optional(),
+  FLUTTERWAVE_WEBHOOK_SECRET: z.string().optional(),
+  PAYSTACK_BASE_URL: z.string().optional(),
+  PAYSTACK_SECRET_KEY: z.string().optional(),
+  MTN_MOMO_BASE_URL: z.string().optional(),
+  MTN_MOMO_API_KEY: z.string().optional(),
+  MTN_MOMO_API_USER_ID: z.string().optional(),
+  MTN_MOMO_SUBSCRIPTION_KEY: z.string().optional(),
+  MTN_MOMO_TARGET_ENVIRONMENT: z.string().optional(),
+
+  // Voice / telephony, webhooks
+  AFRICAS_TALKING_USERNAME: z.string().optional(),
+  AFRICAS_TALKING_API_KEY: z.string().optional(),
+  // Auth brute-force protection
+  AUTH_BRUTE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  AUTH_BRUTE_LOCKOUT_MS: z.coerce.number().int().positive().default(900000),
+  CAPTCHA_SECRET: z.string().optional(),
+  WEBHOOK_URL: z.string().optional(),
+  WEBHOOK_SECRET: z.string().optional(),
+  BILLS_WEBHOOK_SECRET: z.string().optional(),
+
+  // Comma-separated / JSON config blobs. Parsed in the config object below, so
+  // they stay strings here.
+  CURRENCY_CENTRAL_BANK_URLS: z.string().optional(),
+  FINTECH_CURRENCY_PROVIDERS: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -136,16 +312,13 @@ if (!parsed.success) {
 }
 
 const isJestTest =
-  typeof (globalThis as any).jest !== "undefined" ||
-  process.env.JEST_WORKER_ID !== undefined;
+  typeof (globalThis as any).jest !== "undefined" || process.env.JEST_WORKER_ID !== undefined;
 
 if (
   parsed.data.WEBHOOK_SIGNATURE_BYPASS !== undefined &&
   !["development", "test"].includes(parsed.data.NODE_ENV)
 ) {
-  throw new Error(
-    "WEBHOOK_SIGNATURE_BYPASS must be unset in staging and production environments",
-  );
+  throw new Error("WEBHOOK_SIGNATURE_BYPASS must be unset in staging and production environments");
 }
 
 if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.PRISMA_ACCELERATE_URL) {
@@ -190,9 +363,23 @@ if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.USDC_IS
   throw new Error("Missing required environment variable: USDC_ISSUER_MAINNET");
 }
 
+// AB-024: PII_ENCRYPTION_KEY must be set in production. Without it, sensitive
+// fields (KYC payloads, Stellar secret material) would be stored in plaintext,
+// violating the encryption-at-rest requirement.
+if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.PII_ENCRYPTION_KEY) {
+  throw new Error(
+    "Missing required environment variable: PII_ENCRYPTION_KEY (must be a 64-character hex string). " +
+      "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+  );
+}
+
 const s3ScanWebhookSecret = process.env.S3_SCAN_WEBHOOK_SECRET?.trim() || "change-me-in-production";
 
-if (parsed.data.NODE_ENV === "production" && !isJestTest && s3ScanWebhookSecret === "change-me-in-production") {
+if (
+  parsed.data.NODE_ENV === "production" &&
+  !isJestTest &&
+  s3ScanWebhookSecret === "change-me-in-production"
+) {
   throw new Error("Missing required environment variable: S3_SCAN_WEBHOOK_SECRET");
 }
 // #382: Fintech partner keys must never be absent in production — an empty
@@ -254,6 +441,29 @@ export const config = {
   jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
   apiKeySalt: env.API_KEY_SALT,
   adminApiKey: env.ADMIN_API_KEY,
+  adminApiKeys: ((): Array<{ id: string; key: string }> => {
+    const keys: Array<{ id: string; key: string }> = [];
+    if (env.ADMIN_API_KEYS) {
+      env.ADMIN_API_KEYS.split(",")
+        .map((k) => k.trim())
+        .filter(Boolean)
+        .forEach((entry, idx) => {
+          if (entry.includes(":")) {
+            const [id, key] = entry.split(":", 2);
+            if (key && key.trim()) keys.push({ id: id.trim(), key: key.trim() });
+          } else {
+            keys.push({ id: `admin_${idx + 1}`, key: entry });
+          }
+        });
+    }
+    if (env.ADMIN_API_KEY && env.ADMIN_API_KEY.trim()) {
+      const singleKey = env.ADMIN_API_KEY.trim();
+      if (!keys.some((k) => k.key === singleKey)) {
+        keys.push({ id: "default_admin", key: singleKey });
+      }
+    }
+    return keys;
+  })(),
   rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
   rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
   authRateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
@@ -406,7 +616,7 @@ export const config = {
     nativeAssetCode: ((): string => {
       const explicit = env.STELLAR_NATIVE_ASSET_CODE?.trim();
       if (explicit) return explicit.toUpperCase();
-      const bootstrapProfile = (env.TESTNET_CUSTODIAL_BOOTSTRAP ?? "").trim().toLowerCase();
+      const bootstrapProfile = (env.TESTNET_CUSTODIAL_BOOTSTRAP ?? "xlm").trim().toLowerCase();
       return bootstrapProfile.includes("pi") ? "PI" : "XLM";
     })(),
     /** Wallet activation strategy. Default keeps the current create-account path, but makes it explicit/configurable. */
@@ -442,6 +652,10 @@ export const config = {
     sorobanMaxFeeStroops: env.STELLAR_SOROBAN_MAX_FEE_STROOPS,
     /** Minimum total fee per Soroban transaction in stroops to prevent underpricing. Default 5000 stroops. */
     sorobanMinFeeStroops: env.STELLAR_SOROBAN_MIN_FEE_STROOPS,
+    /** AB-052: buffer (bps) added on top of the live base fee for classic payments. */
+    feeSurgeBufferBps: env.STELLAR_FEE_SURGE_BUFFER_BPS,
+    /** AB-052: hard ceiling (stroops) for a single classic payment fee. */
+    maxPaymentFeeStroops: env.STELLAR_MAX_PAYMENT_FEE_STROOPS,
     /** Circle USDC issuer on Stellar testnet, configured via the environment. */
     usdcIssuerTestnet: env.USDC_ISSUER_TESTNET,
     /** Circle USDC issuer on Stellar mainnet, configured via the environment. */
@@ -471,13 +685,8 @@ export const config = {
     escrow: env.CONTRACT_ESCROW || "",
   },
 
-  // Bulk transfer CSV upload processing
-  bulkTransfer: {
-    /** Rows per transaction chunk. Default 100. */
-    chunkSize: parseInt(process.env.BULK_TRANSFER_CHUNK_SIZE || "100", 10),
-    /** Upload size limit in bytes. Default 10485760 (10 MiB). */
-    maxFileSizeBytes: parseInt(process.env.BULK_TRANSFER_MAX_FILE_SIZE_BYTES || "10485760", 10),
-  },
+  // Bulk transfer CSV upload processing is defined once, below, reading the
+  // validated `env` rather than process.env directly.
 
   // Oracle (40/40/20: central bank, fintech, forex)
   oracle: {
@@ -544,31 +753,13 @@ export const config = {
     secret: env.WEBHOOK_SECRET,
   },
 
-  // Limits
-  limits: {
-    retail: {
-      depositDailyUsd: env.LIMIT_RETAIL_DEPOSIT_DAILY_USD,
-      depositMonthlyUsd: env.LIMIT_RETAIL_DEPOSIT_MONTHLY_USD,
-      withdrawalSingleCurrencyDailyUsd: env.LIMIT_RETAIL_WITHDRAWAL_DAILY_USD,
-      withdrawalSingleCurrencyMonthlyUsd: env.LIMIT_RETAIL_WITHDRAWAL_MONTHLY_USD,
-    },
-    business: {
-      depositDailyUsd: env.LIMIT_BUSINESS_DEPOSIT_DAILY_USD,
-      depositMonthlyUsd: env.LIMIT_BUSINESS_DEPOSIT_MONTHLY_USD,
-      withdrawalSingleCurrencyDailyUsd: env.LIMIT_BUSINESS_WITHDRAWAL_DAILY_USD,
-      withdrawalSingleCurrencyMonthlyUsd: env.LIMIT_BUSINESS_WITHDRAWAL_MONTHLY_USD,
-    },
-    government: {
-      depositDailyUsd: env.LIMIT_GOV_DEPOSIT_DAILY_USD,
-      depositMonthlyUsd: env.LIMIT_GOV_DEPOSIT_MONTHLY_USD,
-      withdrawalSingleCurrencyDailyUsd: env.LIMIT_GOV_WITHDRAWAL_DAILY_USD,
-      withdrawalSingleCurrencyMonthlyUsd: env.LIMIT_GOV_WITHDRAWAL_MONTHLY_USD,
-    },
-    circuitBreaker: {
-      reserveWeightThresholdPct: env.LIMIT_CIRCUIT_BREAKER_RESERVE_WEIGHT_PCT,
-      minReserveRatio: env.LIMIT_CIRCUIT_BREAKER_MIN_RATIO,
-    },
-  },
+  // Limits are NOT exposed here on purpose. `config.limits` existed but had no
+  // readers anywhere in the codebase, so a second copy of the retail/business/
+  // government USD limits sat in config that nothing consumed: setting the
+  // LIMIT_* variables appeared to configure limits while changing nothing. The
+  // live implementation is `src/config/limits.ts`, which reads process.env
+  // directly via `readNumber(name, fallback)` and is consumed by
+  // `src/services/limits/limitsService.ts`. Keep the defaults in that one place.
 
   // Auth Security
   auth: {
@@ -581,8 +772,8 @@ export const config = {
     apiKey: env.OPENAI_API_KEY || "",
     orgMonthlyBudgetUsd: env.OPENAI_ORG_MONTHLY_BUDGET_USD,
     maxTokensPerRequest: env.OPENAI_MAX_TOKENS_PER_REQUEST,
-    // Fail-open behaviour: if true, downstream callers will be allowed to continue
-    // when the OpenAI service is degraded (timeouts, rate limits, network issues).
+    // AB-025: Fail-open behaviour (defaults to false / fail-closed for security & KYC compliance).
+    // When false, downstream callers fail closed when OpenAI service is degraded.
     failOpenEnabled: env.OPENAI_FAIL_OPEN_ENABLED === "true",
     failOpenTimeoutMs: env.OPENAI_FAIL_OPEN_TIMEOUT_MS,
     failOpenMaxRetries: env.OPENAI_FAIL_OPEN_MAX_RETRIES,
@@ -621,10 +812,5 @@ export const config = {
     leakThresholdPct: env.MEMORY_LEAK_THRESHOLD_PCT,
     checkIntervalMs: env.MEMORY_CHECK_INTERVAL_MS,
     heapDumpDir: env.HEAP_DUMP_DIR,
-  },
-
-  bulkTransfer: {
-    chunkSize: env.BULK_TRANSFER_CHUNK_SIZE,
-    maxFileSizeBytes: env.BULK_TRANSFER_MAX_FILE_SIZE_BYTES,
   },
 };

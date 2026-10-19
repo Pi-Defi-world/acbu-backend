@@ -12,12 +12,15 @@
  * - Diff report includes per-currency analysis with thresholds
  * - Audit stored with "pending" status awaiting manual approval
  * - Audit log entries created for all policy drift events
+ *
+ * AB-026: Uses a distributed MongoDB lock so only one instance executes the
+ * audit per week under horizontal scaling.
  */
-
 import { logger } from "../config/logger";
 import { weightDriftAuditService } from "../services/reserve/WeightDriftAuditService";
 import { sendEmail } from "../services/notification";
 import { config } from "../config/env";
+import { acquireJobLock, releaseJobLock } from "../utils/jobLock";
 
 const DEFAULT_INTERVAL_DAYS = 7; // Run weekly
 const INTERVAL_MS =
@@ -29,6 +32,11 @@ const INTERVAL_MS =
   1000;
 
 const MAX_TIMEOUT_MS = 2147483647; // Max for 32-bit signed int
+
+const JOB_NAME = "weight-drift-audit";
+// Lock TTL is 6 days 22 h — expires well before the next weekly run so a
+// crashed instance can never block the following week's execution indefinitely.
+const LOCK_TTL_S = (6 * 24 + 22) * 60 * 60;
 
 let stopRequested = false;
 
@@ -69,9 +77,31 @@ async function longSleep(ms: number): Promise<void> {
 }
 
 /**
+ * Normalise the configured admin distribution list into individual recipients.
+ *
+ * The destination is `config.notification.alertEmail`, which is backed by the
+ * comma-separated `NOTIFICATION_ALERT_EMAIL` env var. Splitting on commas
+ * without trimming would happily send to " ops@example.com" (note the leading
+ * space) and count stray delimiters as recipients, so normalise once here.
+ */
+export function parseAlertRecipients(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((address) => address.trim())
+    .filter((address) => address.length > 0);
+}
+
+/**
  * Execute weight drift audit job once
  */
 export async function runWeightDriftAuditOnce(): Promise<void> {
+  const acquired = await acquireJobLock(JOB_NAME, LOCK_TTL_S);
+  if (!acquired) {
+    logger.info("Weight drift audit skipped — another instance holds the lock");
+    return;
+  }
+
   const startTime = Date.now();
 
   try {
@@ -133,18 +163,22 @@ Created At: ${new Date().toISOString()}
 `;
 
     // 4. Send notification to admins (configurable via env)
-    const adminNotificationEmail = config.notification.alertEmail;
-    if (adminNotificationEmail) {
+    // AB-045 (#995): the destination is config.notification.alertEmail, backed by
+    // NOTIFICATION_ALERT_EMAIL in src/config/env.ts. The previously documented
+    // ADMIN_NOTIFICATION_EMAIL key never existed on the config object, so the
+    // audit report was silently never delivered.
+    const adminNotificationEmails = parseAlertRecipients(config.notification.alertEmail);
+    if (adminNotificationEmails.length > 0) {
       try {
         await sendEmail(
-          adminNotificationEmail,
+          adminNotificationEmails.join(","),
           `[ACBU] Weekly Weight Drift Audit - ${audit.currenciesExceedingThreshold > 0 ? "ACTION REQUIRED" : "OK"}`,
           emailBody,
         );
 
         logger.info("Weight drift audit email sent", {
           auditId: audit.auditId,
-          recipientCount: adminNotificationEmail.split(",").length,
+          recipientCount: adminNotificationEmails.length,
         });
       } catch (e) {
         logger.warn("Failed to send weight drift audit email", {
@@ -152,6 +186,12 @@ Created At: ${new Date().toISOString()}
           error: e,
         });
       }
+    } else {
+      // Surface the skipped notification instead of silently doing nothing, so a
+      // missing NOTIFICATION_ALERT_EMAIL is visible to operators in the logs.
+      logger.warn("Weight drift audit email skipped: NOTIFICATION_ALERT_EMAIL is not configured", {
+        auditId: audit.auditId,
+      });
     }
 
     const duration = Date.now() - startTime;
@@ -168,6 +208,8 @@ Created At: ${new Date().toISOString()}
     });
 
     // Don't re-throw; allow scheduler to continue
+  } finally {
+    await releaseJobLock(JOB_NAME);
   }
 }
 
@@ -214,6 +256,7 @@ export async function startWeightDriftAuditScheduler(): Promise<void> {
 
   logger.info("Weight drift audit scheduler started", {
     intervalDays: INTERVAL_MS / (24 * 60 * 60 * 1000),
+    lockTtlSeconds: LOCK_TTL_S,
   });
 }
 

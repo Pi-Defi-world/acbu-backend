@@ -20,9 +20,7 @@ function isLendingPoolEffectType(type: string): type is LendingPoolEffectType {
   return (LENDING_POOL_EFFECT_TYPES as readonly string[]).includes(type);
 }
 
-function sanitizeEventData(
-  data: Record<string, unknown>,
-): Record<string, unknown> {
+function sanitizeEventData(data: Record<string, unknown>): Record<string, unknown> {
   const { txHash, valid } = extractAndValidateTxHash(data);
   if (txHash === null || !valid) {
     const sanitized = { ...data };
@@ -92,11 +90,7 @@ export async function startLendingPoolEventListener(): Promise<void> {
     }
   };
 
-  eventListener.listenToContractEvents(
-    contractId,
-    [...LENDING_POOL_EFFECT_TYPES],
-    handler,
-  );
+  eventListener.listenToContractEvents(contractId, [...LENDING_POOL_EFFECT_TYPES], handler);
   logger.info("Lending pool event listener registered with validation", {
     contractId,
     effectTypes: LENDING_POOL_EFFECT_TYPES,

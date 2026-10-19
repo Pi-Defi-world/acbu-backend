@@ -17,7 +17,7 @@ import {
   renderInvestmentWithdrawalReadyTemplate,
 } from "../services/notification";
 import {
-  parseIncomingMessage,
+  parseQueueMessage,
   deadLetterMessage,
   MessageValidationError,
 } from "../utils/rabbitmq-validation";
@@ -25,7 +25,7 @@ import type { OtpSend, Notification } from "../types/rabbitmq-schemas";
 
 type UserNotificationContact = Pick<User, "email" | "phoneE164">;
 
-async function processOtpSend(payload: OtpSend): Promise<void> {
+export async function processOtpSend(payload: OtpSend): Promise<void> {
   const { channel, to, code } = payload;
   const body = renderOtpTemplate(code);
   if (channel === "email") {
@@ -37,7 +37,7 @@ async function processOtpSend(payload: OtpSend): Promise<void> {
   }
 }
 
-async function processNotification(payload: Notification): Promise<void> {
+export async function processNotification(payload: Notification): Promise<void> {
   const { type } = payload;
   if (type === "reserve_alert") {
     const { health, overcollateralizationRatio } = payload;
@@ -100,7 +100,13 @@ async function processNotification(payload: Notification): Promise<void> {
     }
     return;
   }
-  logger.debug("Notification type not handled", { type });
+
+  // Exhaustiveness check: every member of the Notification union is handled
+  // above, so `type` narrows to `never` here. Assigning it to a `never` binding
+  // turns "a new notification type was added to NotificationSchema but not to
+  // this consumer" into a compile-time error instead of a silent drop.
+  const unhandledType: never = type;
+  logger.debug("Notification type not handled", { type: unhandledType });
 }
 
 export async function startNotificationConsumer(): Promise<void> {
@@ -117,9 +123,9 @@ export async function startNotificationConsumer(): Promise<void> {
 
       try {
         // Validate OTP send message
-        const validatedPayload = parseIncomingMessage<OtpSend>(QUEUES.OTP_SEND, msg.content);
-        await processOtpSend(validatedPayload);
-        ch.ack(msg);
+      const validatedPayload = parseIncomingMessage(QUEUES.OTP_SEND, msg.content);
+      await processOtpSend(validatedPayload);
+      ch.ack(msg);
       } catch (e) {
         if (e instanceof MessageValidationError) {
           logger.error("OTP_SEND validation failed, sending to DLQ", {
@@ -156,11 +162,9 @@ export async function startNotificationConsumer(): Promise<void> {
       const retries = typeof headers["x-retries"] === "number" ? headers["x-retries"] : 0;
 
       try {
-        // Validate notification message
-        const validatedPayload = parseIncomingMessage<Notification>(
-          QUEUES.NOTIFICATIONS,
-          msg.content,
-        );
+        // Validate notification message; the payload type is inferred from the
+        // queue constant (Notification) rather than asserted by the caller.
+        const validatedPayload = parseIncomingMessage(QUEUES.NOTIFICATIONS, msg.content);
         await processNotification(validatedPayload);
         ch.ack(msg);
       } catch (e) {

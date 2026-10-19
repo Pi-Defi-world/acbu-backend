@@ -10,6 +10,7 @@
 import { Request, Response, NextFunction } from "express";
 import { stellarClient } from "../services/stellar/client";
 import { getContractAddresses } from "../config/contracts";
+import { getAcbuAssetConfig } from "../config/acbuAsset";
 
 export async function getPublicAssetsConfig(
   _req: Request,
@@ -17,16 +18,15 @@ export async function getPublicAssetsConfig(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const issuer = process.env.STELLAR_ACBU_ASSET_ISSUER;
-    const code = (process.env.STELLAR_ACBU_ASSET_CODE || "ACBU").trim().toUpperCase();
+    const { code, issuer } = getAcbuAssetConfig();
 
     res.status(200).json({
       acbu: {
         code,
-        issuer: issuer ?? null,
+        issuer,
       },
       demo_fiat: {
-        issuer: issuer ?? null,
+        issuer,
       },
       stellar: {
         network_passphrase: stellarClient.getNetworkPassphrase(),

@@ -152,6 +152,20 @@ export class RedisService {
     });
   }
 
+  /**
+   * Atomically set `key` only when it does not already exist (`SET ... NX EX`).
+   *
+   * Returns true when this call created the key (the caller won the claim) and
+   * false when the key was already present. Used for cross-instance
+   * single-use/deny-list semantics, e.g. the 2FA challenge JTI store (#984).
+   */
+  async setNx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    return this.executeWithReadonlyRetry(async () => {
+      const result = await this.getClient().set(key, value, "EX", ttlSeconds, "NX");
+      return result === "OK";
+    });
+  }
+
   async del(...keys: string[]): Promise<number> {
     return this.executeWithReadonlyRetry(async () => {
       return this.getClient().del(...keys);

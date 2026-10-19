@@ -17,7 +17,11 @@ module.exports = {
     "!src/index.ts",
   ],
   coverageDirectory: "coverage",
-  coverageReporters: ["text", "lcov", "html"],
+  // "json-summary" emits coverage/coverage-summary.json, a small machine-readable
+  // totals file the CI workflow reads to post a coverage table into the run's
+  // job summary — otherwise coverage is only visible by downloading the
+  // uploaded artifact, so reviewers have no in-PR regression signal.
+  coverageReporters: ["text", "lcov", "html", "json-summary"],
   coverageThreshold: {
     global: {
       statements: 45,

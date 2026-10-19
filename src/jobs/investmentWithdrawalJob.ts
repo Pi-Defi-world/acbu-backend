@@ -9,6 +9,7 @@ import {
   READY_WITHDRAWAL_STATUSES,
 } from "../services/investment/withdrawalTimingService";
 import { retryWithBackoff } from "../utils/retry";
+import { decimalToNumber } from "../utils/decimalUtils";
 
 export async function processInvestmentWithdrawalAvailability(): Promise<void> {
   const { trustedNow, records } = await getReadyInvestmentWithdrawalBatch();
@@ -43,7 +44,7 @@ export async function processInvestmentWithdrawalAvailability(): Promise<void> {
         continue;
       }
 
-      const amountAcbu = r.amountAcbu.toNumber();
+      const amountAcbu = decimalToNumber(r.amountAcbu);
       if (r.userId || r.organizationId) {
         await retryWithBackoff(
           () =>

@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 enum ApiKeyType {
@@ -89,12 +90,15 @@ model Transaction {
   organizationId   String?          @map("organization_id") @db.Uuid
   idempotencyKey   String?          @unique(map: "idx_transactions_idempotency_key") @map("idempotency_key") @db.VarChar(255)
   type             String           @db.VarChar(20)
+  // pending | processing | completed | failed | refunded — enforced by the
+  // chk_transactions_status CHECK constraint (see TRANSACTION_STATUSES in
+  // src/utils/transactionStateMachine.ts).
   status           String           @default("pending") @db.VarChar(20)
   usdcAmount       Decimal?         @map("usdc_amount") @db.Decimal(20, 8)
   acbuAmount       Decimal?         @map("acbu_amount") @db.Decimal(20, 8)
   acbuAmountBurned Decimal?         @map("acbu_amount_burned") @db.Decimal(20, 8)
   localCurrency    String?          @map("local_currency") @db.VarChar(3)
-  localAmount      Decimal?         @map("local_amount") @db.Decimal(20, 2)
+  localAmount      Decimal?         @map("local_amount") @db.Decimal(20, 8)
   recipientAccount Json?            @map("recipient_account")
   recipientAddress String?          @map("recipient_address") @db.VarChar(56)
   fee              Decimal?         @db.Decimal(20, 8)

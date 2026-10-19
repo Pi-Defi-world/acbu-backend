@@ -1,0 +1,193 @@
+name: Release & Artifact Publish
+
+# Trigger on semantic version tags (e.g. v1.0.0, v1.0.1, v2.1.0-rc.1) or manual trigger.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.0.1)"
+        required: true
+      dry_run:
+        description: "Dry run (build artifacts without publishing to GHCR/Releases)"
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ── Step 1: Quality gate & verify build ─────────────────────────────────────
+  build-and-test:
+    name: Build & Verify Artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: "10.33.1"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm prisma:generate
+
+      - name: Compile TypeScript
+        run: pnpm build
+
+      - name: Resolve Release Tag & Version
+        id: version
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          # Strip leading 'v' if present for clean semver
+          SEMVER="${RAW_TAG#v}"
+          echo "tag=${RAW_TAG}" >> "$GITHUB_OUTPUT"
+          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
+
+      - name: Package Release Tarball
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          ARCHIVE_NAME="acbu-backend-${TAG}.tar.gz"
+          mkdir -p release-dist
+          tar -czf "release-dist/${ARCHIVE_NAME}" \
+            dist/ \
+            prisma/ \
+            package.json \
+            pnpm-lock.yaml \
+            README.md \
+            CHANGELOG.md
+
+          cd release-dist
+          sha256sum "${ARCHIVE_NAME}" > SHA256SUMS
+          cd ..
+
+      - name: Upload Release Archive Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-archive
+          path: release-dist/
+
+  # ── Step 2: Publish Docker Container Image to GHCR ─────────────────────────
+  publish-container:
+    name: Build & Publish Container Image
+    needs: [build-and-test]
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve Version Strings
+        id: meta
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          SEMVER="${RAW_TAG#v}"
+          MAJOR=$(echo "$SEMVER" | cut -d. -f1)
+          MINOR=$(echo "$SEMVER" | cut -d. -f2)
+
+          echo "raw_tag=${RAW_TAG}" >> "$GITHUB_OUTPUT"
+          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${MAJOR}.${MINOR}" >> "$GITHUB_OUTPUT"
+          echo "major=${MAJOR}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.raw_tag }}
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.semver }}
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.major_minor }}
+            ghcr.io/${{ github.repository }}:latest
+          labels: |
+            org.opencontainers.image.title=ACBU Backend API Server
+            org.opencontainers.image.description=Production release of ACBU Backend
+            org.opencontainers.image.version=${{ steps.meta.outputs.semver }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Step 3: Create GitHub Release with Artifacts ───────────────────────────
+  github-release:
+    name: Create GitHub Release
+    needs: [build-and-test, publish-container]
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download Release Archive Artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: release-archive
+          path: release-dist
+
+      - name: Extract Release Notes from CHANGELOG
+        id: notes
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${RAW_TAG#v}"
+
+          # Extract section from CHANGELOG.md matching version if present
+          if grep -q "## \[${VERSION}\]" CHANGELOG.md; then
+            sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d' > RELEASE_NOTES.md
+          elif grep -q "## ${VERSION}" CHANGELOG.md; then
+            sed -n "/## ${VERSION}/,/## /p" CHANGELOG.md | sed '$d' > RELEASE_NOTES.md
+          else
+            echo "Release ${RAW_TAG} (${VERSION})" > RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+            echo "Automated reproducible production release for commit \`${{ github.sha }}\`." >> RELEASE_NOTES.md
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d190 # v2.0.8
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          files: |
+            release-dist/*.tar.gz
+            release-dist/SHA256SUMS

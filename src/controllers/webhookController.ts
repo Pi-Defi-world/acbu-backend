@@ -32,9 +32,12 @@ const bypassEnabled =
 
 // Maximum allowed clock drift in seconds between the webhook timestamp and server time.
 // Rejects replayed webhooks that fall outside this window. Default: 300 s (±5 min).
-const WEBHOOK_TIMESTAMP_TOLERANCE_S = z.coerce.number().int().min(1).max(86400).parse(
-  process.env.WEBHOOK_TIMESTAMP_TOLERANCE_S || "300",
-);
+const WEBHOOK_TIMESTAMP_TOLERANCE_S = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(86400)
+  .parse(process.env.WEBHOOK_TIMESTAMP_TOLERANCE_S || "300");
 
 /**
  * Validate a webhook timestamp (Unix seconds or ISO-8601) against server time.

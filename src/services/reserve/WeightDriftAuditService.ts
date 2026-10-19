@@ -90,11 +90,7 @@ export class WeightDriftAuditService {
 
         maxDrift = Math.max(maxDrift, Math.abs(driftPercent));
 
-        const recommendation = this.generateRecommendation(
-          currency,
-          policyWeight,
-          driftPercent,
-        );
+        const recommendation = this.generateRecommendation(currency, policyWeight, driftPercent);
 
         entries.push({
           currency,
