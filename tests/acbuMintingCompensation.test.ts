@@ -2,6 +2,7 @@ import { MintingService } from "../src/services/contracts/acbuMinting.service";
 import { contractClient } from "../src/services/stellar/contractClient";
 import { stellarClient } from "../src/services/stellar/client";
 import { prisma } from "../src/config/database";
+import type { TransactionStatus } from "../src/utils/transactionStateMachine";
 
 jest.mock("../src/services/stellar/contractClient", () => ({
   contractClient: { invokeContract: jest.fn() },

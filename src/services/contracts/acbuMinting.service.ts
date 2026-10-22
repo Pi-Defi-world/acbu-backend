@@ -3,6 +3,19 @@ import { prisma } from "../../config/database";
 import { contractClient, ContractClient } from "../stellar/contractClient";
 import { stellarClient } from "../stellar/client";
 import { logger } from "../../config/logger";
+import type { TransactionStatus } from "../../utils/transactionStateMachine";
+
+/**
+ * Status written to `transactions.status` when an on-chain mint fails and the
+ * linked transaction has to be compensated.
+ *
+ * Must be lowercase and a member of `TransactionStatus`: every other writer in
+ * the codebase (bills, fiat, enterprise, …) already uses the lowercase form,
+ * and the `transactions.status` CHECK constraint only allows that set. The
+ * previous `"FAILED"` value was not a valid transaction status, so it was
+ * silently invisible to status-based queries and to the state machine.
+ */
+const COMPENSATION_STATUS: TransactionStatus = "failed";
 
 /** Soroban `CurrencyCode` — tuple struct with one string field. */
 function currencyCodeToScVal(code: string): xdr.ScVal {
@@ -71,9 +84,9 @@ export class MintingService {
     try {
       await prisma.transaction.update({
         where: { id: txId },
-        data: { status: "FAILED" },
+        data: { status: COMPENSATION_STATUS },
       });
-      logger.info(`Compensated: Marked transaction ${txId} as FAILED`);
+      logger.info(`Compensated: Marked transaction ${txId} as ${COMPENSATION_STATUS}`);
     } catch (dbError) {
       logger.error("CRITICAL: DB compensation failed", { txId, dbError });
     }
