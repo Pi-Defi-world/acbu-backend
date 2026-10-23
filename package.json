@@ -67,7 +67,7 @@
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@prisma/client": "^6.4.3",
     "@prisma/extension-accelerate": "^3.0.1",
-    "@stellar/stellar-sdk": "^15.0.1",
+    "@stellar/stellar-sdk": "15.1.0",
     "@types/amqplib": "^0.10.8",
     "@types/cors": "^2.8.17",
     "@types/decimal.js": "^7.4.3",
@@ -147,6 +147,7 @@
       ]
     },
     "overrides": {
+      "@stellar/stellar-sdk": "15.1.0",
       "fast-xml-parser": ">=5.10.1",
       "handlebars": ">=4.7.10",
       "minimatch@^3": "3.1.4",
