@@ -129,6 +129,8 @@ Basket weights are governed on-chain and updated via a proposal/vote mechanism.
 
 ## 11. Technical Infrastructure
 
+For backend, data-service, and reserve incident response procedures, see the [Backend and Reserve Disaster Recovery Runbook](runbooks/backend-reserve-disaster-recovery.md).
+
 - **Runtime:** Node.js 20 + TypeScript
 - **Database:** PostgreSQL via Prisma Accelerate (managed, connection-pooled)
 - **Cache/Session:** MongoDB Atlas + Redis
