@@ -1,0 +1,70 @@
+name: Circuit Tests
+
+# W2-Z-007: Enforce that Noir/Nargo circuit tests run on every PR that
+# touches the zk/ directory so constraint logic (KYC tier + country
+# checks) is always verified before merge.
+#
+# W2-Z-006: Nargo toolchain version is pinned via NARGO_VERSION below.
+# Bump NARGO_VERSION (and update zk/circuits/kyc_verifier/Nargo.toml
+# compiler_version to match) when the circuits require a newer compiler.
+
+on:
+  push:
+    branches: [main, develop, dev]
+    paths:
+      - "zk/**"
+      - ".github/workflows/circuit-tests.yml"
+  pull_request:
+    branches: [main, develop, dev]
+    paths:
+      - "zk/**"
+      - ".github/workflows/circuit-tests.yml"
+
+# ── Pinned Nargo version ────────────────────────────────────────────────────
+# Single source of truth for the Noir compiler used in CI.
+# Must match compiler_version in zk/circuits/*/Nargo.toml.
+env:
+  NARGO_VERSION: "0.38.0"
+
+jobs:
+  nargo-test:
+    name: Nargo circuit tests (v${{ env.NARGO_VERSION }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Install the pinned Nargo toolchain (version set via top-level env.NARGO_VERSION).
+      - name: Install Nargo ${{ env.NARGO_VERSION }}
+        run: |
+          set -euo pipefail
+          echo "Installing Nargo ${NARGO_VERSION}..."
+          curl -sSL \
+            "https://github.com/noir-lang/noir/releases/download/v${NARGO_VERSION}/nargo-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C /usr/local/bin
+          nargo --version
+
+      # Cache the Nargo download / compilation artifacts.
+      - name: Cache Nargo artifacts
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.nargo
+            zk/circuits/**/target
+          key: ${{ runner.os }}-nargo-${{ hashFiles('zk/**/Nargo.toml', 'zk/**/*.nr') }}
+          restore-keys: |
+            ${{ runner.os }}-nargo-
+
+      # Run `nargo test` for every circuit package under zk/circuits/.
+      # Each package is tested independently so failure messages are
+      # clearly scoped to the offending circuit.
+      - name: Run kyc_verifier circuit tests
+        working-directory: zk/circuits/kyc_verifier
+        run: nargo test --show-output
+
+      # If more circuits are added under zk/circuits/, add a step here:
+      #
+      # - name: Run <circuit_name> circuit tests
+      #   working-directory: zk/circuits/<circuit_name>
+      #   run: nargo test --show-output

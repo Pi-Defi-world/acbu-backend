@@ -1,0 +1,52 @@
+# Build artifacts
+/target/
+
+# Cargo.lock is committed for reproducible, MSRV-pinned builds (see
+# rust-toolchain.toml). Do not re-add it here.
+
+# WASM build output — the vendored token contract is committed because
+# acbu_minting/acbu_burning/acbu_reserve_tracker import it at compile time
+# via contractimport!.  Its integrity is verified by build.rs (SHA-256).
+# Other WASM artifacts must not be committed.
+*.wasm
+!soroban_token_contract.wasm
+
+# Editor/IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+**/*.rs.bk
+.soroban/
+.stellar/
+test_snapshots/
+
+# Sensitive architecture and security docs — kept local only, matching the
+# backend repo's policy (SC-031). These enumerate unpatched/patched attack
+# surface and should not be committed to source control.
+/ISSUES.md
+/SECURITY_FIX_SUMMARY.md
+
+# Diagnostic / build dumps — never commit machine-specific artifacts
+error.txt
+error2.txt
+final.txt
+
+# Node tooling (not relevant to Rust repo)
+nodemon.json
+
+# Stray test files at repo root
+test_comprehensive.rs
+
+# Python
+__pycache__/
+*.pyc

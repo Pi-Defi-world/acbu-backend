@@ -1,0 +1,60 @@
+[workspace]
+members = [
+    "acbu_minting",
+    "acbu_burning",
+    "acbu_oracle",
+    "acbu_reserve_tracker",
+    "acbu_savings_vault",
+    "acbu_lending_pool",
+    "acbu_escrow",
+    "acbu_multisig",
+    "shared",
+    "verifier",
+]
+resolver = "2"
+
+# ---------------------------------------------------------------------------
+# Workspace-wide dependency versions
+#
+# Use `=` (exact) requirements for Soroban SDK crates, not caret (`^`) or
+# bare version strings.  A Soroban minor release can change WASM encoding,
+# host-function signatures, gas cost tables, or XDR event shapes — all of
+# which break on-chain compatibility without any change to contract source.
+#
+# To upgrade: bump *both* fields below (and run `cargo update` to regenerate
+# Cargo.lock), then rebuild + re-test every contract before deploying.
+#
+# Supply chain (W2-Z-020): no dependency — the Soroban SDK, the ledger-snapshot
+# verifier lib, or anything transitive — may be sourced from a git URL. Every
+# crate must resolve from a registry with a checksum recorded in the committed
+# Cargo.lock, so `cargo build --locked` resolves without live GitHub access.
+# `.github/workflows/deps-guard.yml` fails the build if this regresses.
+# ---------------------------------------------------------------------------
+[workspace.dependencies]
+# Exact pin — caret (`^`) is intentionally *not* used here.
+# (Note: 21.0.0 was yanked from crates.io, using latest 21.x version)
+soroban-sdk = "=21.7.7"
+# Pin serde_with to version compatible with rustc 1.88.0
+serde_with = "=3.9.0"
+
+[profile.release]
+opt-level = "z"      # Optimize for size
+lto = true           # Enable link-time optimization
+codegen-units = 1    # Better optimization
+strip = true         # Strip symbols
+overflow-checks = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug = true
+
+# ---------------------------------------------------------------------------
+# Workspace-wide lint policy — enforced by `cargo clippy` in CI.
+# ---------------------------------------------------------------------------
+[workspace.lints.rust]
+unused_imports    = "deny"   # the original hygiene issue; hard-fail in CI
+dead_code         = "warn"
+unused_variables  = "warn"
+
+[workspace.lints.clippy]
+all  = "warn"   # surface all default clippy lints across every crate

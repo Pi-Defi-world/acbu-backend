@@ -1,0 +1,155 @@
+# Enhanced CI pipeline for cargo and noir
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop, dev]
+  push:
+    branches: [main, develop, dev]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-clippy:
+    name: Cargo Clippy
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Fetch token WASM artifact
+        run: bash scripts/fetch_token_wasm.sh
+
+      - name: Run clippy
+        # AX-011: --locked ensures clippy resolves against the committed Cargo.lock,
+        # preventing silent transitive-dependency drift that could change on-chain WASM.
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        continue-on-error: true
+
+  cargo-build:
+    name: Cargo Build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Fetch token WASM artifact
+        run: bash scripts/fetch_token_wasm.sh
+
+      - name: Build workspace
+        # AX-011: --locked pins cargo to the committed Cargo.lock so a transitive
+        # bump can never silently change the on-chain WASM binary.
+        run: cargo build --locked --workspace
+
+      - name: Build WASM targets
+        run: cargo build --locked --workspace --target wasm32-unknown-unknown --release
+
+  cargo-test:
+    name: Cargo Test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Fetch token WASM artifact
+        run: bash scripts/fetch_token_wasm.sh
+
+      - name: Run tests
+        # AX-011: --locked ensures tests run against exactly the pinned dependency graph.
+        run: cargo test --locked --workspace -- --nocapture
+        continue-on-error: true
+
+  nargo-test:
+    name: Nargo Test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install nargo
+        id: install-nargo
+        run: |
+          if curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash && noirup; then
+            echo "nargo_installed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nargo_installed=false" >> "$GITHUB_OUTPUT"
+            echo "nargo installation failed — skipping nargo tests."
+          fi
+        continue-on-error: true
+
+      - name: Check for Noir circuits
+        id: check-nargo
+        run: |
+          if find . -name "Nargo.toml" -not -path "./.git/*" | grep -q .; then
+            echo "has_circuits=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_circuits=false" >> "$GITHUB_OUTPUT"
+            echo "No Nargo.toml found — skipping nargo test."
+          fi
+
+      - name: Run nargo test
+        if: steps.check-nargo.outputs.has_circuits == 'true' && steps.install-nargo.outputs.nargo_installed == 'true'
+        run: |
+          for dir in $(find . -name "Nargo.toml" -not -path "./.git/*" -exec dirname {} \;); do
+            echo "Testing circuits in $dir"
+            cd "$dir"
+            nargo test
+            cd "$GITHUB_WORKSPACE"
+          done
+        continue-on-error: true

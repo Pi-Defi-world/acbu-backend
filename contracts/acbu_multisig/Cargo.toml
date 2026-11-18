@@ -1,0 +1,17 @@
+[package]
+name = "acbu_multisig"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true, features = ['alloc'] }
+shared = { path = "../shared" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ['testutils', 'alloc'] }
+
+[lints]
+workspace = true

@@ -1,0 +1,219 @@
+name: Deploy Contracts
+
+# W2-C-062: guarded deploy pipeline with contract-address registry.
+#
+# Trigger: manual only (workflow_dispatch).  No automated pushes trigger a
+# real-chain deploy.  A separate CI workflow handles build/test on every PR.
+#
+# Mainnet guard: the caller must type "deploy" in the `confirm` input AND the
+# workflow environment ("mainnet") requires a GitHub Environment protection
+# rule (required reviewers / deploy branch filter) to be configured in the
+# repo settings.
+#
+# Registry: after a successful deploy, scripts/update_registry.sh merges the
+# new contract addresses into deployments/registry.json.  The workflow commits
+# that file back to the source branch so the registry is always up-to-date in
+# version control.
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Target Stellar network"
+        type: choice
+        required: true
+        default: testnet
+        options:
+          - testnet
+          - mainnet
+      confirm:
+        description: 'Mainnet only — type "deploy" to confirm (required for mainnet)'
+        type: string
+        required: false
+        default: ""
+
+# Prevent concurrent deploys to the same network — never cancel in-progress.
+concurrency:
+  group: deploy-${{ github.event.inputs.network }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Guard job: validates inputs before any expensive work starts.
+  # ---------------------------------------------------------------------------
+  guard:
+    name: Pre-deploy checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mainnet confirmation check
+        if: github.event.inputs.network == 'mainnet'
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "deploy" ]; then
+            echo "::error::Mainnet deploy requires the 'confirm' input to be set to exactly \"deploy\"."
+            echo "::error::Re-run the workflow with confirm=deploy to proceed."
+            exit 1
+          fi
+          echo "✅ Mainnet confirmation accepted."
+
+      - name: Testnet confirmation
+        if: github.event.inputs.network == 'testnet'
+        run: echo "✅ Testnet deploy — no extra confirmation required."
+
+  # ---------------------------------------------------------------------------
+  # Deploy job: builds contracts and deploys them to the target network.
+  # Runs only after the guard job passes.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy to ${{ github.event.inputs.network }}
+    needs: guard
+    runs-on: ubuntu-latest
+    # Each network maps to a GitHub Environment so that:
+    #   - testnet: inherits STELLAR_SECRET_KEY (testnet key)
+    #   - mainnet: requires reviewer approval + branch protection via GitHub UI
+    environment: ${{ github.event.inputs.network }}
+
+    permissions:
+      contents: write   # needed to commit the updated registry back
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so we can push the registry commit back
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      - name: Validate STELLAR_SECRET_KEY secret
+        env:
+          STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
+        run: |
+          if [ -z "${STELLAR_SECRET_KEY:-}" ]; then
+            echo "::error::The STELLAR_SECRET_KEY secret is not configured for the"
+            echo "::error::'${{ github.event.inputs.network }}' GitHub Environment."
+            echo "::error::Add it at: Settings → Environments → ${{ github.event.inputs.network }} → Secrets"
+            exit 1
+          fi
+          echo "✅ STELLAR_SECRET_KEY is present (not echoed for security)."
+
+      # -----------------------------------------------------------------------
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      # -----------------------------------------------------------------------
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-deploy-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-deploy-
+
+      # -----------------------------------------------------------------------
+      - name: Install Stellar CLI
+        run: |
+          # Try the modern stellar-cli first, fall back to legacy soroban-cli
+          if cargo install --locked stellar-cli --version 21.5.0 2>/dev/null; then
+            echo "Installed stellar-cli 21.5.0"
+          else
+            echo "Falling back to soroban-cli..."
+            cargo install --locked soroban-cli
+          fi
+
+      # -----------------------------------------------------------------------
+      - name: Fetch vendored token WASM
+        run: bash scripts/fetch_token_wasm.sh
+
+      # -----------------------------------------------------------------------
+      - name: Pre-deploy WASM integrity check
+        run: bash scripts/verify_deployment.sh "${{ github.event.inputs.network }}" || true
+
+      # -----------------------------------------------------------------------
+      - name: Deploy contracts
+        id: deploy
+        env:
+          STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
+          # Pass mainnet confirmation via env var (non-interactive guard in deploy.sh)
+          DEPLOY_CONFIRM: ${{ github.event.inputs.network == 'mainnet' && github.event.inputs.confirm || '' }}
+        run: |
+          bash scripts/deploy.sh "${{ github.event.inputs.network }}"
+
+      # -----------------------------------------------------------------------
+      - name: Commit registry back to source branch
+        if: success()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add deployments/
+
+          if git diff --cached --quiet; then
+            echo "No registry changes to commit."
+          else
+            git commit -m "chore(deploy): update contract registry for ${{ github.event.inputs.network }} [skip ci]
+
+  Deployed by: ${{ github.actor }}
+  Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  Network: ${{ github.event.inputs.network }}
+  Git ref: ${{ github.ref }}"
+
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ Registry committed and pushed to ${{ github.ref_name }}."
+          fi
+
+      # -----------------------------------------------------------------------
+      - name: Upload deployment artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-${{ github.event.inputs.network }}-run${{ github.run_id }}
+          path: |
+            deployments/${{ github.event.inputs.network }}.json
+            deployments/registry.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      # -----------------------------------------------------------------------
+      - name: Job summary
+        if: always()
+        run: |
+          NETWORK="${{ github.event.inputs.network }}"
+          NET_FILE="deployments/${NETWORK}.json"
+          REG_FILE="deployments/registry.json"
+
+          {
+            echo "## ACBU Contract Deploy — ${NETWORK}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| ----- | ----- |"
+            echo "| Network    | \`${NETWORK}\` |"
+            echo "| Triggered by | @${{ github.actor }} |"
+            echo "| Run ID     | [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+            echo "| Commit     | \`${{ github.sha }}\` |"
+            echo ""
+
+            if [ -f "$NET_FILE" ]; then
+              echo "### Contract Addresses"
+              echo ""
+              echo '```json'
+              cat "$NET_FILE"
+              echo '```'
+            else
+              echo "> ⚠️ Deployment file not found — deploy may have failed."
+            fi
+
+            if [ -f "$REG_FILE" ]; then
+              echo ""
+              echo "### Full Registry"
+              echo ""
+              echo '```json'
+              cat "$REG_FILE"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

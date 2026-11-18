@@ -1,0 +1,374 @@
+# ACBU Smart Contracts — Deployment Guide
+
+> **W2-C-062** — Guarded deploy workflow with contract-address registry.  
+> All deploys are scripted, non-interactive, and recorded.  Manual ad-hoc
+> `soroban contract deploy` calls are discouraged.
+
+---
+
+## Quick reference
+
+| Method | Command / location |
+|--------|-------------------|
+| **CI (preferred)** | GitHub Actions → *Deploy Contracts* → *Run workflow* |
+| **Local testnet** | `STELLAR_SECRET_KEY=<key> make deploy-testnet` |
+| **Local mainnet** | `STELLAR_SECRET_KEY=<key> DEPLOY_CONFIRM=deploy make deploy-mainnet` |
+| **Registry** | `deployments/registry.json` (committed to git after every deploy) |
+
+---
+
+## Architecture
+
+```
+scripts/deploy.sh               — master deploy script (testnet & mainnet)
+scripts/deploy_testnet.sh       — thin wrapper → deploy.sh testnet
+scripts/deploy_mainnet.sh       — thin wrapper → deploy.sh mainnet (DEPLOY_CONFIRM required)
+scripts/update_registry.sh      — merges per-network JSON into deployments/registry.json
+.github/workflows/deploy.yml    — CI workflow (manual trigger only)
+deployments/
+  registry.json                 — canonical contract-address registry (all networks)
+  testnet.json                  — per-deploy snapshot for testnet
+  mainnet.json                  — per-deploy snapshot for mainnet
+```
+
+---
+
+## Prerequisites
+
+### Toolchain
+
+```bash
+# Rust (version pinned in rust-toolchain.toml)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add wasm32-unknown-unknown
+
+# Stellar CLI (or legacy soroban-cli)
+cargo install --locked stellar-cli --version 21.5.0
+# — or —
+cargo install --locked soroban-cli
+```
+
+### Stellar account
+
+| Network  | How to fund |
+|----------|-------------|
+| Testnet  | [Stellar Friendbot](https://friendbot.stellar.org/?addr=<your-public-key>) |
+| Mainnet  | Purchase XLM; each contract deploy costs ~1–2 XLM in fees |
+
+---
+
+## Reproducible builds
+
+`Cargo.lock` is committed.  Always build with `--locked` so the pinned
+dependency graph is used without fetching from the internet.
+
+```bash
+cargo build --locked --target wasm32-unknown-unknown --release
+```
+
+The CI workflow enforces this.  `.github/workflows/deps-guard.yml` also
+rejects any PR that upgrades dependencies without updating `Cargo.lock`.
+
+---
+
+## Local deployment
+
+### Testnet
+
+```bash
+export STELLAR_SECRET_KEY="S..."   # your testnet secret key (starts with S)
+make deploy-testnet
+```
+
+### Mainnet
+
+```bash
+export STELLAR_SECRET_KEY="S..."   # your mainnet secret key
+export DEPLOY_CONFIRM=deploy        # explicit opt-in guard
+make deploy-mainnet
+```
+
+The mainnet guard also exists inside `scripts/deploy.sh` itself:  if
+`DEPLOY_CONFIRM` is not exactly `"deploy"`, the script exits before touching
+the network.
+
+### What the script does
+
+1. Validates environment (`STELLAR_SECRET_KEY`, `DEPLOY_CONFIRM` for mainnet).
+2. Runs `cargo build --locked --target wasm32-unknown-unknown --release`.
+3. Deploys 8 contracts in dependency order:
+   ```
+   acbu_oracle          → infrastructure
+   acbu_reserve_tracker → infrastructure
+   acbu_multisig        → governance
+   acbu_minting         → user-facing
+   acbu_burning         → user-facing
+   acbu_savings_vault   → user-facing
+   acbu_lending_pool    → user-facing
+   acbu_escrow          → user-facing
+   ```
+4. Writes `deployments/<network>.json` (contract IDs + metadata).
+5. Calls `scripts/update_registry.sh` to merge into `deployments/registry.json`.
+
+---
+
+## CI deployment (GitHub Actions)
+
+### Setup (one-time, per environment)
+
+1. Go to **Settings → Environments** in the GitHub repo.
+2. Create two environments: `testnet` and `mainnet`.
+3. For `mainnet`: add **Required reviewers** and a **Deployment branch filter** (e.g. `main`).
+4. In each environment, add the secret:
+   ```
+   STELLAR_SECRET_KEY = <network-specific stellar secret key>
+   ```
+
+### Running a deploy
+
+1. Go to **Actions → Deploy Contracts → Run workflow**.
+2. Choose **network**: `testnet` or `mainnet`.
+3. For mainnet, type `deploy` in the **confirm** field.
+4. Click **Run workflow**.
+
+The workflow:
+
+- **guard** job — validates the confirmation input before any compute starts.
+- **deploy** job — installs Rust + Stellar CLI, builds with `--locked`,
+  runs `scripts/deploy.sh`, commits the updated registry back to the
+  source branch (`[skip ci]` tag prevents an infinite loop), and uploads
+  `deployments/*.json` as a 90-day run artifact.
+
+### Workflow outputs
+
+| Output | Description |
+|--------|-------------|
+| Job summary | Formatted table of all deployed contract IDs |
+| Run artifact | `deployment-<network>-run<id>` — `deployments/*.json` files |
+| Registry commit | `deployments/registry.json` updated on the source branch |
+
+---
+
+## Contract-address registry
+
+`deployments/registry.json` is the single source of truth for deployed
+contract addresses.  It is committed to git and updated automatically by
+`scripts/update_registry.sh` after every deploy.
+
+Example structure:
+
+```json
+{
+  "_comment": "Auto-generated by scripts/update_registry.sh — do not edit by hand.",
+  "_schema": "1",
+  "networks": {
+    "testnet": {
+      "deployed_at": "2026-08-27T22:00:00Z",
+      "git_sha": "abc1234...",
+      "git_ref": "main",
+      "network_passphrase": "Test SDF Network ; September 2015",
+      "rpc_url": "https://soroban-testnet.stellar.org",
+      "contracts": {
+        "oracle":          "C...",
+        "reserve_tracker": "C...",
+        "multisig":        "C...",
+        "minting":         "C...",
+        "burning":         "C...",
+        "savings_vault":   "C...",
+        "lending_pool":    "C...",
+        "escrow":          "C..."
+      }
+    },
+    "mainnet": { "..." : "..." }
+  }
+}
+```
+
+### Reading the registry from backend / scripts
+
+```bash
+# Get the testnet minting contract address
+python3 -c "
+import json
+r = json.load(open('deployments/registry.json'))
+print(r['networks']['testnet']['contracts']['minting'])
+"
+```
+
+---
+
+## Contract initialisation
+
+After deploying, each contract must be initialised once.  These calls require
+the deployer key (same `STELLAR_SECRET_KEY`).
+
+> **Note:** Replace all `<...>` placeholders with real addresses from the
+> registry or your token infrastructure.
+
+### Oracle
+
+```bash
+stellar contract invoke \
+  --id $(cat deployments/testnet.json | python3 -c "import json,sys; print(json.load(sys.stdin)['contracts']['oracle'])") \
+  --source-account "$STELLAR_SECRET_KEY" \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- initialize \
+  --admin <admin-address> \
+  --validators '["<validator-1>","<validator-2>","<validator-3>"]' \
+  --min_signatures 3 \
+  --currencies '["NGN","KES","RWF","GHS","UGX","TZS","ZAR","EGP"]' \
+  --basket_weights '{"NGN":1800,"KES":1200,"RWF":800,"GHS":900,"UGX":700,"TZS":600,"ZAR":1500,"EGP":1500}'
+```
+
+### Reserve Tracker
+
+```bash
+stellar contract invoke \
+  --id <reserve-tracker-id> \
+  --source-account "$STELLAR_SECRET_KEY" \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- initialize \
+  --admin <admin-address> \
+  --oracle <oracle-id> \
+  --acbu_token <acbu-token-id> \
+  --min_ratio 10200
+```
+
+### Minting
+
+```bash
+stellar contract invoke \
+  --id <minting-id> \
+  --source-account "$STELLAR_SECRET_KEY" \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- initialize \
+  --admin <admin-address> \
+  --oracle <oracle-id> \
+  --reserve_tracker <reserve-tracker-id> \
+  --acbu_token <acbu-token-id> \
+  --usdc_token <usdc-token-id> \
+  --vault <vault-address> \
+  --treasury <treasury-address> \
+  --fee_rate_bps 30 \
+  --fee_single_bps 50
+```
+
+### Burning
+
+```bash
+stellar contract invoke \
+  --id <burning-id> \
+  --source-account "$STELLAR_SECRET_KEY" \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- initialize \
+  --admin <admin-address> \
+  --oracle <oracle-id> \
+  --reserve_tracker <reserve-tracker-id> \
+  --acbu_token <acbu-token-id> \
+  --withdrawal_processor <withdrawal-processor-address> \
+  --vault <vault-address> \
+  --fee_rate_bps 30 \
+  --fee_single_redeem_bps 100
+```
+
+### Savings Vault
+
+```bash
+stellar contract invoke \
+  --id <savings-vault-id> \
+  --source-account "$STELLAR_SECRET_KEY" \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- initialize \
+  --admin <admin-address> \
+  --acbu_token <acbu-token-id>
+```
+
+### Lending Pool
+
+```bash
+stellar contract invoke \
+  --id <lending-pool-id> \
+  --source-account "$STELLAR_SECRET_KEY" \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- initialize \
+  --admin <admin-address> \
+  --acbu_token <acbu-token-id>
+```
+
+### Escrow
+
+```bash
+stellar contract invoke \
+  --id <escrow-id> \
+  --source-account "$STELLAR_SECRET_KEY" \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- initialize \
+  --admin <admin-address> \
+  --acbu_token <acbu-token-id>
+```
+
+### Multisig
+
+```bash
+stellar contract invoke \
+  --id <multisig-id> \
+  --source-account "$STELLAR_SECRET_KEY" \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- initialize \
+  --signers '["<signer-1>","<signer-2>","<signer-3>","<signer-4>","<signer-5>"]' \
+  --threshold 3
+```
+
+---
+
+## Post-deploy verification
+
+```bash
+# Verify WASM artifacts match expected hashes
+bash scripts/verify_deployment.sh testnet
+
+# Check a contract is live on the network
+stellar contract invoke \
+  --id <contract-id> \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  -- get_fee_rate
+
+# View on Stellar Expert
+# Testnet: https://stellar.expert/explorer/testnet/contract/<contract-id>
+# Mainnet: https://stellar.expert/explorer/public/contract/<contract-id>
+```
+
+---
+
+## Troubleshooting
+
+| Error | Likely cause | Fix |
+|-------|--------------|-----|
+| `STELLAR_SECRET_KEY is not set` | Missing env var | `export STELLAR_SECRET_KEY="S..."` |
+| `DEPLOY_CONFIRM is not set` | Mainnet guard triggered | `export DEPLOY_CONFIRM=deploy` |
+| `Unexpected output for Oracle deploy` | CLI version mismatch or invalid key | Check `stellar --version`; validate key is a valid secret (starts with `S`) |
+| `WASM artifact not found` | Build didn't produce .wasm | Run `cargo build --locked --target wasm32-unknown-unknown --release` first |
+| `Insufficient balance` | Not enough XLM for fees | Fund account via Friendbot (testnet) or purchase XLM (mainnet) |
+| `Contract already initialized` | Re-initialization attempted | Deploy a new contract instance |
+| `Unauthorized` | Wrong admin key | Ensure `STELLAR_SECRET_KEY` matches the initialised admin address |
+
+---
+
+## Security notes
+
+1. **Never commit secret keys.** Use environment variables or CI secrets.
+2. `deployments/registry.json` contains **only contract IDs** — no secrets.
+3. Use the **multisig contract** for all admin operations in production.
+4. The `.soroban/` directory is gitignored — only `deployments/` is tracked.
+5. **Mainnet deploys require `DEPLOY_CONFIRM=deploy`** — both locally and in CI
+   (CI also requires the GitHub Environment approval gate on the `mainnet` env).
+6. Run `make test` and testnet smoke tests before every mainnet deploy.

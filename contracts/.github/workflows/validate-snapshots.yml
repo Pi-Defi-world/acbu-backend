@@ -1,0 +1,80 @@
+name: Validate Test Snapshots
+
+on:
+  pull_request:
+    paths:
+      - '**/src/**'
+      - '**/tests/**'
+      - '**/test_snapshots/**'
+      - 'shared/src/**'
+  push:
+    branches:
+      - main
+      - develop
+      - dev
+    paths:
+      - '**/src/**'
+      - '**/tests/**'
+      - '**/test_snapshots/**'
+      - 'shared/src/**'
+
+jobs:
+  validate-snapshots:
+    name: Validate Test Snapshots
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-index-
+
+      - name: Cache target directory
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-target-
+
+      - name: Validate snapshots
+        run: |
+          cargo test --workspace test_snapshot_validation -- --nocapture
+        continue-on-error: false
+
+      - name: Check for snapshot staleness
+        if: failure()
+        run: |
+          echo "::error::❌ Test snapshot validation failed!"
+          echo "::error::Snapshots may be stale after code refactoring."
+          echo "::error::Please follow the Snapshot Management Guide:"
+          echo "::error::  1. Review acbu_minting/SNAPSHOT_MANAGEMENT.md"
+          echo "::error::  2. Update EXPECTED_STORAGE_KEYS and EXPECTED_EVENT_TYPES if needed"
+          echo "::error::  3. Regenerate snapshots: make clean-snapshots && make test-minting"
+          echo "::error::  4. Commit updated snapshots"
+          exit 1
+
+      - name: Report success
+        if: success()
+        run: |
+          echo "✅ All test snapshots are valid and up-to-date"

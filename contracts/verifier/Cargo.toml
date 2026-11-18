@@ -1,0 +1,11 @@
+[package]
+name = "verifier"
+version = "0.1.0"
+edition = "2021"
+description = "Host-side KYC and rate-gate wrapper logic — no Soroban runtime required"
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

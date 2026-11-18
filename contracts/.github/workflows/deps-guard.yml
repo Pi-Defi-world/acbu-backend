@@ -1,0 +1,81 @@
+name: Dependency Supply-Chain Guard
+
+# W2-Z-020: Git dependencies (SDK + verifier lib) must not be pulled straight
+# from GitHub. Every dependency has to resolve from a registry with a checksum
+# recorded in the committed Cargo.lock, so a build never depends on live GitHub
+# availability or the state of a third-party fork.
+
+on:
+  push:
+    branches: [main, develop, dev]
+  pull_request:
+    branches: [main, develop, dev]
+
+jobs:
+  no-git-deps:
+    name: Forbid git/path dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Fail on `git =` dependencies in any Cargo.toml
+        shell: bash
+        run: |
+          set -euo pipefail
+          hits="$(grep -rnE '^\s*[^#].*\bgit\s*=\s*"' --include=Cargo.toml . || true)"
+          if [[ -n "$hits" ]]; then
+            echo "::error::Git dependencies are not allowed. Vendor or pin via a registry:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No git dependencies declared."
+
+      - name: Fail on git sources recorded in Cargo.lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f Cargo.lock ]]; then
+            echo "::error::Cargo.lock is missing. Commit it for reproducible, offline-resolvable builds."
+            exit 1
+          fi
+          if grep -nE 'source = "git\+' Cargo.lock; then
+            echo "::error::Cargo.lock contains a git source. All crates must come from a registry."
+            exit 1
+          fi
+          echo "Cargo.lock is fully registry-sourced with checksums."
+
+  offline-resolve:
+    name: Resolve without live GitHub access
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-deps-guard-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-deps-guard-
+
+      # Populate the local registry cache from the committed lockfile only.
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+
+      # Now prove the dependency graph resolves with networking disabled and the
+      # lockfile untouched. If anything needed GitHub, this step fails.
+      - name: Verify graph resolves offline against Cargo.lock
+        run: cargo metadata --locked --offline --format-version 1 > /dev/null
+
+      - name: Verify Cargo.lock is up to date
+        run: cargo update --workspace --locked

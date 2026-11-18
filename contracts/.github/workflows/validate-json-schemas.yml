@@ -1,0 +1,44 @@
+name: Validate JSON Schemas
+
+# W2-Z-016: Explicitly pin Node 20 LTS (Node 18 reached EOL April 2025).
+# W2-Z-003: Use npx to invoke ajv-cli – no global install, no lockfile drift.
+
+on:
+  push:
+    paths:
+      - 'validators.json'
+      - 'weights.json'
+      - 'scripts/oracle_basket_currencies.json'
+      - 'scripts/oracle_basket_weights_bps.json'
+      - 'schemas/**'
+  pull_request:
+    paths:
+      - 'validators.json'
+      - 'weights.json'
+      - 'scripts/oracle_basket_currencies.json'
+      - 'scripts/oracle_basket_weights_bps.json'
+      - 'schemas/**'
+
+jobs:
+  validate:
+    name: JSON Schema Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate validators.json
+        run: npx --yes ajv-cli validate -s schemas/validators.schema.json -d validators.json --spec=draft7
+
+      - name: Validate weights.json
+        run: npx --yes ajv-cli validate -s schemas/weights.schema.json -d weights.json --spec=draft7
+
+      - name: Validate oracle_basket_currencies.json
+        run: npx --yes ajv-cli validate -s schemas/oracle_basket_currencies.schema.json -d scripts/oracle_basket_currencies.json --spec=draft7
+
+      - name: Validate oracle_basket_weights_bps.json
+        run: npx --yes ajv-cli validate -s schemas/oracle_basket_weights_bps.schema.json -d scripts/oracle_basket_weights_bps.json --spec=draft7

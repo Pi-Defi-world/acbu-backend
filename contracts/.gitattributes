@@ -1,0 +1,36 @@
+# Enforce UTF-8 and LF line endings for all text files
+# so encoding/line-ending corruption cannot silently recur.
+# (Bytes are stored as-is; this normalizes future commits, not history.)
+* text=auto eol=lf
+
+# Explicit text formats present in this repo
+*.rs      text eol=lf
+*.md      text eol=lf
+*.json    text eol=lf
+*.toml    text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.sh      text eol=lf
+*.py      text eol=lf
+*.js      text eol=lf
+*.txt     text eol=lf
+*.lock    text eol=lf
+Makefile  text eol=lf
+# Version-pin dotfiles
+.nvmrc        text eol=lf
+.node-version text eol=lf
+
+# Windows-specific scripts keep CRLF
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# Binary files — no line-ending conversion
+/build    binary
+*.wasm    binary
+*.pyc     binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.pdf     binary

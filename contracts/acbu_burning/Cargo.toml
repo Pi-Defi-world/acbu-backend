@@ -1,0 +1,19 @@
+[package]
+name = "acbu_burning"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+soroban-sdk = { workspace = true }
+shared = { path = "../shared" }
+
+[dev-dependencies]
+proptest = "1.11.0"
+soroban-sdk = { workspace = true, features = ['testutils'] }
+
+[lints]
+workspace = true

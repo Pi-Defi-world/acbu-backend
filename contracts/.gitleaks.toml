@@ -1,0 +1,31 @@
+# Allowlist for known pre-existing leaks that require external remediation.
+# SECURITY: The Stellar secret key below is ACTIVE and MUST be rotated.
+#   Key: SA2P2MWG4L4KMKYXNVSS73NTZWKRYDPJDXLVODDSYCPWQ5LVIZNXIBAR
+#   Owner: junman140
+#   Found in: scripts/initOracle.cmd, scripts/init_temp.sh
+#   Commits: 34854e6a, 71d4bf9
+#   Action: Rotate key on Stellar, update scripts, then remove this allowlist entry.
+#
+# Token IDs below are Stellar contract/wasm addresses (not secrets), false positives.
+#   ACBU_TOKEN: CB2RDXQAIQT5XG3XTRHKAGLMV24TPLCOKBFXVELF2PJS4K42UYXZT6KI
+#   USDC_TOKEN: CCW67Z7YIEXZFYUCP66X37O6E6U74N54JDXC2KUC5365S3XYR7O5L6YI
+#   TOKEN_WASM_HASH: 6b14997b915dee21082884cd5a2f1f2f0aef0073d1dcb9c5b3c674cf487fb41d
+
+[allowlist]
+  description = "Pre-existing leaks — remediation tracked externally"
+
+  [[allowlist.rules]]
+    id = "generic-api-key"
+    description = "Stellar secret key — rotate then remove this entry"
+    secrets = [
+      "SA2P2MWG4L4KMKYXNVSS73NTZWKRYDPJDXLVODDSYCPWQ5LVIZNXIBAR",
+    ]
+
+  [[allowlist.rules]]
+    id = "generic-api-key"
+    description = "Stellar contract/wasm addresses — not secrets"
+    secrets = [
+      "CB2RDXQAIQT5XG3XTRHKAGLMV24TPLCOKBFXVELF2PJS4K42UYXZT6KI",
+      "CCW67Z7YIEXZFYUCP66X37O6E6U74N54JDXC2KUC5365S3XYR7O5L6YI",
+      "6b14997b915dee21082884cd5a2f1f2f0aef0073d1dcb9c5b3c674cf487fb41d",
+    ]
