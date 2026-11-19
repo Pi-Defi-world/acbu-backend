@@ -29,12 +29,12 @@ jobs:
           POSTGRES_USER: acbu_e2e
           POSTGRES_PASSWORD: acbu_e2e_pw
           POSTGRES_DB: acbu_e2e
-          MONGO_USER: acbu_e2e
-          MONGO_PASSWORD: acbu_e2e_pw
+          MONGO_INITDB_ROOT_USERNAME: acbu_e2e
+          MONGO_INITDB_ROOT_PASSWORD: acbu_e2e_pw
           MONGO_DB: acbu_e2e_cache
-          RABBITMQ_USER: acbu_e2e
-          RABBITMQ_PASSWORD: acbu_e2e_pw
-        run: docker compose up -d --wait
+          RABBITMQ_DEFAULT_USER: acbu_e2e
+          RABBITMQ_DEFAULT_PASS: acbu_e2e_pw
+        run: docker compose up -d --wait postgres mongodb rabbitmq
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
@@ -59,8 +59,8 @@ jobs:
       - name: Seed test database
         env:
           DATABASE_URL: postgresql://acbu_e2e:acbu_e2e_pw@localhost:5432/acbu_e2e
-          MONGODB_URI: mongodb://localhost:27017/acbu_e2e_test
-          RABBITMQ_URL: amqp://localhost:5672
+          MONGODB_URI: mongodb://acbu_e2e:acbu_e2e_pw@localhost:27017/acbu_e2e_test?authSource=admin
+          RABBITMQ_URL: amqp://acbu_e2e:acbu_e2e_pw@localhost:5672
           JWT_SECRET: e2e-test-secret-that-is-at-least-32-characters-long
           NODE_ENV: test
         run: pnpm prisma:seed
@@ -68,47 +68,33 @@ jobs:
       - name: Run cross-repo E2E tests
         env:
           DATABASE_URL: postgresql://acbu_e2e:acbu_e2e_pw@localhost:5432/acbu_e2e
-          MONGODB_URI: mongodb://localhost:27017/acbu_e2e_test
-          RABBITMQ_URL: amqp://localhost:5672
+          MONGODB_URI: mongodb://acbu_e2e:acbu_e2e_pw@localhost:27017/acbu_e2e_test?authSource=admin
+          RABBITMQ_URL: amqp://acbu_e2e:acbu_e2e_pw@localhost:5672
           JWT_SECRET: e2e-test-secret-that-is-at-least-32-characters-long
           CHALLENGE_TOKEN_SECRET: e2e-challenge-token-secret-that-is-at-least-32-chars
           NODE_ENV: test
           CORS_ORIGIN: http://localhost:3000
           API_VERSION: v1
-        run: pnpm test:e2e || true
-        # Allow the job to proceed even if e2e tests don't exist yet;
-        # this establishes the infrastructure for future additions
-
-      - name: Run integration tests
-        env:
-          DATABASE_URL: postgresql://acbu_e2e:acbu_e2e_pw@localhost:5432/acbu_e2e
-          MONGODB_URI: mongodb://localhost:27017/acbu_e2e_test
-          RABBITMQ_URL: amqp://localhost:5672
-          JWT_SECRET: e2e-test-secret-that-is-at-least-32-characters-long
-          CHALLENGE_TOKEN_SECRET: e2e-challenge-token-secret-that-is-at-least-32-chars
-          NODE_ENV: test
-          CORS_ORIGIN: http://localhost:3000
-        run: pnpm test --testPathPattern="integration|e2e" || true
+        run: pnpm exec jest --ci --runInBand --testPathPattern="integration|e2e" --passWithNoTests
 
       - name: Validate JWT configuration in boot
         env:
           DATABASE_URL: postgresql://acbu_e2e:acbu_e2e_pw@localhost:5432/acbu_e2e
-          MONGODB_URI: mongodb://localhost:27017/acbu_e2e_test
-          RABBITMQ_URL: amqp://localhost:5672
+          MONGODB_URI: mongodb://acbu_e2e:acbu_e2e_pw@localhost:27017/acbu_e2e_test?authSource=admin
+          RABBITMQ_URL: amqp://acbu_e2e:acbu_e2e_pw@localhost:5672
           JWT_SECRET: e2e-test-secret-that-is-at-least-32-characters-long
           CHALLENGE_TOKEN_SECRET: e2e-challenge-token-secret-that-is-at-least-32-chars
           NODE_ENV: test
           CORS_ORIGIN: http://localhost:3000
-          # Boot the app for 5s to verify JWT secrets and environment setup
-          SERVER_BOOT_TIMEOUT: 5000
         run: |
-          timeout 10 node -e "
-          const config = require('./src/config/env').config;
+          pnpm exec ts-node --transpile-only -e "
+          const { config } = require('./src/config/env');
+          if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET is invalid');
           console.log('✓ JWT configuration loaded');
           console.log('✓ CORS origins configured:', config.corsOrigins);
           console.log('✓ Database URL configured');
           console.log('✓ Environment contract satisfied');
-          " || true
+          "
 
       - name: Report E2E status
         if: always()
