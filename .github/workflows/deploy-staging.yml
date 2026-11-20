@@ -21,6 +21,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # W11-CAR-015: no staging deployment without nine verified contract WASMs.
+  wasm-integrity:
+    name: Approved contract WASM integrity
+    uses: ./.github/workflows/verify-wasm-integrity.yml
+    with:
+      backend-ref: ${{ github.event.inputs.ref || github.sha }}
+
   # ── Gate: Secret scan must pass before we deploy ──────────────────────
   secret-scan:
     name: Secret Scan (gitleaks)
@@ -52,7 +59,7 @@ jobs:
   # If the CI workflow hasn't run or failed, this job waits/blocks accordingly.
   deploy:
     name: Deploy to Staging
-    needs: [secret-scan]
+    needs: [secret-scan, wasm-integrity]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
