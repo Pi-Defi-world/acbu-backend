@@ -66,12 +66,18 @@ describe("Monetary Precision Tests", () => {
       expect(contractNumber).toBe(15);
     });
 
-    it("should preserve precision for large amounts", () => {
-      const largeAmount = parseMonetaryString("987654321.1234567");
-      const contractNumber = decimalToContractNumber(largeAmount);
+    it("should allow values at the maximum safe contract integer", () => {
+      const maxSafeAmount = parseMonetaryString("900719925.4740991");
 
-      // eslint-disable-next-line no-loss-of-precision
-      expect(contractNumber).toBe(9876543211234567);
+      expect(decimalToContractNumber(maxSafeAmount)).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it("should reject amounts exceeding the safe contract integer range", () => {
+      const largeAmount = parseMonetaryString("987654321.1234567");
+
+      expect(() => decimalToContractNumber(largeAmount)).toThrow(
+        expect.objectContaining({ statusCode: 400 }),
+      );
     });
   });
 

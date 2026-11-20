@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { AppError } from "../middleware/errorHandler";
 
 /**
  * Decimal configuration for monetary calculations with high precision
@@ -52,7 +53,12 @@ export function parseMonetaryString(value: string, fieldName = "amount"): Decima
  */
 export function decimalToContractNumber(decimal: Decimal, decimals: number = 7): number {
   const scaled = decimal.mul(new Decimal(10).pow(decimals));
-  return scaled.toDecimalPlaces(0, Decimal.ROUND_DOWN).toNumber();
+  const contractInteger = scaled.toDecimalPlaces(0, Decimal.ROUND_DOWN);
+  if (!contractInteger.isFinite() || contractInteger.abs().gt(Number.MAX_SAFE_INTEGER)) {
+    throw new AppError("Amount exceeds the safe integer range supported for contract calls", 400);
+  }
+
+  return contractInteger.toNumber();
 }
 
 /**
