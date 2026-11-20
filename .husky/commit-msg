@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+pnpm --dir frontend exec commitlint --edit "$1" --config commitlint.config.cjs
