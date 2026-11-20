@@ -122,6 +122,9 @@ This file documents the environment variables required by the ACBU backend and t
 - `STELLAR_NATIVE_ASSET_CODE`
 - `WALLET_ACTIVATION_STRATEGY` - defaults to `create_account_native`
 - `TESTNET_CUSTODIAL_BOOTSTRAP`
+  - Deployment / runbook label identifying the Stellar testnet bootstrap profile.
+  - Used for diagnostics and log context only; it does **not** affect `nativeAssetCode` (that is always `XLM` unless `STELLAR_NATIVE_ASSET_CODE` is set).
+  - **Pi Network bridge variables were removed; activation is Stellar-only.** See [docs/ACTIVATION_SCOPE.md](./docs/ACTIVATION_SCOPE.md) for the scope decision record (W10-P-007).
 - `WALLET_ACTIVATION_AMOUNT` / `WALLET_ACTIVATION_NATIVE` / `WALLET_ACTIVATION_XLM` / `STELLAR_MIN_BALANCE`
 - `STELLAR_BASE_FEE_STROOPS` - defaults to `100`
 - `STELLAR_USE_DYNAMIC_FEES` - defaults to `false`; when `true`, reads the live
@@ -155,6 +158,11 @@ This file documents the environment variables required by the ACBU backend and t
 - `RESERVE_MIN_RATIO` - defaults to `1.02`
 - `RESERVE_TARGET_RATIO` - defaults to `1.05`
 - `RESERVE_ALERT_THRESHOLD` - defaults to `1.02`
+
+### Monitoring (W10-I-013)
+
+- `RESERVE_METRICS_INTERVAL_MS` - Interval for reserve metrics update job (default: 300000, i.e., 5 minutes)
+- `ENABLE_OBSERVABILITY` - Enable observability features (metrics, tracing). Defaults to `true`
 
 ### Notifications
 

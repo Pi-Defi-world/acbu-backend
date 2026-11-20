@@ -1,6 +1,12 @@
 import amqp, { ChannelModel, ConfirmChannel } from "amqplib";
 import { config } from "./env";
 import { logger } from "./logger";
+import {
+  recordQueueDepth,
+  recordQueuePublish,
+  recordQueueConsume,
+  recordQueueError,
+} from "../services/monitoring";
 
 let connection: ChannelModel | null = null;
 let channel: ConfirmChannel | null = null;
@@ -66,7 +72,13 @@ export async function assertQueueWithDLQ(
     },
   };
 
-  return ch.assertQueue(queueName, queueOptions);
+  const result = await ch.assertQueue(queueName, queueOptions);
+
+  // W10-I-013: Record initial queue depth
+  recordQueueDepth(queueName, result.messageCount);
+  recordQueueDepth(dlqName, 0);
+
+  return result;
 }
 
 export async function disconnectRabbitMQ(): Promise<void> {
@@ -93,6 +105,54 @@ export function getRabbitMQChannel(): ConfirmChannel {
     throw new Error("RabbitMQ not connected. Call connectRabbitMQ() first.");
   }
   return channel;
+}
+
+/**
+ * W10-I-013: Instrumented publish wrapper to track queue metrics.
+ */
+export async function publishWithMetrics(
+  exchange: string,
+  routingKey: string,
+  content: Buffer,
+  options?: amqp.Options.Publish,
+): Promise<boolean> {
+  const ch = getRabbitMQChannel();
+  recordQueuePublish(routingKey);
+
+  return new Promise((resolve, reject) => {
+    ch.publish(exchange, routingKey, content, options, (err) => {
+      if (err) {
+        recordQueueError(routingKey, "publish_failed");
+        reject(err);
+      } else {
+        resolve(true);
+      }
+    });
+  });
+}
+
+/**
+ * W10-I-013: Instrumented consume wrapper to track queue metrics.
+ */
+export async function consumeWithMetrics(
+  queueName: string,
+  onMessage: (msg: amqp.ConsumeMessage) => void,
+  options?: amqp.Options.Consume,
+): Promise<amqp.Replies.Consume> {
+  const ch = getRabbitMQChannel();
+
+  const wrappedHandler = (msg: amqp.ConsumeMessage | null) => {
+    if (msg) {
+      recordQueueConsume(queueName);
+      // Update queue depth after consumption
+      ch.checkQueue(queueName).then((info) => {
+        recordQueueDepth(queueName, info.messageCount);
+      }).catch(() => {});
+      onMessage(msg);
+    }
+  };
+
+  return ch.consume(queueName, wrappedHandler, options);
 }
 
 // Queue names

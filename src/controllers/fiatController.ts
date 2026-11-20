@@ -15,13 +15,11 @@ export const faucetSchema = z.object({
   currency: z.string().min(3).max(3),
   amount: z.number().positive(),
   recipient: z.string().optional(),
-  passcode: z.string().optional(),
 });
 
 export const onRampSchema = z.object({
   currency: z.string().min(3).max(3),
   amount: z.number().positive(),
-  passcode: z.string().optional(),
 });
 
 export const offRampSchema = z.object({
@@ -61,7 +59,6 @@ export async function postFaucet(
       body.currency.toUpperCase(),
       body.amount,
       body.recipient,
-      body.passcode,
     );
 
     res.status(200).json(result);
@@ -73,7 +70,7 @@ export async function postFaucet(
     if (e instanceof TrustlineMissingError) {
       return next(
         new AppError(
-          "Your wallet is missing a trustline for this demo currency (SAC). Add a trustline for the asset (e.g. NGN:GDHO63...) in your wallet, then retry the faucet.",
+          `${e.message} The wallet is self-custodied, so the backend cannot add the trustline for you.`,
           400,
         ),
       );
@@ -92,12 +89,7 @@ export async function postOnRamp(
     if (!userId) return next(new AppError("User not found in API key", 401));
 
     const body = onRampSchema.parse(req.body);
-    const result = await simulateOnRamp(
-      userId,
-      body.currency.toUpperCase(),
-      body.amount,
-      body.passcode,
-    );
+    const result = await simulateOnRamp(userId, body.currency.toUpperCase(), body.amount);
 
     res.status(200).json(result);
   } catch (e) {
@@ -108,7 +100,7 @@ export async function postOnRamp(
     if (e instanceof TrustlineMissingError) {
       return next(
         new AppError(
-          "Recipient wallet is missing the ACBU trustline. Add trustline for ACBU first, then retry on-ramp mint.",
+          `${e.message} The wallet is self-custodied, so the backend cannot add the trustline for you.`,
           400,
         ),
       );

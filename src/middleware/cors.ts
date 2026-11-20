@@ -19,6 +19,21 @@ export function resolveCorsOrigin(
   return false;
 }
 
+/**
+ * Error raised when a request Origin is not in the CORS allowlist.
+ * Carries a 403 status so the error handler surfaces a client error
+ * (not a 500 INTERNAL_ERROR) for this client-side misconfiguration.
+ */
+export class CorsForbiddenError extends Error {
+  readonly status = 403;
+  readonly code = "CORS_FORBIDDEN";
+
+  constructor(message = "Origin not allowed by CORS") {
+    super(message);
+    this.name = "CorsForbiddenError";
+  }
+}
+
 const corsOptionsBase: Omit<CorsOptions, "origin"> = {
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -42,7 +57,7 @@ export function createCorsMiddleware(allowedOrigins: readonly string[]) {
         return;
       }
       if (resolved === false) {
-        callback(new Error("Not allowed by CORS"));
+        callback(new CorsForbiddenError());
         return;
       }
       callback(null, resolved);

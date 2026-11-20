@@ -1,15 +1,24 @@
 /**
- * Wallet lifecycle: create keypair on first signin, store secret after user confirms encryption.
+ * Wallet lifecycle: the client generates and keeps the keypair, the backend
+ * binds the public address and an optional client-encrypted backup.
  */
-import { Keypair } from "@stellar/stellar-sdk";
 import { prisma } from "../../config/database";
 import { logger } from "../../config/logger";
 import { assertValidStellarAddress, isValidStellarAddress } from "../../utils/stellar";
 import { AppError } from "../../middleware/errorHandler";
+import { updateWalletWithConcurrency } from "./walletStateService";
+import { CLIENT_WRAPPED_KEY_HINT, assertClientWrappedBackup } from "./walletKeyStorage";
 
-export interface EnsureWalletResult {
-  wallet_created: boolean;
-  passphrase?: string;
+export interface WalletEnrollmentStatus {
+  enrolled: boolean;
+  stellar_address: string | null;
+}
+
+export interface EnrollWalletParams {
+  stellarAddress: string;
+  wrappedKey?: string;
+  wrapAlgorithm?: string;
+  wrapKdf?: string;
 }
 
 export async function assertUserWalletAddress(
@@ -42,36 +51,67 @@ export async function assertUserWalletAddress(
 }
 
 /**
- * If user has no wallet (encryptedStellarSecret is null), create keypair, set stellarAddress, return passphrase.
- * Caller must not persist passphrase; user copies it, then calls confirm with encryption.
+ * Report whether a user has a wallet bound, without touching key material.
+ * Signin uses this to tell the client to run its own key generation flow.
  */
-export async function ensureWalletForUser(userId: string): Promise<EnsureWalletResult> {
+export async function getWalletEnrollmentStatus(userId: string): Promise<WalletEnrollmentStatus> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, stellarAddress: true, encryptedStellarSecret: true },
+    select: { stellarAddress: true },
   });
-  if (!user) return { wallet_created: false };
-  // If stellarAddress is already set (either generated, imported, or external), do nothing
-  if (user.stellarAddress != null) return { wallet_created: false };
+  return { enrolled: Boolean(user?.stellarAddress), stellar_address: user?.stellarAddress ?? null };
+}
 
-  const keypair = Keypair.random();
-  const publicKey = keypair.publicKey();
-  const secretKey = keypair.secret();
-
-  // Guard: ensure generated address is valid before persisting
-  assertValidStellarAddress(publicKey);
-
-  // Additional guard: reject any address that looks like a placeholder
-  if (isPlaceholderAddress(publicKey)) {
-    throw new Error("Generated address appears to be a placeholder");
+/**
+ * Bind a keypair the client generated to the user, with an optional
+ * client-encrypted backup. The backend never generates, receives or stores a
+ * usable private key: only the public address and an opaque blob it cannot
+ * decrypt are persisted.
+ */
+export async function enrollClientGeneratedWallet(
+  userId: string,
+  ifMatch: string | undefined,
+  params: EnrollWalletParams,
+): Promise<number> {
+  if (!isValidStellarAddress(params.stellarAddress)) {
+    throw new AppError("Invalid stellar address: must be a valid Stellar public key", 400);
+  }
+  if (isPlaceholderAddress(params.stellarAddress)) {
+    throw new AppError("Invalid stellar address: appears to be a placeholder", 400);
   }
 
-  await prisma.user.update({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
-    data: { stellarAddress: publicKey, walletVersion: { increment: 1 } },
+    select: { stellarAddress: true },
   });
-  logger.info("Wallet created for user", { userId, stellarAddress: publicKey });
-  return { wallet_created: true, passphrase: secretKey };
+  if (user?.stellarAddress && user.stellarAddress !== params.stellarAddress) {
+    throw new AppError(
+      "Wallet already enrolled; rotate the address with PUT /users/me/wallet",
+      409,
+    );
+  }
+
+  if (params.wrappedKey !== undefined) {
+    assertClientWrappedBackup({
+      wrappedKey: params.wrappedKey,
+      algorithm: params.wrapAlgorithm ?? "",
+      kdf: params.wrapKdf ?? "",
+    });
+  }
+
+  const walletVersion = await updateWalletWithConcurrency(userId, ifMatch, {
+    stellarAddress: params.stellarAddress,
+    encryptedStellarSecret: params.wrappedKey ?? null,
+    keyEncryptionHint: params.wrappedKey !== undefined ? CLIENT_WRAPPED_KEY_HINT : "external",
+  });
+
+  logger.info("Wallet enrolled from client-generated key", {
+    userId,
+    stellarAddress: params.stellarAddress,
+    hasEncryptedBackup: params.wrappedKey !== undefined,
+    walletVersion,
+  });
+  return walletVersion;
 }
 
 /**

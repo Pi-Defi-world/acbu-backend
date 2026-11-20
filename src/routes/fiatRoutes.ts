@@ -40,8 +40,6 @@ router.use(validateApiKey);
  *                 type: number
  *               recipient:
  *                 type: string
- *               passcode:
- *                 type: string
  *     responses:
  *       200:
  *         description: Faucet request successful
@@ -73,8 +71,6 @@ router.post("/faucet", postFaucet);
  *                 maxLength: 3
  *               amount:
  *                 type: number
- *               passcode:
- *                 type: string
  *     responses:
  *       200:
  *         description: On-ramp simulation successful

@@ -1,4 +1,5 @@
 import { logger } from "../config/logger";
+import { recordCircuitBreakerState } from "../services/monitoring";
 
 export type CircuitState = "CLOSED" | "OPEN" | "HALF_OPEN";
 
@@ -6,6 +7,7 @@ export interface CircuitBreakerOptions {
   failureThreshold: number;
   cooldownMs: number;
   successThreshold: number;
+  serviceName?: string; // W10-I-013: Service name for metrics
 }
 
 const DEFAULT_OPTIONS: CircuitBreakerOptions = {
@@ -20,9 +22,11 @@ export class CircuitBreaker {
   private successCount: number = 0;
   private lastFailureTime: number | null = null;
   private options: CircuitBreakerOptions;
+  private serviceName: string;
 
   constructor(options?: Partial<CircuitBreakerOptions>) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
+    this.serviceName = options?.serviceName || "unknown";
   }
 
   /**
@@ -129,6 +133,13 @@ export class CircuitBreaker {
         failureCount: this.failureCount,
         successCount: this.successCount,
       });
+
+      // W10-I-013: Record circuit breaker state to metrics
+      try {
+        recordCircuitBreakerState(this.serviceName, newState.toLowerCase() as any);
+      } catch (error) {
+        // Silently fail if metrics are not available
+      }
 
       // Reset counters on state transitions
       if (newState === "CLOSED") {

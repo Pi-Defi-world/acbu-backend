@@ -46,7 +46,7 @@ export interface BulkTransferJobResult {
   createdAt: string;
   /** ISO timestamp of job completion, or null if still processing */
   completedAt?: string;
-  /** Detailed failure report: array of failed rows with error messages */
+  /** Detailed report of failed/skipped rows with error messages */
   failureReport: BulkTransferRowResult[];
 }
 
@@ -68,6 +68,8 @@ export interface ProcessBulkTransferOptions {
   chunkSize?: number;
   /** Maximum file size in bytes. Default 10MB. */
   maxFileSizeBytes?: number;
+  /** Maximum number of data rows per CSV. Default 5000. */
+  maxRows?: number;
   /** Allowed MIME types. Default ['text/csv', 'text/plain'] */
   allowedMimeTypes?: string[];
 }

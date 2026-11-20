@@ -30,6 +30,13 @@ function currencyCodeToScVal(code: string): xdr.ScVal {
   return xdr.ScVal.scvVec([xdr.ScVal.scvVec([xdr.ScVal.scvString(c)])]);
 }
 
+/**
+ * Fields shared by every minting call that participates in DB compensation.
+ *
+ * `txId` is the id of the `transactions` row that has to be marked as failed
+ * when the on-chain call fails. Declaring it once — and typing it — means a
+ * rename can no longer silently break reconciliation without a compile error.
+ */
 export interface CompensationParams {
   txId?: string;
 }
@@ -76,6 +83,28 @@ export class MintingService {
     this.contractClient = contractClient;
   }
 
+  private async markTransactionFailed(params: CompensationParams): Promise<void> {
+    const txId = params.txId;
+    if (!txId) {
+      return;
+    }
+    try {
+      await prisma.transaction.update({
+        where: { id: txId },
+        data: { status: COMPENSATION_STATUS },
+      });
+      logger.info(`Compensated: Marked transaction ${txId} as ${COMPENSATION_STATUS}`);
+    } catch (dbError) {
+      logger.error("CRITICAL: DB compensation failed", { txId, dbError });
+    }
+  }
+
+  /**
+   * Mark the transaction behind a failed on-chain mint as failed.
+   *
+   * Compensation must never mask the original error, so DB failures are logged
+   * and swallowed.
+   */
   private async markTransactionFailed(params: CompensationParams): Promise<void> {
     const txId = params.txId;
     if (!txId) {

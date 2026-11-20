@@ -29,6 +29,14 @@ We will acknowledge security reports as soon as practical, investigate privately
 
 Please allow reasonable time for triage and remediation before sharing details publicly.
 
+## Key Custody
+
+User wallets are self-custodied. The API never returns private key material and
+the database holds no copy the backend can decrypt, so a compromised server
+cannot spend user balances. The custody model, enrollment flow and the
+operations a wallet client must sign itself are documented in
+[docs/WALLET_CUSTODY.md](docs/WALLET_CUSTODY.md).
+
 ## Static Application Security Testing (SAST)
 
 This repository runs **CodeQL** and **Semgrep** on every push and pull request to

@@ -395,6 +395,68 @@ describe("WeightDriftAuditService", () => {
 
       errorSpy.mockRestore();
     });
+
+    it("W10-B-012: throws error when basket weights do not sum to 100%", async () => {
+      (basketService.getCurrentBasket as jest.Mock).mockResolvedValue([
+        { currency: "USD", weight: 40 },
+        { currency: "NGN", weight: 30 },
+        // Sum = 70%, not 100%
+      ]);
+
+      (reserveTracker.getReserveStatus as jest.Mock).mockResolvedValue({
+        currencies: [{ currency: "USD", actualWeight: 40 }],
+      });
+
+      await expect(weightDriftAuditService.calculateDriftReport()).rejects.toThrow(
+        "Basket weights must sum to 100%",
+      );
+    });
+
+    it("W10-B-012: includes currencies in actual reserves but not in basket", async () => {
+      (basketService.getCurrentBasket as jest.Mock).mockResolvedValue([
+        { currency: "USD", weight: 50 },
+        { currency: "NGN", weight: 50 },
+      ]);
+
+      (reserveTracker.getReserveStatus as jest.Mock).mockResolvedValue({
+        currencies: [
+          { currency: "USD", actualWeight: 50 },
+          { currency: "NGN", actualWeight: 50 },
+          { currency: "KES", actualWeight: 5 }, // Extra currency not in basket
+        ],
+      });
+
+      const report = await weightDriftAuditService.calculateDriftReport();
+
+      expect(report.totalCurrencies).toBe(3); // USD, NGN, KES
+      const kesEntry = report.entries.find((e) => e.currency === "KES");
+      expect(kesEntry).toBeDefined();
+      expect(kesEntry?.policyWeight).toBe(0); // Not in basket
+      expect(kesEntry?.actualWeight).toBe(5);
+      expect(kesEntry?.driftPercent).toBe(5);
+      expect(kesEntry?.exceedsThreshold).toBe(true);
+    });
+
+    it("W10-B-012: includes currencies in basket but not in actual reserves", async () => {
+      (basketService.getCurrentBasket as jest.Mock).mockResolvedValue([
+        { currency: "USD", weight: 50 },
+        { currency: "NGN", weight: 50 },
+      ]);
+
+      (reserveTracker.getReserveStatus as jest.Mock).mockResolvedValue({
+        currencies: [{ currency: "USD", actualWeight: 50 }], // NGN missing
+      });
+
+      const report = await weightDriftAuditService.calculateDriftReport();
+
+      expect(report.totalCurrencies).toBe(2); // USD, NGN
+      const ngnEntry = report.entries.find((e) => e.currency === "NGN");
+      expect(ngnEntry).toBeDefined();
+      expect(ngnEntry?.policyWeight).toBe(50);
+      expect(ngnEntry?.actualWeight).toBe(0); // Missing from reserves
+      expect(ngnEntry?.driftPercent).toBe(-50);
+      expect(ngnEntry?.exceedsThreshold).toBe(true);
+    });
   });
 
   describe("createAudit", () => {

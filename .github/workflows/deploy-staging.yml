@@ -21,11 +21,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Gate: Secret scan must pass before we deploy ──────────────────────
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+          fetch-depth: 0
+
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION="8.18.2"
+          curl -sSLo gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -zxf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+
+      - name: Run gitleaks
+        run: gitleaks detect --verbose --redact
+
   # ── Gate: CI must pass before we deploy ──────────────────────────────────
   # Reuses the test + build results already computed by ci.yml on push to main.
   # If the CI workflow hasn't run or failed, this job waits/blocks accordingly.
   deploy:
     name: Deploy to Staging
+    needs: [secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:

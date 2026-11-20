@@ -139,13 +139,11 @@ describe("authController", () => {
       });
     });
 
-    it("includes wallet_created flag when wallet is newly created", async () => {
+    it("flags self-custody enrollment and never returns key material", async () => {
       (signin as jest.Mock).mockResolvedValue({
         api_key: "key",
         user_id: "u1",
-        wallet_created: true,
-        passphrase: "words",
-        encryption_method_required: true,
+        wallet_enrollment_required: true,
       });
       const res = makeRes();
       await postSignin(
@@ -155,10 +153,12 @@ describe("authController", () => {
       );
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          wallet_created: true,
-          encryption_method_required: true,
+          wallet_enrollment_required: true,
         }),
       );
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload).not.toHaveProperty("passphrase");
+      expect(payload).not.toHaveProperty("wallet_created");
     });
 
     it("returns 401 on invalid credentials", async () => {
