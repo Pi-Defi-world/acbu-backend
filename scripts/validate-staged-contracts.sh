@@ -1,0 +1,167 @@
+#!/bin/bash
+
+# Pre-commit hook for WASM integrity verification and secret scanning.
+# Prevents committing changes that would break WASM hash verification
+# or leak credentials into source control (AX-002).
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(git rev-parse --show-toplevel)/contracts"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# ---------------------------------------------------------------------------
+# AX-002 — Secret / credential scan
+# ---------------------------------------------------------------------------
+# Patterns that indicate a real Stellar secret key or common credential values
+# have been staged for commit.  The Stellar secret key format is:
+#   S + 55 uppercase alphanumeric characters (base-32).
+# We also catch generic patterns like `SECRET=` / `SECRET_KEY=` / `PRIVATE_KEY=`
+# assigned to a non-placeholder value.
+
+echo -e "${YELLOW}[Pre-commit Hook]${NC} Scanning staged files for secrets..."
+
+# Collect only text-like staged files (skip binary)
+STAGED_TEXT_FILES=$(git diff --cached --name-only --diff-filter=ACMR | \
+    grep -Ev '\.(wasm|png|jpg|jpeg|gif|ico|pdf|zip|tar|gz)$' || true)
+
+SECRET_FOUND=0
+
+if [ -n "$STAGED_TEXT_FILES" ]; then
+    # Pattern 1: Stellar secret key — S followed by exactly 55 base-32 chars
+    STELLAR_KEY_PATTERN='S[A-Z2-7]{55}'
+    # Pattern 2: Generic assignment of a non-placeholder secret
+    GENERIC_SECRET_PATTERN='(SECRET|SECRET_KEY|STELLAR_SECRET_KEY|PRIVATE_KEY)\s*[=:]\s*["\x27]?[A-Za-z0-9+/]{20,}'
+
+    while IFS= read -r file; do
+        [ -f "$PROJECT_ROOT/$file" ] || continue
+
+        # Check staged content (not working tree) via git show
+        STAGED_CONTENT=$(git show ":$file" 2>/dev/null || true)
+
+        if echo "$STAGED_CONTENT" | grep -qP "$STELLAR_KEY_PATTERN"; then
+            echo -e "${RED}[FAIL]${NC} Stellar secret key pattern detected in staged file: $file"
+            SECRET_FOUND=1
+        fi
+
+        if echo "$STAGED_CONTENT" | grep -qP "$GENERIC_SECRET_PATTERN"; then
+            # Allow placeholder values like "your-secret-key" or "<SECRET>"
+            if echo "$STAGED_CONTENT" | grep -P "$GENERIC_SECRET_PATTERN" | grep -qvP '(your-secret-key|<SECRET>|example|placeholder|\$\{|\$STELLAR)'; then
+                echo -e "${RED}[FAIL]${NC} Potential hardcoded secret detected in staged file: $file"
+                echo "  Match:"
+                echo "$STAGED_CONTENT" | grep -P "$GENERIC_SECRET_PATTERN" | grep -vP '(your-secret-key|<SECRET>|example|placeholder|\$\{|\$STELLAR)' | head -3 | sed 's/^/    /'
+                SECRET_FOUND=1
+            fi
+        fi
+    done <<< "$STAGED_TEXT_FILES"
+fi
+
+if [ "$SECRET_FOUND" -eq 1 ]; then
+    echo ""
+    echo -e "${RED}❌  Commit blocked: secret/credential detected in staged changes.${NC}"
+    echo ""
+    echo "To fix:"
+    echo "  1. Remove the hardcoded value and use an environment variable instead."
+    echo "  2. Rotate the exposed credential immediately if it was ever pushed."
+    echo "  3. If the key is in git history, purge it with:"
+    echo "       git filter-repo --path <file> --invert-paths"
+    echo "  4. Run  git rm --cached <file>  and add it to .gitignore."
+    echo ""
+    exit 1
+fi
+
+echo -e "${GREEN}[PASS]${NC} No secrets detected in staged files"
+
+# ---------------------------------------------------------------------------
+# WASM integrity verification
+# ---------------------------------------------------------------------------
+
+echo -e "${YELLOW}[Pre-commit Hook]${NC} Running WASM integrity checks..."
+
+# Check if WASM file is being modified
+if git diff --cached --name-only | grep -q "soroban_token_contract.wasm"; then
+    echo -e "${YELLOW}⚠️  WASM artifact modified${NC}"
+    
+    # Get the new hash
+    WASM_FILE="$PROJECT_ROOT/soroban_token_contract.wasm"
+    NEW_HASH=$(sha256sum "$WASM_FILE" | awk '{print $1}')
+    
+    echo "New WASM hash: $NEW_HASH"
+    echo ""
+    echo "You must update the hash in:"
+    echo "  - acbu_minting/src/lib.rs"
+    echo "  - acbu_burning/src/lib.rs"
+    echo "  - acbu_reserve_tracker/src/lib.rs"
+    echo "  - scripts/verify_wasm_hash.sh"
+    echo "  - .github/workflows/verify-wasm-integrity.yml"
+    echo ""
+    
+    # Check if hashes are updated
+    MINTING_HASH=$(grep -oP 'sha256 = "\K[^"]+' "$PROJECT_ROOT/acbu_minting/src/lib.rs" || echo "")
+    BURNING_HASH=$(grep -oP 'sha256 = "\K[^"]+' "$PROJECT_ROOT/acbu_burning/src/lib.rs" || echo "")
+    RESERVE_HASH=$(grep -oP 'sha256 = "\K[^"]+' "$PROJECT_ROOT/acbu_reserve_tracker/src/lib.rs" || echo "")
+    
+    if [ "$MINTING_HASH" != "$NEW_HASH" ] || [ "$BURNING_HASH" != "$NEW_HASH" ] || [ "$RESERVE_HASH" != "$NEW_HASH" ]; then
+        echo -e "${RED}[FAIL]${NC} Contract hashes not updated to match new WASM"
+        echo "Minting:        $MINTING_HASH"
+        echo "Burning:        $BURNING_HASH"
+        echo "Reserve:        $RESERVE_HASH"
+        echo "Expected:       $NEW_HASH"
+        exit 1
+    fi
+fi
+
+# Verify hash consistency in staged changes
+EXPECTED_HASH="6b14997b915dee21082884cd5a2f1f2f0aef0073d1dcb9c5b3c674cf487fb41d"
+
+for contract in acbu_minting acbu_burning acbu_reserve_tracker; do
+    FILE="$PROJECT_ROOT/$contract/src/lib.rs"
+    if git diff --cached "$FILE" | grep -q "sha256"; then
+        echo -e "${YELLOW}⚠️  Hash modified in $contract${NC}"
+        
+        if ! git show ":$FILE" | grep -q "sha256 = \"$EXPECTED_HASH\""; then
+            echo -e "${RED}[FAIL]${NC} Hash mismatch in staged changes for $contract"
+            exit 1
+        fi
+    fi
+done
+
+echo -e "${GREEN}[PASS]${NC} WASM integrity checks passed"
+
+# Check snapshot validity if snapshot-related files are being modified
+echo -e "${YELLOW}[Pre-commit Hook]${NC} Checking test snapshots..."
+
+SNAPSHOT_RELATED_FILES=$(git diff --cached --name-only | grep -E "(^|/)(acbu_minting/src/|acbu_minting/tests/|acbu_minting/test_snapshots/|shared/src/)" || true)
+
+if [ -n "$SNAPSHOT_RELATED_FILES" ]; then
+    echo -e "${YELLOW}⚠️  Snapshot-related files modified, validating snapshots...${NC}"
+    
+    # Run snapshot validation
+    if ! cargo test test_snapshot_validation --package acbu_minting --quiet 2>&1 | grep -q "test result: ok"; then
+        echo -e "${RED}[FAIL]${NC} Snapshot validation failed!"
+        echo ""
+        echo "Modified files:"
+        echo "$SNAPSHOT_RELATED_FILES"
+        echo ""
+        echo "Run the following to see details:"
+        echo "  cargo test test_snapshot_validation --package acbu_minting -- --nocapture"
+        echo ""
+        echo "To fix:"
+        echo "  1. Review: acbu_minting/SNAPSHOT_MANAGEMENT.md"
+        echo "  2. Update EXPECTED_STORAGE_KEYS and EXPECTED_EVENT_TYPES if needed"
+        echo "  3. Regenerate: make clean-snapshots && make test-minting"
+        echo "  4. Stage updated snapshots: git add acbu_minting/test_snapshots/"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}[PASS]${NC} Snapshot validation passed"
+else
+    echo -e "${GREEN}[SKIP]${NC} No snapshot-related files modified"
+fi
+
+exit 0
