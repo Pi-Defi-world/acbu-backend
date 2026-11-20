@@ -1,14 +1,23 @@
 name: Release & Artifact Publish
 
-# Trigger on semantic version tags (e.g. v1.0.0, v1.0.1, v2.1.0-rc.1) or manual trigger.
+# Releases are component-scoped. A tag names exactly one package:
+#   backend@v1.2.0    -> backend API server (repository root)
+#   frontend@v2.1.0   -> frontend web app (frontend/)
+#   contracts@v0.8.0  -> Soroban contracts (contracts/)
+# The legacy bare tag v1.2.0 is still accepted as a backend release so older
+# automation keeps working, but new releases must use the component form.
+# See docs/MULTI_PACKAGE_RELEASES.md for the full release process.
 on:
   push:
     tags:
+      - "backend@v[0-9]+.[0-9]+.[0-9]+*"
+      - "frontend@v[0-9]+.[0-9]+.[0-9]+*"
+      - "contracts@v[0-9]+.[0-9]+.[0-9]+*"
       - "v[0-9]+.[0-9]+.[0-9]+*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v1.0.1)"
+        description: "Release tag (e.g. backend@v1.0.1, frontend@v2.1.0, contracts@v0.8.0)"
         required: true
       dry_run:
         description: "Dry run (build artifacts without publishing to GHCR/Releases)"
@@ -25,7 +34,42 @@ permissions:
   packages: write
 
 jobs:
-  # ── Step 0: Secret scan must pass before release ────────────────────────
+  # ── Step 0: Resolve which package this tag releases ─────────────────────
+  resolve-release:
+    name: Resolve Release Target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      package: ${{ steps.release.outputs.package }}
+      version: ${{ steps.release.outputs.version }}
+      version_tag: ${{ steps.release.outputs.version_tag }}
+      git_tag: ${{ steps.release.outputs.git_tag }}
+      release_name: ${{ steps.release.outputs.release_name }}
+      artifact_name: ${{ steps.release.outputs.artifact_name }}
+      release_notes: ${{ steps.release.outputs.release_notes }}
+      directory: ${{ steps.release.outputs.directory }}
+      legacy: ${{ steps.release.outputs.legacy }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      image_tags: ${{ steps.release.outputs.image_tags }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve release tag
+        id: release
+        run: |
+          RAW_TAG="${{ inputs.tag || github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual release requested for tag: ${RAW_TAG}"
+          fi
+
+          node scripts/release/resolve-release.js \
+            --ref "${RAW_TAG}" \
+            --github-output "${GITHUB_OUTPUT}"
+
+  # ── Step 1: Secret scan must pass before release ────────────────────────
   secret-scan:
     name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest
@@ -50,12 +94,12 @@ jobs:
       - name: Run gitleaks
         run: gitleaks detect --verbose --redact
 
-  # ── Step 1: Quality gate & verify build ─────────────────────────────────────
+  # ── Step 2: Quality gate & package the released component ───────────────
   build-and-test:
-    name: Build & Verify Artifacts
-    needs: [secret-scan]
+    name: Build & Verify ${{ needs.resolve-release.outputs.package }} Artifact
+    needs: [secret-scan, resolve-release]
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -63,51 +107,128 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
+      - name: Verify release target exists
+        run: |
+          PACKAGE="${{ needs.resolve-release.outputs.package }}"
+          TAG="${{ needs.resolve-release.outputs.git_tag }}"
+
+          if [ "${PACKAGE}" = "frontend" ] && [ ! -f frontend/package.json ]; then
+            echo "::error::Tag ${TAG} releases the frontend, but frontend/package.json is missing from this ref. Merge the monorepo consolidation (frontend/ tree) before tagging a frontend release."
+            exit 1
+          fi
+          if [ "${PACKAGE}" = "contracts" ] && [ ! -f contracts/Cargo.toml ]; then
+            echo "::error::Tag ${TAG} releases the contracts, but contracts/Cargo.toml is missing from this ref. Merge the monorepo consolidation (contracts/ tree) before tagging a contracts release."
+            exit 1
+          fi
+
+      # ── Backend toolchain ────────────────────────────────────────────────
+      - name: Setup pnpm (backend)
+        if: needs.resolve-release.outputs.package == 'backend'
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: "10.33.1"
 
-      - name: Setup Node.js
+      - name: Setup Node.js (backend)
+        if: needs.resolve-release.outputs.package == 'backend'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: "pnpm"
 
-      - name: Install dependencies
+      - name: Install dependencies (backend)
+        if: needs.resolve-release.outputs.package == 'backend'
         run: pnpm install --frozen-lockfile
 
-      - name: Generate Prisma Client
+      - name: Generate Prisma Client (backend)
+        if: needs.resolve-release.outputs.package == 'backend'
         run: pnpm prisma:generate
 
-      - name: Compile TypeScript
+      - name: Compile TypeScript (backend)
+        if: needs.resolve-release.outputs.package == 'backend'
         run: pnpm build
 
-      - name: Resolve Release Tag & Version
-        id: version
-        run: |
-          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          # Strip leading 'v' if present for clean semver
-          SEMVER="${RAW_TAG#v}"
-          echo "tag=${RAW_TAG}" >> "$GITHUB_OUTPUT"
-          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
+      # ── Frontend toolchain ──────────────────────────────────────────────
+      - name: Setup pnpm (frontend)
+        if: needs.resolve-release.outputs.package == 'frontend'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: "10.15.0"
 
+      - name: Setup Node.js (frontend)
+        if: needs.resolve-release.outputs.package == 'frontend'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build frontend
+        if: needs.resolve-release.outputs.package == 'frontend'
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      # ── Contracts toolchain ─────────────────────────────────────────────
+      - name: Setup Rust toolchain (contracts)
+        if: needs.resolve-release.outputs.package == 'contracts'
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build Soroban contracts
+        if: needs.resolve-release.outputs.package == 'contracts'
+        run: |
+          cargo build --release --locked \
+            --target wasm32-unknown-unknown \
+            --manifest-path contracts/Cargo.toml
+
+      # ── Package the component's release artifact ─────────────────────────
       - name: Package Release Tarball
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          ARCHIVE_NAME="acbu-backend-${TAG}.tar.gz"
+          set -euo pipefail
+
+          PACKAGE="${{ needs.resolve-release.outputs.package }}"
+          ARTIFACT="${{ needs.resolve-release.outputs.artifact_name }}"
           mkdir -p release-dist
-          tar -czf "release-dist/${ARCHIVE_NAME}" \
-            dist/ \
-            prisma/ \
-            package.json \
-            pnpm-lock.yaml \
-            README.md \
-            CHANGELOG.md
+
+          if [ "${PACKAGE}" = "backend" ]; then
+            tar -czf "release-dist/${ARTIFACT}" \
+              dist/ \
+              prisma/ \
+              package.json \
+              pnpm-lock.yaml \
+              README.md \
+              CHANGELOG.md
+          elif [ "${PACKAGE}" = "frontend" ]; then
+            STAGE="$(mktemp -d)"
+            cp -R frontend/.next "${STAGE}/next"
+            cp frontend/package.json frontend/pnpm-lock.yaml "${STAGE}/"
+            tar -czf "release-dist/${ARTIFACT}" -C "${STAGE}" .
+          elif [ "${PACKAGE}" = "contracts" ]; then
+            STAGE="$(mktemp -d)"
+            mkdir -p "${STAGE}/wasm"
+            find contracts/target/wasm32-unknown-unknown/release \
+              -maxdepth 1 -name '*.wasm' \
+              -exec cp {} "${STAGE}/wasm/" \;
+
+            if [ -z "$(ls -A "${STAGE}/wasm")" ]; then
+              echo "::error::No WASM artifacts were produced under contracts/target/wasm32-unknown-unknown/release."
+              exit 1
+            fi
+
+            cp contracts/Cargo.toml "${STAGE}/"
+            if [ -f contracts/Cargo.lock ]; then
+              cp contracts/Cargo.lock "${STAGE}/"
+            fi
+            tar -czf "release-dist/${ARTIFACT}" -C "${STAGE}" .
+          else
+            echo "::error::Unsupported package ${PACKAGE}."
+            exit 1
+          fi
 
           cd release-dist
-          sha256sum "${ARCHIVE_NAME}" > SHA256SUMS
-          cd ..
+          sha256sum "${ARTIFACT}" > SHA256SUMS
 
       - name: Upload Release Archive Artifact
         uses: actions/upload-artifact@v7
@@ -115,30 +236,34 @@ jobs:
           name: release-archive
           path: release-dist/
 
-  # ── Step 2: Publish Docker Container Image to GHCR ─────────────────────────
+  # ── Step 3: Publish the backend container image ────────────────────────
   publish-container:
-    name: Build & Publish Container Image
-    needs: [build-and-test]
-    if: ${{ github.event.inputs.dry_run != 'true' }}
+    name: Build & Publish Backend Container Image
+    needs: [build-and-test, resolve-release]
+    if: ${{ needs.resolve-release.outputs.package == 'backend' && github.event.inputs.dry_run != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Resolve Version Strings
-        id: meta
+      - name: Resolve image tags
+        id: image
         run: |
-          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          SEMVER="${RAW_TAG#v}"
-          MAJOR=$(echo "$SEMVER" | cut -d. -f1)
-          MINOR=$(echo "$SEMVER" | cut -d. -f2)
+          : > image-tags.txt
+          while IFS= read -r tag; do
+            if [ -n "${tag}" ]; then
+              echo "ghcr.io/${GITHUB_REPOSITORY}:${tag}" >> image-tags.txt
+            fi
+          done <<< "${{ needs.resolve-release.outputs.image_tags }}"
 
-          echo "raw_tag=${RAW_TAG}" >> "$GITHUB_OUTPUT"
-          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
-          echo "major_minor=${MAJOR}.${MINOR}" >> "$GITHUB_OUTPUT"
-          echo "major=${MAJOR}" >> "$GITHUB_OUTPUT"
+          echo "tags<<EOF" >> "${GITHUB_OUTPUT}"
+          cat image-tags.txt >> "${GITHUB_OUTPUT}"
+          echo "EOF" >> "${GITHUB_OUTPUT}"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -155,25 +280,25 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.raw_tag }}
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.semver }}
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.major_minor }}
-            ghcr.io/${{ github.repository }}:latest
+          tags: ${{ steps.image.outputs.tags }}
           labels: |
             org.opencontainers.image.title=ACBU Backend API Server
             org.opencontainers.image.description=Production release of ACBU Backend
-            org.opencontainers.image.version=${{ steps.meta.outputs.semver }}
+            org.opencontainers.image.version=${{ needs.resolve-release.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Step 3: Create GitHub Release with Artifacts ───────────────────────────
+  # ── Step 4: Create the package-specific GitHub Release ─────────────────
   github-release:
-    name: Create GitHub Release
-    needs: [build-and-test, publish-container]
-    if: ${{ github.event.inputs.dry_run != 'true' }}
+    name: Create ${{ needs.resolve-release.outputs.release_name }} Release
+    needs: [resolve-release, build-and-test, publish-container]
+    if: |
+      always() &&
+      needs.build-and-test.result == 'success' &&
+      (needs.publish-container.result == 'success' || needs.publish-container.result == 'skipped') &&
+      github.event.inputs.dry_run != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -189,19 +314,27 @@ jobs:
           name: release-archive
           path: release-dist
 
-      - name: Extract Release Notes from CHANGELOG
+      - name: Extract Release Notes from component CHANGELOG
         id: notes
         run: |
-          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION="${RAW_TAG#v}"
+          set -euo pipefail
 
-          # Extract section from CHANGELOG.md matching version if present
-          if grep -q "## \[${VERSION}\]" CHANGELOG.md; then
-            sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | sed '$d' > RELEASE_NOTES.md
-          elif grep -q "## ${VERSION}" CHANGELOG.md; then
-            sed -n "/## ${VERSION}/,/## /p" CHANGELOG.md | sed '$d' > RELEASE_NOTES.md
+          PACKAGE="${{ needs.resolve-release.outputs.package }}"
+          VERSION="${{ needs.resolve-release.outputs.version }}"
+          NOTES_FILE="${{ needs.resolve-release.outputs.release_notes }}"
+
+          {
+            echo "**Package:** \`${PACKAGE}\`"
+            echo "**Version:** \`${VERSION}\`"
+            echo ""
+          } > RELEASE_NOTES.md
+
+          if [ -f "${NOTES_FILE}" ] && grep -qF "## [${VERSION}]" "${NOTES_FILE}"; then
+            sed -n "/## \\[${VERSION}\\]/,/## \\[/p" "${NOTES_FILE}" | sed '$d' >> RELEASE_NOTES.md
+          elif [ -f "${NOTES_FILE}" ] && grep -qF "## ${VERSION}" "${NOTES_FILE}"; then
+            sed -n "/## ${VERSION}/,/## /p" "${NOTES_FILE}" | sed '$d' >> RELEASE_NOTES.md
           else
-            echo "Release ${RAW_TAG} (${VERSION})" > RELEASE_NOTES.md
+            echo "Release ${PACKAGE} v${VERSION}" >> RELEASE_NOTES.md
             echo "" >> RELEASE_NOTES.md
             echo "Automated reproducible production release for commit \`${{ github.sha }}\`." >> RELEASE_NOTES.md
           fi
@@ -209,11 +342,11 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d190 # v2.0.8
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.resolve-release.outputs.git_tag }}
+          name: ${{ needs.resolve-release.outputs.release_name }}
           body_path: RELEASE_NOTES.md
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          prerelease: ${{ needs.resolve-release.outputs.prerelease == 'true' }}
           files: |
             release-dist/*.tar.gz
             release-dist/SHA256SUMS
