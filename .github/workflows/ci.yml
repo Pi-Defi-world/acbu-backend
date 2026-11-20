@@ -269,7 +269,6 @@ jobs:
     # service container as soon as the job finishes, so every run starts
     # from an empty database and full isolation is guaranteed.
 
-
     env:
       DATABASE_URL: postgresql://acbu_ci:acbu_ci_pw@localhost:5432/acbu_ci
 
