@@ -37,12 +37,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout backend checksum lock and verifier
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: backend
-          ref: ${{ inputs.backend-ref || github.sha }}
-          persist-credentials: false
+      - name: Fetch backend source without broken gitlink initialization
+        shell: bash
+        env:
+          BACKEND_REPOSITORY: ${{ github.repository }}
+          BACKEND_REF: ${{ inputs.backend-ref || github.sha }}
+        run: |
+          set -euo pipefail
+          # This repository has an acbu-frontend gitlink without a .gitmodules
+          # entry. actions/checkout v7 runs git submodule foreach even with
+          # submodules: false, which aborts before integrity tests run.
+          # A GitHub source archive contains tracked backend files but never
+          # initializes Git submodules. No checksum values are generated here.
+          mkdir -p backend
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://api.github.com/repos/${BACKEND_REPOSITORY}/tarball/${BACKEND_REF}" \
+            | tar -xz --strip-components=1 -C backend
+          test -f backend/scripts/ci/verify-wasm-integrity.js
+          test -f backend/tests/wasmIntegrity.test.js
 
       - name: Run integrity verifier regression tests
         run: node --test backend/tests/wasmIntegrity.test.js
