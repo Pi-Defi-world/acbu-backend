@@ -79,6 +79,15 @@ describe("Monetary Precision Tests", () => {
         expect.objectContaining({ statusCode: 400 }),
       );
     });
+
+    it("should reject non-finite amounts and invalid contract precision", () => {
+      expect(() => decimalToContractNumber(new Decimal(Infinity))).toThrow(
+        expect.objectContaining({ statusCode: 400 }),
+      );
+      expect(() => decimalToContractNumber(new Decimal(1), -1)).toThrow(
+        expect.objectContaining({ statusCode: 500 }),
+      );
+    });
   });
 
   describe("contractNumberToDecimal", () => {
@@ -139,6 +148,24 @@ describe("Monetary Precision Tests", () => {
       const fee = calculateFee(amount, 10000); // 100% fee
 
       expect(fee.toString()).toBe("123456789.1234567");
+    });
+
+    it.each([-1, 0.5, 10001, Number.NaN, Number.POSITIVE_INFINITY])(
+      "should reject invalid fee rate %s",
+      (feeBps) => {
+        expect(() => calculateFee(new Decimal(1), feeBps)).toThrow(
+          expect.objectContaining({ statusCode: 500 }),
+        );
+      },
+    );
+
+    it("should reject non-finite or negative fee amounts", () => {
+      expect(() => calculateFee(new Decimal(Infinity), 30)).toThrow(
+        expect.objectContaining({ statusCode: 400 }),
+      );
+      expect(() => calculateFee(new Decimal(-1), 30)).toThrow(
+        expect.objectContaining({ statusCode: 400 }),
+      );
     });
   });
 
