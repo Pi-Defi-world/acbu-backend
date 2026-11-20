@@ -53,21 +53,36 @@ jobs:
       legacy: ${{ steps.release.outputs.legacy }}
       prerelease: ${{ steps.release.outputs.prerelease }}
       image_tags: ${{ steps.release.outputs.image_tags }}
+      commit_sha: ${{ steps.release.outputs.commit_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Resolve release tag
         id: release
+        env:
+          # Caller-controlled values enter as data, never as interpolated script text.
+          RAW_TAG: ${{ inputs.tag || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          RAW_TAG="${{ inputs.tag || github.ref_name }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          set -euo pipefail
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             echo "Manual release requested for tag: ${RAW_TAG}"
           fi
 
           node scripts/release/resolve-release.js \
             --ref "${RAW_TAG}" \
             --github-output "${GITHUB_OUTPUT}"
+
+          # Pin every downstream checkout to the tag's commit, not the dispatch ref.
+          if ! COMMIT_SHA="$(git rev-parse --verify "refs/tags/${RAW_TAG}^{commit}" 2>/dev/null)"; then
+            echo "::error::Tag ${RAW_TAG} was not found in this repository. Push the tag before releasing."
+            exit 1
+          fi
+          echo "commit_sha=${COMMIT_SHA}" >> "${GITHUB_OUTPUT}"
 
   # ── Step 1: Secret scan must pass before release ────────────────────────
   secret-scan:
@@ -94,7 +109,7 @@ jobs:
       - name: Run gitleaks
         run: gitleaks detect --verbose --redact
 
-  # ── Step 2: Quality gate & package the released component ───────────────
+  # ── Step 2: Quality gate & package the released component ──────────────
   build-and-test:
     name: Build & Verify ${{ needs.resolve-release.outputs.package }} Artifact
     needs: [secret-scan, resolve-release]
@@ -105,7 +120,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.resolve-release.outputs.commit_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify release target exists
         run: |
@@ -202,7 +219,7 @@ jobs:
               CHANGELOG.md
           elif [ "${PACKAGE}" = "frontend" ]; then
             STAGE="$(mktemp -d)"
-            cp -R frontend/.next "${STAGE}/next"
+            cp -R frontend/.next "${STAGE}/.next"
             cp frontend/package.json frontend/pnpm-lock.yaml "${STAGE}/"
             tar -czf "release-dist/${ARTIFACT}" -C "${STAGE}" .
           elif [ "${PACKAGE}" = "contracts" ]; then
@@ -250,6 +267,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve-release.outputs.commit_sha }}
+          persist-credentials: false
 
       - name: Resolve image tags
         id: image
@@ -285,7 +305,7 @@ jobs:
             org.opencontainers.image.title=ACBU Backend API Server
             org.opencontainers.image.description=Production release of ACBU Backend
             org.opencontainers.image.version=${{ needs.resolve-release.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ needs.resolve-release.outputs.commit_sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -306,7 +326,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.resolve-release.outputs.commit_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download Release Archive Artifact
         uses: actions/download-artifact@v7
@@ -329,14 +351,25 @@ jobs:
             echo ""
           } > RELEASE_NOTES.md
 
-          if [ -f "${NOTES_FILE}" ] && grep -qF "## [${VERSION}]" "${NOTES_FILE}"; then
-            sed -n "/## \\[${VERSION}\\]/,/## \\[/p" "${NOTES_FILE}" | sed '$d' >> RELEASE_NOTES.md
-          elif [ -f "${NOTES_FILE}" ] && grep -qF "## ${VERSION}" "${NOTES_FILE}"; then
-            sed -n "/## ${VERSION}/,/## /p" "${NOTES_FILE}" | sed '$d' >> RELEASE_NOTES.md
+          # Match the exact version heading (bracketed or bare) so a stable
+          # release never picks up a prerelease section, and stop at the next
+          # heading without deleting the last line when the section ends at EOF.
+          SECTION=""
+          if [ -f "${NOTES_FILE}" ]; then
+            ESC_VERSION="$(printf '%s' "${VERSION}" | sed 's/[][\.^$*+?(){}|]/\\&/g')"
+            SECTION="$(awk -v ver="${ESC_VERSION}" '
+              found && /^## / { exit }
+              $0 ~ "^## (\\[" ver "\\]|" ver "([[:space:]]|$))" { found = 1 }
+              found { print }
+            ' "${NOTES_FILE}")"
+          fi
+
+          if [ -n "${SECTION}" ]; then
+            printf '%s\n' "${SECTION}" >> RELEASE_NOTES.md
           else
             echo "Release ${PACKAGE} v${VERSION}" >> RELEASE_NOTES.md
             echo "" >> RELEASE_NOTES.md
-            echo "Automated reproducible production release for commit \`${{ github.sha }}\`." >> RELEASE_NOTES.md
+            echo "Automated reproducible production release for commit \`${{ needs.resolve-release.outputs.commit_sha }}\`." >> RELEASE_NOTES.md
           fi
 
       - name: Publish GitHub Release
