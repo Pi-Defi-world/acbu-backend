@@ -50,9 +50,13 @@ Both invoke `conventional-changelog -p conventionalcommits -i CHANGELOG.md -s` w
 
 ## Release Workflow (when tags are used)
 
-Once semantic-version git tags are present (e.g. `backend@v1.2.0` or its legacy
-form `v1.2.0`), `conventional-changelog` will automatically group commits **per
-release/tag** instead of as a single section. The recommended release flow:
+`conventional-changelog` only discovers tags that match the prefix it is given
+(plain `vX.Y.Z` by default), so package-scoped tags need an explicit prefix:
+`-t "backend@v"`, `-t "frontend@v"` and `-t "contracts@v"` (or `-l <name>` for
+`name@X.Y.Z`-style tags). The `pnpm changelog` scripts pass no prefix, so they
+only see legacy `vX.Y.Z` tags; a package-scoped release's generated notes may
+therefore start from the last legacy tag until per-package scripts exist. The
+recommended release flow:
 
 1. Ensure you are on the release branch (`main` / `dev` / `develop` as applicable) with a clean working tree.
 2. Bump the version of the package being released (`package.json` for the
