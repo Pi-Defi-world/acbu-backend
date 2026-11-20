@@ -10,6 +10,10 @@
  * Zombie sockets are reaped with a 30-second ping/pong heartbeat. A
  * socket that misses one pong is terminated on the next tick, so dead
  * connections stop holding file descriptors and memory.
+ *
+ * Producer wiring is deferred: no balance-change code calls
+ * broadcastBalanceUpdate() yet. Producers should reach the running
+ * instance through getBalanceWebSocketServer().
  */
 
 import { type IncomingMessage, type Server as HttpServer } from "http";
@@ -42,6 +46,13 @@ export interface BalanceWebSocketServer {
   close(): void;
 }
 
+let activeServer: BalanceWebSocketServer | null = null;
+
+/** The running balance WebSocket server, if one was created. */
+export function getBalanceWebSocketServer(): BalanceWebSocketServer | null {
+  return activeServer;
+}
+
 export function createBalanceWebSocketServer(
   httpServer: HttpServer,
   options: { heartbeatIntervalMs?: number } = {},
@@ -49,6 +60,11 @@ export function createBalanceWebSocketServer(
   const heartbeatIntervalMs =
     options.heartbeatIntervalMs ?? WS_HEARTBEAT_INTERVAL_MS;
   const wss = new WebSocketServer({ noServer: true });
+
+  // Sockets that asked for an upgrade but are still awaiting
+  // authentication. They are not in wss.clients yet, so close() must
+  // destroy them explicitly or shutdown can wait on them forever.
+  const pendingUpgrades = new Set<Socket>();
 
   // Reap sockets that stop answering pings. A socket that misses one
   // pong is terminated on the next tick.
@@ -66,6 +82,7 @@ export function createBalanceWebSocketServer(
   }, heartbeatIntervalMs);
 
   httpServer.on("upgrade", (req, socket, head) => {
+    pendingUpgrades.add(socket);
     void handleUpgrade(req, socket, head);
   });
 
@@ -74,33 +91,51 @@ export function createBalanceWebSocketServer(
     socket: Socket,
     head: Buffer,
   ): Promise<void> {
-    let pathname = "";
-    try {
-      pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-    } catch {
-      pathname = "";
-    }
-    if (pathname !== WS_BALANCES_PATH) {
-      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+    // Node removes its HTTP error listener before emitting upgrade, and
+    // ws only installs one once handleUpgrade runs, so a reset while
+    // authentication waits would otherwise crash the process.
+    let upgradeFailed = false;
+    const onSocketError = (): void => {
+      upgradeFailed = true;
       socket.destroy();
-      return;
-    }
-
-    let auth: WsAuthResult;
+    };
+    socket.once("error", onSocketError);
     try {
-      auth = await authenticateWsUpgrade(req);
-    } catch {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
+      let pathname = "";
+      try {
+        pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+      } catch {
+        pathname = "";
+      }
+      if (pathname !== WS_BALANCES_PATH) {
+        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+        socket.destroy();
+        return;
+      }
 
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      const client = ws as AliveSocket;
-      client.userId = auth.userId;
-      client.isAlive = true;
-      wss.emit("connection", ws, req);
-    });
+      let auth: WsAuthResult;
+      try {
+        auth = await authenticateWsUpgrade(req);
+      } catch {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      socket.removeListener("error", onSocketError);
+      if (upgradeFailed) {
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        const client = ws as AliveSocket;
+        client.userId = auth.userId;
+        client.isAlive = true;
+        wss.emit("connection", ws, req);
+      });
+    } finally {
+      socket.removeListener("error", onSocketError);
+      pendingUpgrades.delete(socket);
+    }
   }
 
   wss.on("connection", (socket: WebSocket) => {
@@ -140,11 +175,20 @@ export function createBalanceWebSocketServer(
 
   function close(): void {
     clearInterval(heartbeat);
+    pendingUpgrades.forEach((socket) => {
+      socket.destroy();
+    });
+    pendingUpgrades.clear();
     wss.clients.forEach((socket) => {
       socket.terminate();
     });
     wss.close();
+    if (activeServer === server) {
+      activeServer = null;
+    }
   }
 
-  return { wss, broadcastBalanceUpdate, close };
+  const server: BalanceWebSocketServer = { wss, broadcastBalanceUpdate, close };
+  activeServer = server;
+  return server;
 }

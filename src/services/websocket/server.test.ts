@@ -57,7 +57,10 @@ jest.mock("ws", () => {
 });
 
 import { WebSocketServer } from "ws";
-import { createBalanceWebSocketServer } from "./server";
+import {
+  createBalanceWebSocketServer,
+  getBalanceWebSocketServer,
+} from "./server";
 
 interface FakeSocketLike extends EventEmitter {
   readyState: number;
@@ -73,6 +76,11 @@ interface FakeWssLike extends EventEmitter {
   handleUpgrade: jest.Mock;
   close: jest.Mock;
 }
+
+type FakeNetSocket = EventEmitter & {
+  write: jest.Mock;
+  destroy: jest.Mock;
+};
 
 const AUTH_RESULT = {
   keyId: "key-1",
@@ -112,11 +120,11 @@ describe("createBalanceWebSocketServer", () => {
     jest.useRealTimers();
   });
 
-  function upgrade(url = "/ws/balances"): {
-    write: jest.Mock;
-    destroy: jest.Mock;
-  } {
-    const socket = { write: jest.fn(), destroy: jest.fn() };
+  function upgrade(url = "/ws/balances"): FakeNetSocket {
+    const socket = Object.assign(new EventEmitter(), {
+      write: jest.fn(),
+      destroy: jest.fn(),
+    }) as FakeNetSocket;
     httpServer.emit("upgrade", { url }, socket, Buffer.alloc(0));
     return socket;
   }
@@ -154,6 +162,24 @@ describe("createBalanceWebSocketServer", () => {
     expect(socket.write).toHaveBeenCalledWith("HTTP/1.1 404 Not Found\r\n\r\n");
     expect(socket.destroy).toHaveBeenCalledTimes(1);
     expect(wss.handleUpgrade).not.toHaveBeenCalled();
+  });
+
+  it("destroys the socket and skips the upgrade when it errors during auth", async () => {
+    let resolveAuth!: (value: unknown) => void;
+    mockAuthenticate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAuth = resolve;
+        }),
+    );
+    const socket = upgrade();
+    socket.emit("error", new Error("socket reset"));
+    resolveAuth(AUTH_RESULT);
+    await flush();
+
+    expect(socket.destroy).toHaveBeenCalledTimes(1);
+    expect(wss.handleUpgrade).not.toHaveBeenCalled();
+    expect(wss.clients.size).toBe(0);
   });
 
   it("pings alive sockets every 30 seconds", async () => {
@@ -236,5 +262,22 @@ describe("createBalanceWebSocketServer", () => {
     expect(wss.close).toHaveBeenCalledTimes(1);
     jest.advanceTimersByTime(60_000);
     expect(socket.ping).not.toHaveBeenCalled();
+  });
+
+  it("close() destroys sockets still awaiting auth", async () => {
+    mockAuthenticate.mockImplementationOnce(() => new Promise(() => {}));
+    const socket = upgrade();
+    await flush();
+
+    server.close();
+
+    expect(socket.destroy).toHaveBeenCalledTimes(1);
+    expect(wss.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("getBalanceWebSocketServer() returns the instance until close()", () => {
+    expect(getBalanceWebSocketServer()).toBe(server);
+    server.close();
+    expect(getBalanceWebSocketServer()).toBeNull();
   });
 });

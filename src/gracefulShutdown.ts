@@ -10,9 +10,7 @@ let httpServer: AppServer | null = null;
 let memoryMonitorHandle: NodeJS.Timeout | null = null;
 let balanceWsServer: { close: () => void } | null = null;
 
-export const setBalanceWebSocketServer = (
-  server: { close: () => void } | null,
-): void => {
+export const setBalanceWebSocketServer = (server: { close: () => void } | null): void => {
   balanceWsServer = server;
 };
 

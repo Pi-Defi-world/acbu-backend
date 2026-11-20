@@ -495,9 +495,7 @@ async function startServer() {
     setHttpServer(server);
 
     // W11-AUD-013: WebSocket server for balance updates with heartbeat.
-    const { createBalanceWebSocketServer } = await import(
-      "./services/websocket/server"
-    );
+    const { createBalanceWebSocketServer } = await import("./services/websocket/server");
     const balanceWsServer = createBalanceWebSocketServer(server);
     setBalanceWebSocketServer(balanceWsServer);
   } catch (error) {
