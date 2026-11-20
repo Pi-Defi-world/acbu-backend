@@ -1,0 +1,110 @@
+# Security audit alert workflow — resolves W11-INC-015.
+# Streams critical repository administrative events (branch protection changes,
+# repository visibility changes) to an external security monitoring webhook
+# (Slack, Discord, or SIEM). Organization-level membership/repository webhooks
+# are configured via scripts/ci/configure-security-webhooks.js (see
+# docs/SECURITY_AUDIT_WEBHOOKS.md).
+name: Security Audit Alerts
+
+on:
+  branch_protection_rule:
+    types: [created, edited, deleted]
+  public:
+  workflow_dispatch:
+    inputs:
+      test_event:
+        description: "Synthetic event label for webhook connectivity testing"
+        required: false
+        default: "manual_audit_webhook_test"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  notify-security-channel:
+    name: Stream Security Audit Event
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check webhook configuration
+        id: check_webhook
+        env:
+          SECURITY_AUDIT_WEBHOOK_URL: ${{ secrets.SECURITY_AUDIT_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SECURITY_AUDIT_WEBHOOK_URL" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Security Audit Webhook Not Configured"
+              echo ""
+              echo "Repository secret \`SECURITY_AUDIT_WEBHOOK_URL\` is not set."
+              echo "Configure it to stream administrative security events to Slack, Discord, or SIEM."
+              echo "See \`docs/SECURITY_AUDIT_WEBHOOKS.md\` for setup instructions."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send security audit alert
+        if: steps.check_webhook.outputs.configured == 'true'
+        env:
+          SECURITY_AUDIT_WEBHOOK_URL: ${{ secrets.SECURITY_AUDIT_WEBHOOK_URL }}
+          SECURITY_AUDIT_WEBHOOK_SECRET: ${{ secrets.SECURITY_AUDIT_WEBHOOK_SECRET }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_ACTION: ${{ github.event.action }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          TEST_EVENT: ${{ inputs.test_event }}
+        run: |
+          node -e '
+            const {
+              validateWebhookUrl,
+              formatAlertPayload,
+              signPayload,
+            } = require("./scripts/ci/configure-security-webhooks");
+
+            (async () => {
+              const url = validateWebhookUrl(process.env.SECURITY_AUDIT_WEBHOOK_URL);
+              const eventName = process.env.GITHUB_EVENT_NAME;
+              const action =
+                eventName === "workflow_dispatch"
+                  ? process.env.TEST_EVENT || "manual_test"
+                  : process.env.GITHUB_EVENT_ACTION || "triggered";
+
+              const payload = formatAlertPayload({
+                event: eventName,
+                action,
+                repository: process.env.GITHUB_REPOSITORY,
+                actor: process.env.GITHUB_ACTOR,
+                details: {
+                  run_id: process.env.GITHUB_RUN_ID,
+                },
+              });
+
+              const body = JSON.stringify(payload);
+              const headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "acbu-security-audit-alerts",
+              };
+
+              if (process.env.SECURITY_AUDIT_WEBHOOK_SECRET) {
+                headers["X-Hub-Signature-256"] = signPayload(
+                  body,
+                  process.env.SECURITY_AUDIT_WEBHOOK_SECRET,
+                );
+              }
+
+              const res = await fetch(url, { method: "POST", headers, body });
+              if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`Webhook delivery failed (${res.status}): ${text}`);
+              }
+              console.log(`Delivered security audit alert for ${eventName}.${action} (HTTP ${res.status}).`);
+            })().catch((err) => {
+              console.error(err.message);
+              process.exit(1);
+            });
+          '
