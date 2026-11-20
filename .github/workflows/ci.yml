@@ -7,6 +7,11 @@ on:
     branches: [main, dev, develop]
 
 jobs:
+  # W11-CAR-015: fail-closed gate for all nine pinned contract WASM binaries.
+  wasm-integrity:
+    name: Approved contract WASM integrity
+    uses: ./.github/workflows/verify-wasm-integrity.yml
+
   secret-scan:
     name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest
@@ -146,7 +151,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint-and-format, test, secret-scan]
+    needs: [lint-and-format, test, secret-scan, wasm-integrity]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
