@@ -50,16 +50,23 @@ Both invoke `conventional-changelog -p conventionalcommits -i CHANGELOG.md -s` w
 
 ## Release Workflow (when tags are used)
 
-Once semantic-version git tags are present (e.g. `v1.2.0`), `conventional-changelog` will automatically group commits **per release/tag** instead of as a single section. The recommended release flow:
+Once semantic-version git tags are present (e.g. `backend@v1.2.0` or its legacy
+form `v1.2.0`), `conventional-changelog` will automatically group commits **per
+release/tag** instead of as a single section. The recommended release flow:
 
 1. Ensure you are on the release branch (`main` / `dev` / `develop` as applicable) with a clean working tree.
-2. Bump the version in `package.json` if appropriate for the release train.
-3. Create and push an annotated git tag:
+2. Bump the version of the package being released (`package.json` for the
+   backend/frontend, `contracts/Cargo.toml` for the contracts).
+3. Create and push an annotated, package-scoped git tag:
 
    ```bash
-   git tag -a v1.2.0 -m "Release v1.2.0"
-   git push origin v1.2.0
+   git tag -a backend@v1.2.0 -m "backend v1.2.0"
+   git push origin backend@v1.2.0
    ```
+
+   Use `frontend@vX.Y.Z` or `contracts@vX.Y.Z` for the other packages. The
+   release workflow rejects unknown packages and malformed versions; see
+   [Multi-Package Releases](MULTI_PACKAGE_RELEASES.md) for details.
 
 4. Update the changelog:
 
