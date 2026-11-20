@@ -69,3 +69,80 @@ export async function getLendingBalance(
     next(e);
   }
 }
+
+export async function postLendingBorrow(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { borrower, lender, amount, collateralAmount, loanId } = req.body || {};
+    if (!borrower || !lender || !amount || !collateralAmount || loanId === undefined) {
+      throw new AppError(
+        "borrower, lender, amount, collateralAmount, and loanId required",
+        400,
+      );
+    }
+    if (!getContractAddresses().lendingPool) {
+      throw new AppError("Lending pool contract not configured", 503);
+    }
+    const txHash = await acbuLendingPoolService.borrow({
+      borrower,
+      lender,
+      amount: String(amount),
+      collateralAmount: String(collateralAmount),
+      loanId: Number(loanId),
+    });
+    res.status(200).json({ transaction_hash: txHash });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function postLendingRepay(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { borrower, amount, loanId } = req.body || {};
+    if (!borrower || !amount || loanId === undefined) {
+      throw new AppError("borrower, amount, and loanId required", 400);
+    }
+    if (!getContractAddresses().lendingPool) {
+      throw new AppError("Lending pool contract not configured", 503);
+    }
+    const txHash = await acbuLendingPoolService.repay({
+      borrower,
+      amount: String(amount),
+      loanId: Number(loanId),
+    });
+    res.status(200).json({ transaction_hash: txHash });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function postLendingLiquidate(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { liquidator, borrower, loanId } = req.body || {};
+    if (!liquidator || !borrower || loanId === undefined) {
+      throw new AppError("liquidator, borrower, and loanId required", 400);
+    }
+    if (!getContractAddresses().lendingPool) {
+      throw new AppError("Lending pool contract not configured", 503);
+    }
+    const txHash = await acbuLendingPoolService.liquidate({
+      liquidator,
+      borrower,
+      loanId: Number(loanId),
+    });
+    res.status(200).json({ transaction_hash: txHash });
+  } catch (e) {
+    next(e);
+  }
+}
