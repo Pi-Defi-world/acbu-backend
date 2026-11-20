@@ -333,3 +333,57 @@ fn test_redeem_single_stale_currency_rate() {
     ctx.burning
         .redeem_single(&ctx.user, &recipient, &(100 * DECIMALS), &currency);
 }
+
+#[test]
+#[should_panic(expected = "Error(Contract, #14)")] // VaultAllowanceInsufficient
+fn test_redeem_single_no_vault_allowance() {
+    let env = Env::default();
+    let ctx = setup_test(&env);
+
+    let currency = CurrencyCode::new(&env, "NGN");
+    let (stoken_id, _stoken_client, stoken_sac) = create_stoken(&env, &ctx.admin);
+    ctx.oracle.set_stoken(&currency, &stoken_id);
+
+    let burn_amount: i128 = 100 * DECIMALS;
+    ctx.acbu_token.mint(&ctx.user, &burn_amount);
+
+    // Vault holds tokens but grants NO allowance to the burning contract.
+    stoken_sac.mint(&ctx.vault, &(500 * DECIMALS));
+
+    let ts = env.ledger().timestamp();
+    ctx.oracle.set_acbu_rate(&DECIMALS, &ts);
+    ctx.oracle.set_currency_rate(&currency, &DECIMALS);
+    ctx.oracle.set_timestamp(&currency, &ts);
+
+    let recipient = Address::generate(&env);
+    ctx.burning
+        .redeem_single(&ctx.user, &recipient, &burn_amount, &currency, &None);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #14)")] // VaultAllowanceInsufficient
+fn test_redeem_single_insufficient_vault_allowance() {
+    let env = Env::default();
+    let ctx = setup_test(&env);
+
+    let currency = CurrencyCode::new(&env, "NGN");
+    let (stoken_id, stoken_client, stoken_sac) = create_stoken(&env, &ctx.admin);
+    ctx.oracle.set_stoken(&currency, &stoken_id);
+
+    let burn_amount: i128 = 100 * DECIMALS;
+    ctx.acbu_token.mint(&ctx.user, &burn_amount);
+
+    let vault_amount: i128 = 500 * DECIMALS;
+    stoken_sac.mint(&ctx.vault, &vault_amount);
+    // Approve only 1 stroop — far below what the redemption requires.
+    stoken_client.approve(&ctx.vault, &ctx.burning_id, &1i128, &200u32);
+
+    let ts = env.ledger().timestamp();
+    ctx.oracle.set_acbu_rate(&DECIMALS, &ts);
+    ctx.oracle.set_currency_rate(&currency, &DECIMALS);
+    ctx.oracle.set_timestamp(&currency, &ts);
+
+    let recipient = Address::generate(&env);
+    ctx.burning
+        .redeem_single(&ctx.user, &recipient, &burn_amount, &currency, &None);
+}

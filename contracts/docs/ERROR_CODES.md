@@ -21,6 +21,17 @@ Clients map `invoke_contract` / simulation failures using the contract error `u3
 | 11 | `InvalidRecipient` | The recipient address is invalid for this operation (e.g. a contract address where a classic account is required). |
 | 12 | `InvalidVersion` | WASM upgrade rejected: `new_version` must be greater than the stored version. |
 | 13 | `SlippageExceeded` | The computed output amount is below the caller-supplied minimum acceptable output (`min_*_out`), indicating that same-block oracle movement would cause unacceptable slippage for this transaction. |
+| 14 | `ArithmeticOverflow` | A fee, deviation or amount computation overflowed `i128`. Returned instead of aborting the contract so callers can surface a recoverable error. |
+| 15 | `InvalidCircuitPeer` | A circuit-breaker peer list is invalid: too many entries, a duplicate, or the contract itself. |
+| 16 | `CommitmentAlreadyAttested` | The credential commitment was already attested by the KYC authority (zk_verifier trusted commitment registry, AZ-002). |
+| 17 | `CommitmentNotAttested` | The credential commitment submitted with a proof was never attested by the trusted KYC authority (zk_verifier trusted commitment registry, AZ-002). |
+| 18 | `NullifierAlreadySpent` | The submitted nullifier was already consumed for this credential commitment and cannot be replayed (zk_verifier, AZ-025 / AZ-014). |
+| 19 | `InvalidPublicInputsLength` | The `public_inputs` vector length does not match the expected constant `MAX_PUBLIC_INPUTS_LEN`. Rejects malformed or oversized inputs before any proof verification work is performed (zk_verifier, AZ-007). |
+| 20 | `ProofCallerMismatch` | The wallet address hash encoded in `public_inputs[5]` (`wallet_address_hash`) does not match the address that signed and submitted this transaction. Prevents one valid proof from being replayed across different wallets (zk_verifier, AZ-032). |
+| 21 | `PolicyNotConfigured` | No compliance policy has been configured by the admin yet. `verify()` refuses all proofs until a policy is set, preventing a zero-tier / any-country bypass during the window after deployment. |
+| 22 | `KycTierTooLow` | The KYC tier encoded in `public_inputs[0]` is below the minimum tier required by the contract's stored compliance policy. A prover who sets `required_kyc = 0` in the circuit can no longer bypass this check because the contract independently enforces the admin-controlled minimum (AZ-001). |
+| 23 | `CountryNotAllowed` | The country code encoded in `public_inputs[1]` is not in the set of allowed jurisdictions stored by the contract.  A prover who sets `allowed_country` to their own value cannot bypass this check (AZ-001). |
+| 14 | `VaultAllowanceInsufficient` | The vault has not approved the burning contract as a spender with sufficient allowance for the requested S-token transfer.  Ensure the vault calls `approve(burning_contract, amount, expiry)` on each S-token before redemption. |
 | 9999 | `Unknown` | unknown error |
 
 ## `shared / reentrancy guard` - `ReentrancyError`
@@ -72,7 +83,8 @@ Clients map `invoke_contract` / simulation failures using the contract error `u3
 | 1019 | `NoPendingAdmin` | no pending admin |
 | 1020 | `AdminTimelockNotElapsed` | admin timelock has not elapsed |
 | 1021 | `NoPendingAdminToCancel` | no pending admin to cancel |
-| 1022 | `InsufficientYieldReserve` | vault balance cannot cover principal + yield owed |
+| 1022 | `InsufficientYieldReserve` | yield reserve cannot cover this amount |
+| 1023 | `NothingToClaim` | `claim_yield` called with no owed yield (AC-007). |
 | 1999 | `Unknown` | unknown savings vault error |
 
 ## `acbu_lending_pool` - `Error`
@@ -151,6 +163,12 @@ Clients map `invoke_contract` / simulation failures using the contract error `u3
 | 5025 | `SupplyMismatch` | supplied value does not match on-chain supply |
 | 5027 | `NegativeSupply` | negative supply |
 | 5026 | `SlippageExceeded` | The computed ACBU output is below the caller-supplied `min_acbu_out` floor, indicating that same-block oracle movement would cause unacceptable slippage. The transaction should be retried with updated parameters. |
+| 5028 | `ArithmeticOverflow` | A fee computation overflowed `i128` (AC-028). |
+| 5029 | `InvalidCircuitPeer` | The circuit-breaker peer list is invalid (too long, duplicate, or self). |
+| 5030 | `BurningContractNotSet` | `record_burn` called while no burning contract is linked (AC-005). |
+| 5031 | `InvalidBurnAmount` | `record_burn` called with a non-positive amount (AC-005). |
+| 5032 | `InvalidFiatSettlementProof` | AC-038: The ed25519 attestation signature on the fiat-settlement proof does not verify against the stored operator public key.  This means the mint was not backed by a cryptographically attested off-chain settlement. |
+| 5033 | `OperatorPubKeyNotSet` | AC-038: No operator ed25519 public key has been registered; call `set_operator_pub_key` (admin only) before using `mint_from_fiat`. |
 | 5999 | `Unknown` | unknown minting error |
 
 ## `acbu_oracle` - `OracleError`
@@ -182,6 +200,8 @@ Clients map `invoke_contract` / simulation failures using the contract error `u3
 | 7023 | `RateNotInitialized` | rate not initialized - no submissions yet |
 | 7024 | `CurrencyNotRegistered` | currency not registered |
 | 7025 | `InsufficientEmergencyVotes` | Emergency vote cast but consensus not yet reached — caller must wait for more validators to submit corroborating emergency rates. |
+| 7026 | `AdminDeviationTooLarge` | AC-013 (#736): admin rate override deviates beyond the per-currency emergency threshold — larger moves must go through `cast_emergency_vote` + `update_rate` N-of-M validator consensus instead. |
+| 7027 | `EmergencyCooldownActive` | An emergency (above-threshold) update was attempted before `EMERGENCY_UPDATE_COOLDOWN_SECONDS` elapsed since the currency's last update. Emergency consensus lifts the regular interval, not this floor. |
 | 7999 | `Unknown` | unknown oracle error |
 
 ## `acbu_reserve_tracker` - `ReserveTrackerError`
@@ -195,13 +215,14 @@ Clients map `invoke_contract` / simulation failures using the contract error `u3
 | 8005 | `AdminTimelockNotElapsed` | admin timelock has not elapsed |
 | 8006 | `NoPendingAdminToCancel` | no pending admin to cancel |
 | 8007 | `Unauthorized` | unauthorized |
-| 8008 | `AttestationNotFound` | no attestation submitted yet |
-| 8009 | `InvalidMerkleProof` | merkle proof does not match stored root |
-| 8010 | `InvalidCustodian` | caller is not the custodian |
-| 8011 | `AttestationExpired` | attestation has expired |
-| 8014 | `NonPositiveAmount` | amount and value_usd must be positive |
-| 8015 | `InconsistentReserve` | value_usd inconsistent with oracle rate |
-| 8016 | `DuplicateCurrency` | currency already tracked |
-| 8012 | `NoPendingUpgrade` | no pending upgrade |
-| 8013 | `TimelockNotElapsed` | timelock has not elapsed |
+| 8008 | `DuplicateCurrency` | currency already tracked |
+| 8009 | `AttestationNotFound` | no attestation submitted yet |
+| 8010 | `InvalidMerkleProof` | merkle proof does not match stored root |
+| 8011 | `InvalidCustodian` | caller is not the custodian |
+| 8012 | `AttestationExpired` | attestation has expired |
+| 8013 | `NoPendingUpgrade` | no pending upgrade |
+| 8014 | `TimelockNotElapsed` | timelock has not elapsed |
+| 8015 | `NonPositiveAmount` | amount and value_usd must be positive |
+| 8016 | `InconsistentReserve` | value_usd inconsistent with oracle rate |
+| 8017 | `OracleStale` | oracle rate is stale |
 | 8999 | `Unknown` | unknown reserve tracker error |

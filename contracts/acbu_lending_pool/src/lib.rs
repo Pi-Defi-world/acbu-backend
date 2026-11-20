@@ -16,11 +16,18 @@ pub enum DataKey {
     AcbuToken,
     FeeRate,
     Phase,
+    /// Lender's gross pool balance: deposits plus credited interest minus
+    /// withdrawals. Lent-out principal is *not* subtracted here (AC-041); it is
+    /// tracked separately in `Borrowed`, so the lender's available liquidity is
+    /// `Balance - Borrowed`.
     Balance(Address),
     Borrowed(Address), // Tracks total amount borrowed from each lender
     Loan(LoanId),
-    ActiveLoansLiquidity, // Tracks total amount currently loaned out
-    LenderBalances,
+    ActiveLoansLiquidity, // Tracks total amount currently loaned out (sum of Borrowed)
+    /// Sum of every lender's `Balance` (AC-041). Together with
+    /// `ActiveLoansLiquidity` this makes the pool invariant
+    /// `TotalLenderBalance - ActiveLoansLiquidity == SAC balance` checkable.
+    TotalLenderBalance,
     PendingUpgradeWasm,
     PendingUpgradeVersion,
     PendingUpgradeEligibleAt,
@@ -63,6 +70,7 @@ pub struct LoanId(pub Address, pub u64);
 pub enum LoanStatus {
     Active,
     Repaid,
+    Defaulted,
 }
 
 #[contracttype]
@@ -147,6 +155,16 @@ pub struct LoanRepaidEvent {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoanDefaultedEvent {
+    pub loan_id: u64,
+    pub borrower: Address,
+    pub lender: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
 #[derive(Clone, Debug)]
 pub struct RepaymentEvent {
     pub borrower: Address,
@@ -223,7 +241,7 @@ impl LendingPool {
         if env.storage().instance().has(&DataKey::Admin) {
             env.panic_with_error(Error::AlreadyInitialized);
         }
-        if fee_rate_bps < 0 || fee_rate_bps > BASIS_POINTS {
+        if !(0..=BASIS_POINTS).contains(&fee_rate_bps) {
             env.panic_with_error(Error::InvalidAmount);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
@@ -241,6 +259,9 @@ impl LendingPool {
             .set(&DataKey::ActiveLoansLiquidity, &0i128);
         env.storage()
             .instance()
+            .set(&DataKey::TotalLenderBalance, &0i128);
+        env.storage()
+            .instance()
             .set(&SharedDataKey::Version, &VERSION);
         env.storage()
             .instance()
@@ -254,7 +275,7 @@ impl LendingPool {
     /// pool balance. `amount` must be positive. Emits a [`DepositEvent`].
     pub fn deposit(env: Env, lender: Address, amount: i128) {
         // Re-entrancy guard
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         lender.require_auth();
         Self::check_paused(&env);
@@ -282,6 +303,7 @@ impl LendingPool {
             PERSISTENT_TTL_THRESHOLD,
             PERSISTENT_TTL_BUMP,
         );
+        Self::adjust_total_lender_balance(&env, amount);
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
@@ -299,7 +321,6 @@ impl LendingPool {
         );
 
         // Release re-entrancy guard
-        reentrancy_guard::release_guard(&env);
     }
 
     /// Withdraw `amount` of ACBU from the caller's pool balance.
@@ -308,9 +329,16 @@ impl LendingPool {
     /// portion of the balance not currently lent out (balance minus borrowed) may
     /// be withdrawn. A withdrawal must either drain the balance to zero or leave at
     /// least [`MIN_POOL_BALANCE`]; otherwise it fails with [`Error::DustBalance`].
+    ///
+    /// Before transferring tokens, the contract cross-checks that its actual SAC
+    /// token balance is sufficient to cover `amount` (AC-035). This ensures that
+    /// if internal accounting ever diverges from real holdings (e.g., due to
+    /// interest routing or an upgrade bug) the failure is surfaced as an explicit
+    /// [`Error::InsufficientBalance`] from the lending pool rather than an opaque
+    /// error from the token contract.
     pub fn withdraw(env: Env, lender: Address, amount: i128) {
         // Re-entrancy guard
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         lender.require_auth();
         Self::check_paused(&env);
@@ -347,27 +375,52 @@ impl LendingPool {
             env.panic_with_error(Error::DustBalance);
         }
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::Balance(lender.clone()), &new_balance);
-        env.storage().persistent().extend_ttl(
-            &DataKey::Balance(lender.clone()),
-            PERSISTENT_TTL_THRESHOLD,
-            PERSISTENT_TTL_BUMP,
-        );
+        // If balance reaches exactly zero, remove the storage entry to avoid
+        // leaving an unnecessary zero-value entry in storage.
+        if new_balance == 0 {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::Balance(lender.clone()));
+        } else {
+            env.storage()
+                .persistent()
+                .set(&DataKey::Balance(lender.clone()), &new_balance);
+            env.storage().persistent().extend_ttl(
+                &DataKey::Balance(lender.clone()),
+                PERSISTENT_TTL_THRESHOLD,
+                PERSISTENT_TTL_BUMP,
+            );
+        }
+        // AC-035: decrement TotalLenderBalance to keep the pool invariant
+        // (TotalLenderBalance - ActiveLoansLiquidity == SAC balance) intact.
+        // Previously this call was missing, causing TotalLenderBalance to drift
+        // upward after every withdrawal.
+        Self::adjust_total_lender_balance(&env, -amount);
+
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
         let acbu_token: Address = env.storage().instance().get(&DataKey::AcbuToken).unwrap();
         let token = soroban_sdk::token::Client::new(&env, &acbu_token);
+
+        // AC-035: cross-check the contract's real SAC balance before attempting
+        // the transfer. Internal accounting (Balance - Borrowed) should match,
+        // but if it ever diverges (e.g., interest routing bug, upgrade, or
+        // external direct token send) this guard surfaces the failure with an
+        // explicit InsufficientBalance from the lending pool instead of an
+        // opaque error from the token contract.
+        let contract_balance = token.balance(&env.current_contract_address());
+        if contract_balance < amount {
+            env.panic_with_error(Error::InsufficientBalance);
+        }
+
         token.transfer(&env.current_contract_address(), &lender, &amount);
 
         env.events()
             .publish((symbol_short!("withdraw"), lender), amount);
 
         // Release re-entrancy guard
-        reentrancy_guard::release_guard(&env);
     }
 
     /// Borrow `amount` of ACBU from a specific `lender`'s liquidity, creating
@@ -401,15 +454,9 @@ impl LendingPool {
     /// Meaningful collateral requires a *distinct* asset plus oracle pricing and
     /// a liquidation path; that is a separate feature, and
     /// [`LoanData::collateral_amount`] is reserved for it.
-    pub fn borrow(
-        env: Env,
-        borrower: Address,
-        lender: Address,
-        amount: i128,
-        loan_id: u64,
-    ) {
+    pub fn borrow(env: Env, borrower: Address, lender: Address, amount: i128, loan_id: u64) {
         // Re-entrancy guard
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         borrower.require_auth();
         // The loan is unsecured (see the function docs), so the lender bears the
@@ -463,6 +510,9 @@ impl LendingPool {
             .instance()
             .set(&DataKey::ActiveLoansLiquidity, &(active_loans_liquidity + amount));
 
+        // AC-041: the lender's `Balance` is intentionally left unchanged — it is
+        // their gross claim on the pool. Lent-out principal is recorded in
+        // `Borrowed`, and only `Balance - Borrowed` is lendable/withdrawable.
         let new_borrowed = already_borrowed
             .checked_add(amount)
             .unwrap_or_else(|| env.panic_with_error(Error::InvalidAmount));
@@ -530,7 +580,6 @@ impl LendingPool {
         );
 
         // Release re-entrancy guard
-        reentrancy_guard::release_guard(&env);
     }
 
     /// Return the loan identified by `(borrower, loan_id)`, or `None` if it does
@@ -544,7 +593,7 @@ impl LendingPool {
         let loan_key = LoanId(borrower, loan_id);
         let mut loan_data: LoanData = env.storage().persistent().get(&DataKey::Loan(loan_key))?;
 
-        if let LoanStatus::Repaid = loan_data.status {
+        if !matches!(loan_data.status, LoanStatus::Active) {
             return Some(loan_data);
         }
 
@@ -569,16 +618,112 @@ impl LendingPool {
         Some(loan_data)
     }
 
+    /// Write off an overdue loan and release the lender's reserved liquidity.
+    ///
+    /// Requires the lender's authorization. The outstanding principal is
+    /// removed from the lender's tracked balance because the pool no longer
+    /// holds those tokens, preventing a withdrawal from exceeding the pool's
+    /// actual token balance. The loan remains in storage as [`LoanStatus::Defaulted`]
+    /// for auditability, but no longer blocks the lender's remaining liquidity.
+    pub fn liquidate(env: Env, lender: Address, borrower: Address, loan_id: u64) {
+        let _guard = reentrancy_guard::acquire_guard(&env);
+
+        lender.require_auth();
+        Self::check_paused(&env);
+
+        let loan_key = LoanId(borrower.clone(), loan_id);
+        let mut loan_data: LoanData = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Loan(loan_key.clone()))
+            .unwrap_or_else(|| env.panic_with_error(Error::NotFound));
+
+        if loan_data.lender != lender {
+            env.panic_with_error(Error::Unauthorized);
+        }
+        if !matches!(loan_data.status, LoanStatus::Active) {
+            env.panic_with_error(Error::InvalidState);
+        }
+        if env.ledger().timestamp() <= loan_data.repayment_deadline {
+            env.panic_with_error(Error::InvalidState);
+        }
+
+        let outstanding_principal = loan_data.amount;
+        let active_loans_liquidity: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ActiveLoansLiquidity)
+            .unwrap_or(0);
+        env.storage().instance().set(
+            &DataKey::ActiveLoansLiquidity,
+            &active_loans_liquidity
+                .checked_sub(outstanding_principal)
+                .unwrap_or(0),
+        );
+
+        let lender_balance: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Balance(lender.clone()))
+            .unwrap_or(0);
+        env.storage().persistent().set(
+            &DataKey::Balance(lender.clone()),
+            &lender_balance
+                .checked_sub(outstanding_principal)
+                .unwrap_or_else(|| env.panic_with_error(Error::InvalidState)),
+        );
+
+        let already_borrowed: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Borrowed(lender.clone()))
+            .unwrap_or(0);
+        env.storage().persistent().set(
+            &DataKey::Borrowed(lender.clone()),
+            &already_borrowed
+                .checked_sub(outstanding_principal)
+                .unwrap_or(0),
+        );
+
+        loan_data.status = LoanStatus::Defaulted;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Loan(loan_key.clone()), &loan_data);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Loan(loan_key),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_BUMP,
+        );
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+
+        env.events().publish(
+            (symbol_short!("loan_def"),),
+            LoanDefaultedEvent {
+                loan_id,
+                borrower,
+                lender,
+                amount: outstanding_principal,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
     /// Repay `amount` toward the loan `(borrower, loan_id)`.
     ///
     /// Requires `borrower`'s authorization and that the pool is not paused.
     /// `amount` is applied to accrued interest first, then principal, and may not
-    /// exceed the total amount due. When the principal reaches zero the loan is
-    /// marked [`LoanStatus::Repaid`]. Emits [`RepayEvent`], [`RepaymentEvent`]
+    /// exceed the total amount due. Repaid interest is credited to the lender's
+    /// tracked pool balance (AC-015 #738) — it stays in the contract as
+    /// withdrawable liquidity instead of being transferred to the lender's
+    /// wallet, keeping `Balance - Borrowed` in sync with the contract's token
+    /// holdings. When the principal reaches zero the loan is marked
+    /// [`LoanStatus::Repaid`]. Emits [`RepayEvent`], [`RepaymentEvent`]
     /// and [`LoanRepaidEvent`].
     pub fn repay(env: Env, borrower: Address, amount: i128, loan_id: u64) {
         // Re-entrancy guard
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         borrower.require_auth();
         Self::check_paused(&env);
@@ -637,10 +782,30 @@ impl LendingPool {
 
         token.transfer(&borrower, &env.current_contract_address(), &amount);
 
+        // AC-015 (#738): credit repaid interest to the lender's tracked pool
+        // balance instead of transferring it straight to the lender's wallet.
+        // The tokens stay in the contract, so `Balance - Borrowed` continues to
+        // match actual holdings and the interest becomes withdrawable liquidity.
         let interest_repaid = amount - principal_repaid;
         if interest_repaid > 0 {
             let lender = loan_data.lender.clone();
-            token.transfer(&env.current_contract_address(), &lender, &interest_repaid);
+            let lender_balance: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Balance(lender.clone()))
+                .unwrap_or(0);
+            env.storage().persistent().set(
+                &DataKey::Balance(lender.clone()),
+                &lender_balance
+                    .checked_add(interest_repaid)
+                    .unwrap_or_else(|| env.panic_with_error(Error::InvalidAmount)),
+            );
+            env.storage().persistent().extend_ttl(
+                &DataKey::Balance(lender.clone()),
+                PERSISTENT_TTL_THRESHOLD,
+                PERSISTENT_TTL_BUMP,
+            );
+            Self::adjust_total_lender_balance(&env, interest_repaid);
         }
 
         if loan_data.amount == 0 {
@@ -708,7 +873,6 @@ impl LendingPool {
         );
 
         // Release re-entrancy guard
-        reentrancy_guard::release_guard(&env);
     }
 
     /// Pause the pool, disabling deposit/withdraw/borrow/repay. Admin only.
@@ -793,9 +957,8 @@ impl LendingPool {
             .remove(&DataKey::PendingUpgradeEligibleAt);
         env.deployer().update_current_contract_wasm(wasm_hash);
         for v in current_version..new_version {
-            match v {
-                0 => shared::migrate_v0_to_v1(&env),
-                _ => {}
+            if v == 0 {
+                shared::migrate_v0_to_v1(&env)
             }
         }
         env.storage()
@@ -827,6 +990,38 @@ impl LendingPool {
             .unwrap_or(0)
     }
 
+    /// Return the principal currently lent out from `lender`'s balance, or `0`.
+    pub fn get_borrowed(env: Env, lender: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Borrowed(lender))
+            .unwrap_or(0)
+    }
+
+    /// Return the portion of `lender`'s balance that is not lent out and can be
+    /// withdrawn or lent (`Balance - Borrowed`, floored at `0`).
+    pub fn get_available_balance(env: Env, lender: Address) -> i128 {
+        let balance = Self::get_balance(env.clone(), lender.clone());
+        let borrowed = Self::get_borrowed(env, lender);
+        balance.checked_sub(borrowed).unwrap_or(0).max(0)
+    }
+
+    /// Return the sum of every lender's gross pool balance (AC-041).
+    pub fn get_total_lender_balance(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalLenderBalance)
+            .unwrap_or(0)
+    }
+
+    /// Return the total principal currently lent out across all loans.
+    pub fn get_active_loans_liquidity(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::ActiveLoansLiquidity)
+            .unwrap_or(0)
+    }
+
     /// Returns the current annualized loan interest rate in basis points.
     pub fn get_interest_rate(env: Env) -> i128 {
         env.storage().instance().get(&DataKey::FeeRate).unwrap_or(0)
@@ -845,7 +1040,7 @@ impl LendingPool {
         // privilege boundary visible at the call site.
         Self::check_admin(&env);
 
-        if new_rate_bps < 0 || new_rate_bps > BASIS_POINTS {
+        if !(0..=BASIS_POINTS).contains(&new_rate_bps) {
             env.panic_with_error(Error::InvalidAmount);
         }
 
@@ -966,6 +1161,21 @@ impl LendingPool {
         if phase == ContractPhase::Paused {
             env.panic_with_error(Error::Paused);
         }
+    }
+
+    /// Apply `delta` to the pool-wide `TotalLenderBalance` aggregate (AC-041).
+    fn adjust_total_lender_balance(env: &Env, delta: i128) {
+        let total: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalLenderBalance)
+            .unwrap_or(0);
+        let new_total = total
+            .checked_add(delta)
+            .unwrap_or_else(|| env.panic_with_error(Error::InvalidAmount));
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalLenderBalance, &new_total);
     }
 
     // FIX(#322): Guard against zero total deposits / zero inputs before

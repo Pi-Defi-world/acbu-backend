@@ -2,8 +2,14 @@
 set -e
 
 # Configuration
+# AX-002: Never hardcode signing keys. Export STELLAR_SECRET_KEY in your shell
+# or CI environment before running this script:
+#
+#   export STELLAR_SECRET_KEY="S…your-testnet-key…"
+#
+# Rotate any key that was previously committed to git history (git filter-repo).
 NETWORK="testnet"
-SECRET="SA2P2MWG4L4KMKYXNVSS73NTZWKRYDPJDXLVODDSYCPWQ5LVIZNXIBAR"
+SECRET="${STELLAR_SECRET_KEY:?AX-002: STELLAR_SECRET_KEY env var must be set — do not hardcode keys in scripts}"
 ADMIN="GDHO63RZEUNDRVF6WA7HD4D7PLNLUMSK5H74ONW3MEF3VKF4BZJ6GDML"
 
 # Contract IDs

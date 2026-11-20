@@ -5,7 +5,7 @@ use shared::{CurrencyCode, DECIMALS};
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
     testutils::Address as _,
-    Address, Env, Vec,
+    Address, BytesN, Env, Vec,
 };
 
 mod oracle_mock {
@@ -89,6 +89,7 @@ fn init_mint_client(
         fee_rate_bps: fee_rate,
         fee_single_bps: fee_single,
         operator: admin.clone(),
+        operator_pub_key: BytesN::from_array(env, &[0u8; 32]),
     };
     client.initialize(&config);
 }

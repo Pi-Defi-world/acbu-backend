@@ -18,7 +18,6 @@
 Makefile  text eol=lf
 # Version-pin dotfiles
 .nvmrc        text eol=lf
-.node-version text eol=lf
 
 # Windows-specific scripts keep CRLF
 *.bat     text eol=crlf

@@ -1,10 +1,13 @@
-# Allowlist for known pre-existing leaks that require external remediation.
-# SECURITY: The Stellar secret key below is ACTIVE and MUST be rotated.
-#   Key: SA2P2MWG4L4KMKYXNVSS73NTZWKRYDPJDXLVODDSYCPWQ5LVIZNXIBAR
-#   Owner: junman140
-#   Found in: scripts/initOracle.cmd, scripts/init_temp.sh
-#   Commits: 34854e6a, 71d4bf9
-#   Action: Rotate key on Stellar, update scripts, then remove this allowlist entry.
+# Gitleaks allowlist.
+#
+# AX-002 remediation (complete):
+#   The Stellar secret key SA2P2MWG4L4KMKY… that was previously hardcoded in
+#   scripts/init_temp.sh and scripts/initOracle.cmd has been removed from both
+#   files (replaced with ${STELLAR_SECRET_KEY:?…} env-var guard).  Both files
+#   are now gitignored.  The allowlist entry has been removed accordingly.
+#
+#   Remaining action: purge the key from git history with `git filter-repo`
+#   and rotate the key on Stellar testnet.
 #
 # Token IDs below are Stellar contract/wasm addresses (not secrets), false positives.
 #   ACBU_TOKEN: CB2RDXQAIQT5XG3XTRHKAGLMV24TPLCOKBFXVELF2PJS4K42UYXZT6KI
@@ -12,14 +15,7 @@
 #   TOKEN_WASM_HASH: 6b14997b915dee21082884cd5a2f1f2f0aef0073d1dcb9c5b3c674cf487fb41d
 
 [allowlist]
-  description = "Pre-existing leaks — remediation tracked externally"
-
-  [[allowlist.rules]]
-    id = "generic-api-key"
-    description = "Stellar secret key — rotate then remove this entry"
-    secrets = [
-      "SA2P2MWG4L4KMKYXNVSS73NTZWKRYDPJDXLVODDSYCPWQ5LVIZNXIBAR",
-    ]
+  description = "Stellar contract/wasm addresses — not secrets, false positives"
 
   [[allowlist.rules]]
     id = "generic-api-key"

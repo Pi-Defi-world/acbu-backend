@@ -40,14 +40,18 @@ jobs:
         run: |
           set -euo pipefail
           echo "Installing Nargo ${NARGO_VERSION}..."
-          curl -sSL \
-            "https://github.com/noir-lang/noir/releases/download/v${NARGO_VERSION}/nargo-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar -xz -C /usr/local/bin
+          archive="$RUNNER_TEMP/nargo-${NARGO_VERSION}.tar.gz"
+          expected_sha256="a85b0c57f4a97bc4c52ed4872e9ac630012d96c7e8e1fc0fbb694dc3a5b1adf0"
+          curl --fail --location --retry 3 \
+            --output "$archive" \
+            "https://github.com/noir-lang/noir/releases/download/v${NARGO_VERSION}/nargo-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${expected_sha256}  ${archive}" | sha256sum --check --strict
+          tar -xzf "$archive" -C /usr/local/bin
           nargo --version
 
       # Cache the Nargo download / compilation artifacts.
       - name: Cache Nargo artifacts
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.nargo

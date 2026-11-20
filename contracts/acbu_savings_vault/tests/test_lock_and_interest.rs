@@ -94,8 +94,12 @@ impl Harness {
         self.token_admin().mint(&self.user, &amount);
     }
 
-    fn mint_to_vault(&self, amount: i128) {
-        self.token_admin().mint(&self.contract_id, &amount);
+    /// Fund the vault's yield reserve (AC-007: the only source of yield).
+    fn fund_yield(&self, amount: i128) {
+        if amount > 0 {
+            self.token_admin().mint(&self.admin, &amount);
+            self.client.fund_yield_reserve(&self.admin, &amount);
+        }
     }
 
     fn advance_time(&self, delta: u64) {
@@ -203,7 +207,7 @@ fn test_interest_accrues_proportionally_to_elapsed_time() {
     let elapsed = h.now() - deposit_ts;
 
     let exp_yield = expected_yield(principal, yield_rate_bps, elapsed);
-    h.mint_to_vault(exp_yield); // vault needs balance to pay yield
+    h.fund_yield(exp_yield); // yield comes from the funded reserve
 
     assert_eq!(h.client.get_pending_yield(&h.user, &term), exp_yield, "h.client.get_pending_yield(&h.user, &term) should equal exp_yield");
 
@@ -227,7 +231,7 @@ fn test_interest_at_six_months_is_half_annual() {
     let elapsed = h.now() - deposit_ts;
 
     let exp_yield = expected_yield(principal, yield_rate_bps, elapsed);
-    h.mint_to_vault(exp_yield);
+    h.fund_yield(exp_yield);
 
     h.client.withdraw(&h.user, &term, &principal);
     assert_eq!(h.user_balance(), principal + exp_yield, "h.user_balance() should equal principal + exp_yield");
@@ -387,7 +391,7 @@ fn test_partial_withdrawal_leaves_correct_remainder() {
 
     // Yield on the consumed portion only.
     let exp_yield = expected_yield(withdraw_amount, yield_rate_bps, elapsed);
-    h.mint_to_vault(exp_yield);
+    h.fund_yield(exp_yield);
 
     h.client.withdraw(&h.user, &term, &withdraw_amount);
 
@@ -471,7 +475,7 @@ fn test_fee_deducted_and_net_earns_yield() {
 
     // Yield is on net, not gross.
     let exp_yield = expected_yield(net, yield_rate_bps, elapsed);
-    h.mint_to_vault(exp_yield);
+    h.fund_yield(exp_yield);
 
     h.client.withdraw(&h.user, &term, &net);
     assert_eq!(h.user_balance(), net + exp_yield, "h.user_balance() should equal net + exp_yield");
@@ -496,7 +500,7 @@ fn test_withdraw_event_carries_correct_yield_amount() {
     let elapsed = h.now() - deposit_ts;
 
     let exp_yield = expected_yield(principal, yield_rate_bps, elapsed);
-    h.mint_to_vault(exp_yield);
+    h.fund_yield(exp_yield);
 
     h.client.withdraw(&h.user, &term, &principal);
 
@@ -571,7 +575,7 @@ fn test_one_year_lock_accumulates_full_annual_yield() {
     let exp_yield = expected_yield(principal, yield_rate_bps, elapsed);
     assert_eq!(exp_yield, 5_000_000, "Annual yield must be exactly 5%");
 
-    h.mint_to_vault(exp_yield);
+    h.fund_yield(exp_yield);
     h.client.withdraw(&h.user, &term, &principal);
     assert_eq!(h.user_balance(), principal + exp_yield, "h.user_balance() should equal principal + exp_yield");
 }
@@ -596,7 +600,7 @@ fn test_second_deposit_after_first_term_earns_independent_yield() {
     h.advance_time(term);
     let elapsed1 = h.now() - deposit1_ts;
     let exp_yield1 = expected_yield(amount, yield_rate_bps, elapsed1);
-    h.mint_to_vault(exp_yield1);
+    h.fund_yield(exp_yield1);
 
     h.client.withdraw(&h.user, &term, &amount);
     // After cycle 1: user has (amount kept) + (amount returned) + yield1
@@ -610,7 +614,7 @@ fn test_second_deposit_after_first_term_earns_independent_yield() {
     h.advance_time(term);
     let elapsed2 = h.now() - deposit2_ts;
     let exp_yield2 = expected_yield(amount, yield_rate_bps, elapsed2);
-    h.mint_to_vault(exp_yield2);
+    h.fund_yield(exp_yield2);
 
     // Verify pending yield matches expectation before withdrawing.
     assert_eq!(

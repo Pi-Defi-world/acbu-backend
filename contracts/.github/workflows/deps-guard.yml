@@ -1,9 +1,9 @@
 name: Dependency Supply-Chain Guard
 
-# W2-Z-020: Git dependencies (SDK + verifier lib) must not be pulled straight
-# from GitHub. Every dependency has to resolve from a registry with a checksum
-# recorded in the committed Cargo.lock, so a build never depends on live GitHub
-# availability or the state of a third-party fork.
+# W2-Z-020 / AZ-005: Git dependencies must not be pulled from a floating
+# branch or tag — every git dep must be pinned to an exact commit via `rev`.
+# Prefer registry sources (crates.io) with checksums recorded in Cargo.lock
+# so that builds are fully reproducible without live GitHub access.
 
 on:
   push:
@@ -31,6 +31,103 @@ jobs:
           fi
           echo "No git dependencies declared."
 
+      # AZ-005: Even when a git dep is technically present, a floating branch
+      # or tag (no `rev`) means the source can silently change between builds,
+      # breaking reproducibility and opening a supply-chain attack surface.
+      # Reject any git dep that lacks a `rev = "<commit-sha>"` field.
+      - name: Fail on git dependencies without a pinned `rev`
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r -d '' manifest; do
+            # Collect all [dependencies.*] blocks that use `git =` but have no `rev`.
+            # A well-formed pinned dep looks like:
+            #   some-crate = { git = "https://...", rev = "abc1234" }
+            # A floating dep (branch/tag only, or bare git) lacks `rev =`.
+            python3 - "$manifest" <<'PYEOF'
+          import sys, re, pathlib
+
+          path = pathlib.Path(sys.argv[1])
+          text = path.read_text()
+
+          # Find every value that contains git = "..." but NOT rev = "..."
+          # within the same dep entry (single-line or inline-table form).
+          # This catches:
+          #   foo = { git = "...", branch = "main" }   ← no rev → BAD
+          #   foo = { git = "...", tag = "v1.0" }      ← no rev → BAD
+          #   foo = { git = "...", rev = "abc1234" }   ← has rev → OK
+          pattern = re.compile(
+              r'\{[^}]*\bgit\s*=\s*"[^"]*"[^}]*\}',
+          )
+          bad = []
+          for m in pattern.finditer(text):
+              block = m.group(0)
+              if 'rev' not in block:
+                  # Find the dep name by looking backwards for the key
+                  before = text[:m.start()]
+                  name_match = re.search(r'(\S+)\s*=\s*$', before.rstrip())
+                  dep_name = name_match.group(1) if name_match else '<unknown>'
+                  bad.append((dep_name, block.strip()))
+
+          if bad:
+              for name, block in bad:
+                  print(f"::error file={path}::AZ-005: git dep '{name}' is missing `rev`; "
+                        f"floating branch/tag is not reproducible. Add rev = \"<commit-sha>\". "
+                        f"Block: {block}")
+              sys.exit(1)
+          PYEOF
+          done < <(find . -name 'Cargo.toml' -print0)
+          echo "All git dependencies (if any) have a pinned rev."
+
+      # AZ-006: If any manifest in the workspace declares `ultrahonk_rust_verifier`
+      # as a git dependency, it MUST pin exactly the canonical commit
+      # 2a73c4ba11f073f1797d90915ebbb9eb9d09f445.  A different rev means the
+      # on-chain VK/proof serialization format could diverge from the reference
+      # implementation, causing silent verification failures in production.
+      - name: Enforce consistent ultrahonk_rust_verifier rev (AZ-006)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANONICAL_REV="2a73c4ba11f073f1797d90915ebbb9eb9d09f445"
+          failed=0
+          while IFS= read -r -d '' manifest; do
+            python3 - "$manifest" "$CANONICAL_REV" <<'PYEOF'
+          import sys, re, pathlib
+
+          path = pathlib.Path(sys.argv[1])
+          canonical = sys.argv[2]
+          text = path.read_text()
+
+          # Match any inline-table dep entry that mentions ultrahonk_rust_verifier
+          # and contains a git = "..." field.
+          pattern = re.compile(
+              r'\{[^}]*\bgit\s*=\s*"[^"]*"[^}]*\}',
+          )
+          for m in pattern.finditer(text):
+              block = m.group(0)
+              # Only care about entries for the ultrahonk_rust_verifier crate.
+              before = text[:m.start()]
+              name_match = re.search(r'(\S+)\s*=\s*$', before.rstrip())
+              dep_name = name_match.group(1) if name_match else ''
+              if 'ultrahonk' not in dep_name and 'ultrahonk' not in block:
+                  continue
+              rev_match = re.search(r'\brev\s*=\s*"([^"]+)"', block)
+              if not rev_match:
+                  print(f"::error file={path}::AZ-006: '{dep_name}' has no `rev`; "
+                        f"pin to rev = \"{canonical}\".")
+                  sys.exit(1)
+              actual_rev = rev_match.group(1)
+              if actual_rev != canonical:
+                  print(f"::error file={path}::AZ-006: '{dep_name}' is pinned to "
+                        f"rev = \"{actual_rev}\" but the canonical rev is "
+                        f"\"{canonical}\". All manifests must use the same commit "
+                        f"to avoid mismatched VK/proof serialization.")
+                  sys.exit(1)
+          PYEOF
+          done < <(find . -name 'Cargo.toml' -print0)
+          echo "All ultrahonk_rust_verifier deps (if any) use the canonical rev."
+
       - name: Fail on git sources recorded in Cargo.lock
         shell: bash
         run: |
@@ -45,6 +142,55 @@ jobs:
           fi
           echo "Cargo.lock is fully registry-sourced with checksums."
 
+      - name: Verify Soroban SDK provenance and versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYEOF'
+          import pathlib
+          import tomllib
+
+          root = pathlib.Path("Cargo.toml")
+          lock = pathlib.Path("Cargo.lock")
+          manifest = tomllib.loads(root.read_text())
+          lockfile = tomllib.loads(lock.read_text())
+
+          expected = {
+              "soroban-sdk": "21.7.7",
+              "soroban-env-host": "21.2.1",
+          }
+          workspace_deps = manifest.get("workspace", {}).get("dependencies", {})
+          packages = {
+              package["name"]: package
+              for package in lockfile.get("package", [])
+              if package["name"] in expected
+          }
+
+          for name, version in expected.items():
+              declared = workspace_deps.get(name)
+              if declared.lstrip("=") != version:
+                  raise SystemExit(
+                      f"{name} must be pinned to {version} in workspace.dependencies; "
+                      f"found {declared!r}"
+                  )
+
+              package = packages.get(name)
+              if package is None:
+                  raise SystemExit(f"Cargo.lock is missing {name}")
+              if package["version"] != version:
+                  raise SystemExit(
+                      f"Cargo.lock resolves {name} to {package['version']}, expected {version}"
+                  )
+              if not package.get("source", "").startswith(
+                  "registry+https://github.com/rust-lang/crates.io-index"
+              ):
+                  raise SystemExit(
+                      f"{name} must resolve from crates.io, found {package.get('source')!r}"
+                  )
+
+          print("Soroban SDK dependencies use the pinned crates.io versions.")
+          PYEOF
+
   offline-resolve:
     name: Resolve without live GitHub access
     runs-on: ubuntu-latest
@@ -53,13 +199,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
+        uses: ./.github/actions/rust-toolchain
 
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry

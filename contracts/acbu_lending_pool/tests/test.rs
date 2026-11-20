@@ -183,7 +183,6 @@ fn test_borrow_basic() {
     client.initialize(&admin, &acbu_token, &0);
 
     let token_admin = StellarAssetClient::new(&env, &acbu_token);
-    let token_client = TokenClient::new(&env, &acbu_token);
 
     // Lender deposits liquidity into the pool
     let lender = Address::generate(&env);
@@ -374,14 +373,8 @@ fn test_repay_wrong_loan_id_fails() {
     );
 }
 
-/// 5. Loan default scenario.
-///
-/// The contract does not implement a liquidation or default function in the current
-/// MVP — there is no `liquidate()`, `mark_default()`, or time-based enforcement.
-/// This test documents that behaviour: a loan that is never repaid simply remains
-/// open in storage indefinitely.  When a liquidation path is added (tracked in the
-/// issue backlog), this test should be updated to call that function and assert the
-/// correct state transition.
+/// 5. Loan default scenario: an overdue loan can be liquidated by its lender,
+/// writing off the missing principal and releasing the lender's remaining funds.
 #[test]
 fn test_loan_default_scenario() {
     let env = Env::default();
@@ -397,6 +390,7 @@ fn test_loan_default_scenario() {
     client.initialize(&admin, &acbu_token, &0);
 
     let token_admin = StellarAssetClient::new(&env, &acbu_token);
+    let token_client = TokenClient::new(&env, &acbu_token);
 
     let lender = Address::generate(&env);
     let pool_liquidity: i128 = 1_000_000;
@@ -408,18 +402,18 @@ fn test_loan_default_scenario() {
     let loan_id: u64 = 55;
     client.borrow(&borrower, &lender, &borrow_amount, &loan_id);
 
-    // Borrower never repays — loan remains open.
-    // No liquidation function exists yet; assert the loan is still present and overdue.
-    let loan = client
-        .get_loan(&borrower, &loan_id)
-        .expect("defaulted loan must still be present in storage");
-    assert_eq!(loan.amount, borrow_amount, "loan.amount should equal borrow_amount");
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp += 30 * 24 * 60 * 60 + 1;
+    });
 
-    // TODO: when a `liquidate(loan_id)` function is implemented, call it here and
-    // assert that:
-    //   - the loan is removed from storage
-    //   - collateral is transferred to the protocol / lender
-    //   - a LiquidationEvent is emitted
+    client.liquidate(&lender, &borrower, &loan_id);
+
+    let loan = client.get_loan(&borrower, &loan_id).expect("loan must remain auditable");
+    assert_eq!(loan.amount, borrow_amount, "defaulted loan retains outstanding principal");
+    assert!(matches!(loan.status, LoanStatus::Defaulted));
+    assert_eq!(client.get_balance(&lender), pool_liquidity - borrow_amount);
+    client.withdraw(&lender, &(pool_liquidity - borrow_amount));
+    assert_eq!(token_client.balance(&lender), pool_liquidity - borrow_amount);
 }
 
 /// 6. Full lifecycle: initialize → deposit → borrow → repay → withdraw.
@@ -531,12 +525,9 @@ fn test_loan_lifecycle_emits_events() {
         .iter()
         .rev()
         .find(|e| {
-            e.1.first().map_or(false, |t| {
-                if let Ok(symbol_val) = TryIntoVal::<_, soroban_sdk::Symbol>::try_into_val(&t, &env) {
-                    symbol_val == symbol_short!("borrow")
-                } else {
-                    false
-                }
+            e.1.first().is_some_and(|t| {
+                TryIntoVal::<_, soroban_sdk::Symbol>::try_into_val(&t, &env)
+                    .is_ok_and(|s| s == symbol_short!("borrow"))
             })
         })
         .expect("borrow event not found");
@@ -562,12 +553,9 @@ fn test_loan_lifecycle_emits_events() {
         .iter()
         .rev()
         .find(|e| {
-            e.1.first().map_or(false, |t| {
-                if let Ok(symbol_val) = TryIntoVal::<_, soroban_sdk::Symbol>::try_into_val(&t, &env) {
-                    symbol_val == symbol_short!("repay")
-                } else {
-                    false
-                }
+            e.1.first().is_some_and(|t| {
+                TryIntoVal::<_, soroban_sdk::Symbol>::try_into_val(&t, &env)
+                    .is_ok_and(|s| s == symbol_short!("repay"))
             })
         })
         .expect("repay event not found");
@@ -593,14 +581,9 @@ fn test_loan_lifecycle_emits_events() {
         .iter()
         .rev()
         .find(|e| {
-            e.1.first().map_or(false, |t| {
-                if let Ok(symbol_val) =
-                    TryIntoVal::<_, soroban_sdk::Symbol>::try_into_val(&t, &env)
-                {
-                    symbol_val == symbol_short!("repaymt")
-                } else {
-                    false
-                }
+            e.1.first().is_some_and(|t| {
+                TryIntoVal::<_, soroban_sdk::Symbol>::try_into_val(&t, &env)
+                    .is_ok_and(|s| s == symbol_short!("repaymt"))
             })
         })
         .expect("repayment event not found");
@@ -721,4 +704,164 @@ fn test_borrow_without_lender_auth_fails() {
     assert_eq!(token_client.balance(&contract_id), pool_liquidity);
     assert_eq!(token_client.balance(&borrower), 0);
     assert!(client.get_loan(&borrower, &loan_id).is_none());
+}
+
+/// AC-015 (#738): repaid interest must be credited to the lender's tracked
+/// pool balance and remain in the contract as withdrawable liquidity — not
+/// transferred straight to the lender's wallet, which desynced
+/// `Balance - Borrowed` from the contract's actual token holdings.
+#[test]
+fn test_repay_credits_interest_to_lender_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    let admin = Address::generate(&env);
+    let acbu_token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+
+    let contract_id = env.register_contract(None, LendingPool);
+    let client = LendingPoolClient::new(&env, &contract_id);
+    let fee_rate_bps = 1_000i128; // 10% APR
+    client.initialize(&admin, &acbu_token, &fee_rate_bps);
+
+    let token_admin = StellarAssetClient::new(&env, &acbu_token);
+    let token_client = TokenClient::new(&env, &acbu_token);
+
+    let lender = Address::generate(&env);
+    let pool_liquidity = 1_000_000i128;
+    token_admin.mint(&lender, &pool_liquidity);
+    client.deposit(&lender, &pool_liquidity);
+
+    let borrower = Address::generate(&env);
+    let borrow_amount = 100_000i128;
+    let loan_id = 901u64;
+    client.borrow(&borrower, &lender, &borrow_amount, &loan_id);
+
+    // One year of accrual: 100_000 * 1_000 bps * 31_536_000 / (10_000 * 31_536_000) = 10_000.
+    env.ledger().with_mut(|l| l.timestamp += 31_536_000);
+
+    let loan = client
+        .get_loan(&borrower, &loan_id)
+        .expect("loan must exist");
+    let interest = loan.accrued_interest;
+    assert_eq!(
+        interest, 10_000,
+        "loan.accrued_interest should equal expected annual fee"
+    );
+
+    // Borrower repays principal + interest in full.
+    token_admin.mint(&borrower, &(borrow_amount + interest));
+    client.repay(&borrower, &(borrow_amount + interest), &loan_id);
+
+    // Interest stays in the pool and is credited to the lender's balance.
+    assert_eq!(
+        client.get_balance(&lender),
+        pool_liquidity + interest,
+        "client.get_balance(&lender) should include repaid interest"
+    );
+    // Lender's wallet is untouched (they deposited everything).
+    assert_eq!(token_client.balance(&lender), 0, "token_client.balance(&lender) should equal 0");
+    // Contract holds deposit + interest, matching Balance - Borrowed (Borrowed = 0).
+    assert_eq!(
+        token_client.balance(&contract_id),
+        pool_liquidity + interest,
+        "token_client.balance(&contract_id) should equal deposit + interest"
+    );
+
+    // The credited interest is withdrawable.
+    client.withdraw(&lender, &(pool_liquidity + interest));
+    assert_eq!(client.get_balance(&lender), 0, "client.get_balance(&lender) should equal 0");
+    assert_eq!(
+        token_client.balance(&lender),
+        pool_liquidity + interest,
+        "token_client.balance(&lender) should equal deposit + interest"
+    );
+}
+
+/// AC-041 (#763): a lender's `Balance` is their gross claim and is not reduced
+/// by borrowing; lent-out principal lives in `Borrowed`. The pool-wide
+/// invariant `sum(Balance) - sum(Borrowed) == SAC balance` must hold after
+/// deposits, borrows, partial/full repayments with accrued interest, and
+/// withdrawals.
+#[test]
+fn test_accounting_invariant_holds_through_interest_lifecycle() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    let admin = Address::generate(&env);
+    let acbu_token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+
+    let contract_id = env.register_contract(None, LendingPool);
+    let client = LendingPoolClient::new(&env, &contract_id);
+    client.initialize(&admin, &acbu_token, &1_000i128); // 10% APR
+
+    let token_admin = StellarAssetClient::new(&env, &acbu_token);
+    let token_client = TokenClient::new(&env, &acbu_token);
+
+    let assert_invariant = |label: &str| {
+        let tracked = client.get_total_lender_balance() - client.get_active_loans_liquidity();
+        assert_eq!(
+            tracked,
+            token_client.balance(&contract_id),
+            "invariant broken after {label}"
+        );
+    };
+
+    let lender_a = Address::generate(&env);
+    let lender_b = Address::generate(&env);
+    token_admin.mint(&lender_a, &10_000_000);
+    token_admin.mint(&lender_b, &5_000_000);
+    client.deposit(&lender_a, &10_000_000);
+    client.deposit(&lender_b, &5_000_000);
+    assert_eq!(client.get_total_lender_balance(), 15_000_000);
+    assert_invariant("deposits");
+
+    let borrower = Address::generate(&env);
+    client.borrow(&borrower, &lender_a, &1_000_000, &1);
+    client.borrow(&borrower, &lender_b, &2_000_000, &2);
+
+    // Borrowing leaves gross Balance untouched and moves principal to Borrowed.
+    assert_eq!(client.get_balance(&lender_a), 10_000_000);
+    assert_eq!(client.get_borrowed(&lender_a), 1_000_000);
+    assert_eq!(client.get_available_balance(&lender_a), 9_000_000);
+    assert_eq!(client.get_available_balance(&lender_b), 3_000_000);
+    assert_invariant("borrows");
+
+    // One year of accrual.
+    env.ledger().with_mut(|l| l.timestamp += 31_536_000);
+    let interest_a = client.get_loan(&borrower, &1).unwrap().accrued_interest;
+    let interest_b = client.get_loan(&borrower, &2).unwrap().accrued_interest;
+    assert_eq!(interest_a, 100_000);
+    assert_eq!(interest_b, 200_000);
+
+    // Partial repayment covering interest plus some principal on loan 2.
+    token_admin.mint(&borrower, &(interest_b + 500_000));
+    client.repay(&borrower, &(interest_b + 500_000), &2);
+    assert_eq!(client.get_balance(&lender_b), 5_000_000 + interest_b);
+    assert_eq!(client.get_borrowed(&lender_b), 1_500_000);
+    assert_invariant("partial repay with interest");
+
+    // Full repayment of loan 1.
+    token_admin.mint(&borrower, &(1_000_000 + interest_a));
+    client.repay(&borrower, &(1_000_000 + interest_a), &1);
+    assert_eq!(client.get_borrowed(&lender_a), 0);
+    assert_eq!(client.get_available_balance(&lender_a), 10_000_000 + interest_a);
+    assert_invariant("full repay with interest");
+
+    // Lenders withdraw everything that is available.
+    client.withdraw(&lender_a, &(10_000_000 + interest_a));
+    let available_b = client.get_available_balance(&lender_b);
+    client.withdraw(&lender_b, &available_b);
+    assert_invariant("withdrawals");
+
+    // Only lender B's outstanding principal remains tracked, and the contract
+    // holds nothing since that principal sits with the borrower.
+    assert_eq!(client.get_total_lender_balance(), 1_500_000);
+    assert_eq!(client.get_active_loans_liquidity(), 1_500_000);
+    assert_eq!(token_client.balance(&contract_id), 0);
 }

@@ -19,6 +19,9 @@ on:
       - 'scripts/oracle_basket_weights_bps.json'
       - 'schemas/**'
 
+env:
+  AJV_CLI_VERSION: '5.0.0'
+
 jobs:
   validate:
     name: JSON Schema Validation
@@ -29,16 +32,16 @@ jobs:
       - name: Set up Node.js 20 LTS
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
 
       - name: Validate validators.json
-        run: npx --yes ajv-cli validate -s schemas/validators.schema.json -d validators.json --spec=draft7
+        run: npx --yes "ajv-cli@$AJV_CLI_VERSION" validate -s schemas/validators.schema.json -d validators.json --spec=draft7
 
       - name: Validate weights.json
-        run: npx --yes ajv-cli validate -s schemas/weights.schema.json -d weights.json --spec=draft7
+        run: npx --yes "ajv-cli@$AJV_CLI_VERSION" validate -s schemas/weights.schema.json -d weights.json --spec=draft7
 
       - name: Validate oracle_basket_currencies.json
-        run: npx --yes ajv-cli validate -s schemas/oracle_basket_currencies.schema.json -d scripts/oracle_basket_currencies.json --spec=draft7
+        run: npx --yes "ajv-cli@$AJV_CLI_VERSION" validate -s schemas/oracle_basket_currencies.schema.json -d scripts/oracle_basket_currencies.json --spec=draft7
 
       - name: Validate oracle_basket_weights_bps.json
-        run: npx --yes ajv-cli validate -s schemas/oracle_basket_weights_bps.schema.json -d scripts/oracle_basket_weights_bps.json --spec=draft7
+        run: npx --yes "ajv-cli@$AJV_CLI_VERSION" validate -s schemas/oracle_basket_weights_bps.schema.json -d scripts/oracle_basket_weights_bps.json --spec=draft7

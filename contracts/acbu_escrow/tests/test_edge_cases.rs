@@ -80,7 +80,7 @@ fn test_create_zero_amount_fails() {
     let result = client.try_create(&payer, &payee, &0i128, &1u64);
     assert_eq!(
         result,
-        Err(Ok(EscrowError::InvalidAmount)),
+        Err(Ok(EscrowError::InvalidAmount.into())),
         "create with zero amount must return InvalidAmount"
     );
 }
@@ -97,7 +97,7 @@ fn test_create_negative_amount_fails() {
     let result = client.try_create(&payer, &payee, &(-1i128), &1u64);
     assert_eq!(
         result,
-        Err(Ok(EscrowError::InvalidAmount)),
+        Err(Ok(EscrowError::InvalidAmount.into())),
         "create with negative amount must return InvalidAmount"
     );
 }
@@ -118,7 +118,7 @@ fn test_create_when_paused_fails() {
     let result = client.try_create(&payer, &payee, &amount, &1u64);
     assert_eq!(
         result,
-        Err(Ok(EscrowError::Paused)),
+        Err(Ok(EscrowError::Paused.into())),
         "create must be rejected while contract is paused"
     );
 }
@@ -142,8 +142,32 @@ fn test_release_when_paused_fails() {
     let result = client.try_release(&escrow_id, &payer);
     assert_eq!(
         result,
-        Err(Ok(EscrowError::Paused)),
+        Err(Ok(EscrowError::Paused.into())),
         "release must be rejected while contract is paused"
+    );
+}
+
+#[test]
+fn test_refund_when_paused_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, acbu_token, _cid, client) = setup(&env);
+    let payer = Address::generate(&env);
+    let payee = Address::generate(&env);
+    let amount = 10_000_000i128;
+    let escrow_id = 11u64;
+
+    mint(&env, &acbu_token, &payer, amount);
+    client.create(&payer, &payee, &amount, &escrow_id);
+
+    client.pause();
+
+    let result = client.try_refund(&escrow_id, &payer);
+    assert_eq!(
+        result,
+        Err(Ok(EscrowError::Paused.into())),
+        "refund must be rejected while contract is paused"
     );
 }
 
@@ -165,7 +189,7 @@ fn test_duplicate_create_same_payer_same_id_fails() {
     let result = client.try_create(&payer, &payee, &amount, &escrow_id);
     assert_eq!(
         result,
-        Err(Ok(EscrowError::EscrowExists)),
+        Err(Ok(EscrowError::EscrowExists.into())),
         "duplicate (payer, escrow_id) must return EscrowExists"
     );
 }
@@ -339,7 +363,7 @@ fn test_escrow_expiration_and_self_refund() {
     let release_res = client.try_release(&escrow_id, &payer);
     assert_eq!(
         release_res,
-        Err(Ok(EscrowError::Expired)),
+        Err(Ok(EscrowError::Expired.into())),
         "Expired escrow must not be releasable"
     );
 

@@ -40,7 +40,8 @@ fn test_withdraw_after_term_has_correct_30day_yield() {
 
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &acbu_token);
     token_admin.mint(&user, &deposit_amount);
-    token_admin.mint(&contract_id, &expected_yield);
+    token_admin.mint(&admin, &expected_yield);
+    client.fund_yield_reserve(&admin, &expected_yield);
 
     client.deposit(&user, &deposit_amount, &term_seconds);
 
@@ -103,7 +104,8 @@ fn test_withdraw_after_one_year_has_positive_yield_and_event_value() {
 
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &acbu_token);
     token_admin.mint(&user, &deposit_amount);
-    token_admin.mint(&contract_id, &expected_yield);
+    token_admin.mint(&admin, &expected_yield);
+    client.fund_yield_reserve(&admin, &expected_yield);
 
     client.deposit(&user, &deposit_amount, &term_seconds);
 
@@ -166,7 +168,8 @@ fn test_partial_withdraw_and_multiple_deposits_fifo_yield() {
 
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &acbu_token);
     token_admin.mint(&user, &(lot_1 + lot_2));
-    token_admin.mint(&contract_id, &expected_yield);
+    token_admin.mint(&admin, &expected_yield);
+    client.fund_yield_reserve(&admin, &expected_yield);
 
     client.deposit(&user, &lot_1, &term_seconds);
 
@@ -431,7 +434,8 @@ fn test_withdraw_event_yield_amount_nonzero_issue_225() {
 
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &acbu_token);
     token_admin.mint(&user, &principal);
-    token_admin.mint(&contract_id, &expected_yield);
+    token_admin.mint(&admin, &expected_yield);
+    client.fund_yield_reserve(&admin, &expected_yield);
 
     client.deposit(&user, &principal, &term_seconds);
     env.ledger()
@@ -458,6 +462,9 @@ fn test_withdraw_event_yield_amount_nonzero_issue_225() {
     assert_eq!(ev.fee_amount, 0, "ev.fee_amount should equal 0");
 }
 
+// AC-037 regression: under the new single-pull pattern the vault pulls the full
+// gross `amount` in one transfer.  If that transfer fails (e.g. the user has
+// zero balance) the whole deposit reverts atomically — no storage is written.
 #[test]
 fn test_deposit_fails_and_does_not_write_to_storage_when_balance_insufficient() {
     let env = Env::default();
@@ -478,16 +485,86 @@ fn test_deposit_fails_and_does_not_write_to_storage_when_balance_insufficient() 
     let deposit_amount = DECIMALS;
     let term_seconds = 3600;
 
-    // Do NOT mint any tokens to user, so user has 0 balance.
-    // Calling deposit should fail (panic on transfer).
+    // Do NOT mint any tokens to user — user has 0 balance.
+    // The single gross-amount pull must fail, reverting the whole invocation.
     let result = client.try_deposit(&user, &deposit_amount, &term_seconds);
-    assert!(result.is_err());
+    assert!(result.is_err(), "deposit with zero user balance must fail");
 
     // Verify that NO deposit lot was recorded in storage for the user.
-    assert_eq!(client.get_balance(&user, &term_seconds), 0, "client.get_balance(&user, &term_seconds) should equal 0");
+    assert_eq!(
+        client.get_balance(&user, &term_seconds),
+        0,
+        "no storage must be written on a failed deposit"
+    );
 }
 
-/// Issue #336 regression test: get_user_lots with pagination prevents
+/// AC-037 regression: deposit must use a single token pull for the gross
+/// amount rather than two separate pulls (net then fee).
+///
+/// Asserts:
+///   1. The user's balance decreases by exactly `gross_amount` (one pull).
+///   2. The vault holds exactly `net_amount` after the deposit.
+///   3. The admin receives exactly `fee_amount` without a second user-auth pull.
+///   4. A user who mints only the exact gross amount (not net + fee separately)
+///      can deposit successfully — the old double-pull pattern would have
+///      succeeded only if the allowance covered both transfers independently.
+#[test]
+fn test_deposit_single_pull_gross_amount_ac037() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let acbu_token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+
+    let contract_id = env.register_contract(None, SavingsVault);
+    let client = SavingsVaultClient::new(&env, &contract_id);
+
+    // 3 % deposit fee.
+    let fee_rate_bps: i128 = 300;
+    let yield_rate_bps: i128 = 0;
+    client.initialize(&admin, &acbu_token, &fee_rate_bps, &yield_rate_bps);
+
+    let gross_amount: i128 = 10_000_000; // 10 ACBU (7 decimal places)
+    let expected_fee: i128 = 300_000;     // 3 %
+    let expected_net: i128 = 9_700_000;   // gross - fee
+    let term_seconds: u64 = 3_600;
+
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &acbu_token);
+    // Mint exactly the gross amount — under the old pattern the contract would
+    // attempt two separate pulls; only having the gross amount in balance
+    // is sufficient proof that only one pull occurs.
+    token_admin.mint(&user, &gross_amount);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &acbu_token);
+
+    // Sanity: user starts with exactly gross_amount, admin starts with 0.
+    assert_eq!(token_client.balance(&user), gross_amount, "pre-deposit: user must hold gross_amount");
+    assert_eq!(token_client.balance(&admin), 0, "pre-deposit: admin must hold 0");
+
+    // Deposit must succeed with only gross_amount available to the user.
+    let returned_net = client.deposit(&user, &gross_amount, &term_seconds);
+
+    // Return value is the net deposit credited to the vault.
+    assert_eq!(returned_net, expected_net, "deposit() return value must equal net amount");
+
+    // User's token balance must be zero — the entire gross amount was pulled.
+    assert_eq!(token_client.balance(&user), 0, "user balance must be zero after single gross pull");
+
+    // Vault must hold exactly net_amount (gross minus fee forwarded to admin).
+    assert_eq!(token_client.balance(&contract_id), expected_net, "vault balance must equal net amount");
+
+    // Admin must hold the fee — forwarded by the vault, not pulled from user.
+    assert_eq!(token_client.balance(&admin), expected_fee, "admin must receive the fee amount");
+
+    // Recorded on-chain balance must equal net_amount.
+    assert_eq!(client.get_balance(&user, &term_seconds), expected_net, "on-chain deposit balance must equal net amount");
+}
+
+
 /// exceeding Soroban's return value size limit when users have many deposit lots.
 #[test]
 fn test_get_user_lots_pagination() {

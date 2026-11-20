@@ -66,7 +66,9 @@ jobs:
   deploy:
     name: Deploy to ${{ github.event.inputs.network }}
     needs: guard
-    runs-on: ubuntu-latest
+    # Mainnet signing is confined to an approved runner with a preconfigured
+    # MPC/HSM or hardware-backed Stellar CLI identity. Raw seeds never enter CI.
+    runs-on: ${{ github.event.inputs.network == 'mainnet' && fromJSON('["self-hosted","mainnet-signer"]') || 'ubuntu-latest' }}
     # Each network maps to a GitHub Environment so that:
     #   - testnet: inherits STELLAR_SECRET_KEY (testnet key)
     #   - mainnet: requires reviewer approval + branch protection via GitHub UI
@@ -74,6 +76,7 @@ jobs:
 
     permissions:
       contents: write   # needed to commit the updated registry back
+      id-token: write   # keyless signatures for build/address artifacts
 
     steps:
       # -----------------------------------------------------------------------
@@ -84,7 +87,8 @@ jobs:
           fetch-depth: 0
 
       # -----------------------------------------------------------------------
-      - name: Validate STELLAR_SECRET_KEY secret
+      - name: Validate testnet signing secret
+        if: github.event.inputs.network == 'testnet'
         env:
           STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
         run: |
@@ -96,12 +100,21 @@ jobs:
           fi
           echo "✅ STELLAR_SECRET_KEY is present (not echoed for security)."
 
+      - name: Validate mainnet signer identity
+        if: github.event.inputs.network == 'mainnet'
+        env:
+          STELLAR_SIGNER: ${{ vars.MAINNET_SIGNER_IDENTITY }}
+        run: |
+          set -euo pipefail
+          test -n "$STELLAR_SIGNER" || {
+            echo "::error::MAINNET_SIGNER_IDENTITY is not configured in the mainnet environment."
+            exit 1
+          }
+          echo "✅ Mainnet signer identity is configured."
+
       # -----------------------------------------------------------------------
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
+        uses: ./.github/actions/rust-toolchain
 
       # -----------------------------------------------------------------------
       - name: Cache Cargo registry
@@ -116,15 +129,38 @@ jobs:
             ${{ runner.os }}-cargo-deploy-
 
       # -----------------------------------------------------------------------
+      # W2-Z-016: Pin Node 20 LTS; Node 18 is EOL (AZ-031).
+      # Required for createJsonArgs.js and other JS helper scripts invoked
+      # during the deploy pipeline.
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      # -----------------------------------------------------------------------
       - name: Install Stellar CLI
+        uses: ./.github/actions/stellar-cli
+
+      - name: Verify mainnet signer is available to Stellar CLI
+        if: github.event.inputs.network == 'mainnet'
+        env:
+          STELLAR_SIGNER: ${{ vars.MAINNET_SIGNER_IDENTITY }}
+        run: stellar keys address "$STELLAR_SIGNER" >/dev/null
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Build and sign deployment artifacts
         run: |
-          # Try the modern stellar-cli first, fall back to legacy soroban-cli
-          if cargo install --locked stellar-cli --version 21.5.0 2>/dev/null; then
-            echo "Installed stellar-cli 21.5.0"
-          else
-            echo "Falling back to soroban-cli..."
-            cargo install --locked soroban-cli
-          fi
+          set -euo pipefail
+          cargo build --locked --workspace --target wasm32-unknown-unknown --release
+          find target/wasm32-unknown-unknown/release -name '*.wasm' -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > deployment-artifacts.sha256
+          test -s deployment-artifacts.sha256
+          cosign sign-blob --yes \
+            --bundle deployment-artifacts.sigstore.json \
+            deployment-artifacts.sha256
 
       # -----------------------------------------------------------------------
       - name: Fetch vendored token WASM
@@ -138,11 +174,46 @@ jobs:
       - name: Deploy contracts
         id: deploy
         env:
-          STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
+          STELLAR_SECRET_KEY: ${{ github.event.inputs.network == 'testnet' && secrets.STELLAR_SECRET_KEY || '' }}
+          STELLAR_SIGNER: ${{ github.event.inputs.network == 'mainnet' && vars.MAINNET_SIGNER_IDENTITY || '' }}
           # Pass mainnet confirmation via env var (non-interactive guard in deploy.sh)
           DEPLOY_CONFIRM: ${{ github.event.inputs.network == 'mainnet' && github.event.inputs.confirm || '' }}
+          # Initialisation parameters — real addresses come from GitHub
+          # Environment *variables* (Settings → Environments → <network> →
+          # Variables).  deploy.sh validates them (non-empty, non-placeholder)
+          # before spending any XLM.  See DEPLOYMENT.md § Initialisation
+          # parameters for the full list.
+          ADMIN_ADDRESS: ${{ vars.ADMIN_ADDRESS }}
+          ACBU_TOKEN_ID: ${{ vars.ACBU_TOKEN_ID }}
+          USDC_TOKEN_ID: ${{ vars.USDC_TOKEN_ID }}
+          VAULT_ADDRESS: ${{ vars.VAULT_ADDRESS }}
+          TREASURY_ADDRESS: ${{ vars.TREASURY_ADDRESS }}
+          WITHDRAWAL_PROCESSOR: ${{ vars.WITHDRAWAL_PROCESSOR }}
+          OPERATOR_ADDRESS: ${{ vars.OPERATOR_ADDRESS }}
+          OPERATOR_PUB_KEY: ${{ vars.OPERATOR_PUB_KEY }}
+          ORACLE_VALIDATORS: ${{ vars.ORACLE_VALIDATORS }}
+          ORACLE_MIN_SIGNATURES: ${{ vars.ORACLE_MIN_SIGNATURES }}
+          MULTISIG_SIGNERS: ${{ vars.MULTISIG_SIGNERS }}
+          MULTISIG_THRESHOLD: ${{ vars.MULTISIG_THRESHOLD }}
+          MIN_RESERVE_RATIO_BPS: ${{ vars.MIN_RESERVE_RATIO_BPS }}
+          MINT_FEE_RATE_BPS: ${{ vars.MINT_FEE_RATE_BPS }}
+          MINT_FEE_SINGLE_BPS: ${{ vars.MINT_FEE_SINGLE_BPS }}
+          BURN_FEE_RATE_BPS: ${{ vars.BURN_FEE_RATE_BPS }}
+          BURN_FEE_SINGLE_REDEEM_BPS: ${{ vars.BURN_FEE_SINGLE_REDEEM_BPS }}
+          SAVINGS_FEE_RATE_BPS: ${{ vars.SAVINGS_FEE_RATE_BPS }}
+          SAVINGS_YIELD_RATE_BPS: ${{ vars.SAVINGS_YIELD_RATE_BPS }}
+          LENDING_FEE_RATE_BPS: ${{ vars.LENDING_FEE_RATE_BPS }}
+          SKIP_INIT: ${{ vars.DEPLOY_SKIP_INIT }}
         run: |
           bash scripts/deploy.sh "${{ github.event.inputs.network }}"
+
+      - name: Sign deployment address record
+        run: |
+          set -euo pipefail
+          test -s "deployments/${{ github.event.inputs.network }}.json"
+          cosign sign-blob --yes \
+            --bundle "deployments/${{ github.event.inputs.network }}.sigstore.json" \
+            "deployments/${{ github.event.inputs.network }}.json"
 
       # -----------------------------------------------------------------------
       - name: Commit registry back to source branch
@@ -158,10 +229,10 @@ jobs:
           else
             git commit -m "chore(deploy): update contract registry for ${{ github.event.inputs.network }} [skip ci]
 
-  Deployed by: ${{ github.actor }}
-  Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-  Network: ${{ github.event.inputs.network }}
-  Git ref: ${{ github.ref }}"
+            Deployed by: ${{ github.actor }}
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Network: ${{ github.event.inputs.network }}
+            Git ref: ${{ github.ref }}"
 
             git push origin HEAD:${{ github.ref_name }}
             echo "✅ Registry committed and pushed to ${{ github.ref_name }}."
@@ -175,7 +246,10 @@ jobs:
           name: deployment-${{ github.event.inputs.network }}-run${{ github.run_id }}
           path: |
             deployments/${{ github.event.inputs.network }}.json
+            deployments/${{ github.event.inputs.network }}.sigstore.json
             deployments/registry.json
+            deployment-artifacts.sha256
+            deployment-artifacts.sigstore.json
           if-no-files-found: warn
           retention-days: 90
 

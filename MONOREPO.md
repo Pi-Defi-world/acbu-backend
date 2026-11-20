@@ -9,7 +9,7 @@ previously separate repos into one clean tree.
 |-------------|---------------------------------------------|-------------------|
 | `/`         | acbu-backend (this repo)                    | existing          |
 | `frontend/` | Pi-Defi-world/acbu-frontend `dev`           | `0070083` (2026-11-18) |
-| `contracts/`| Pi-Defi-world/acbu-smart-contract `main`    | `c31e8ce` (2026-11-18) |
+| `contracts/`| Pi-Defi-world/acbu-smart-contract `dev`     | `3160312` (2026-11-18) |
 
 ## Why a fresh-history import
 
@@ -24,13 +24,30 @@ git histories:
 
 Those histories were purged (git-filter-repo + force-push), but to guarantee the
 monorepo carries zero attacker commits, the code was imported as **tree snapshots
-only** — no source history is carried over. The source repos are being archived.
+only** -- no source history is carried over. The source repos are being archived.
+
+## Snapshot source rationale
+
+- `frontend/` imports the default branch `dev` (post-purge, IoC-verified).
+- `contracts/` imports the default branch `dev` (post-purge, IoC-verified).
+  The earlier `main` snapshot was rejected: `main` and `dev` diverged in
+  2026-03, and `dev` carries merged wave-10 security fixes (W10-C-002/003/004)
+  plus all 18 open PR targets that `main` lacks.
+- Tracked files that the backend root `.gitignore` or nested `.gitignore`
+  rules would silently drop (e.g. `frontend/pnpm-lock.yaml`,
+  `contracts/**/test_comprehensive.rs`, `contracts/.vscode/*`,
+  `contracts/frontend/zk-comply-frontend/package-lock.json`) were force-added
+  so the snapshot matches the source trees 1:1.
 
 ## Exclusions from the snapshots
 
-- `frontend/playwright-report/`, `frontend/test-results/` — committed test artifacts (dropped)
-- smart-contract `dev`-only directories (`frontend/`, `public/`, `circuits/`, `sdk/`,
-  `.vscode/`) were not part of the imported `main` snapshot
+- `frontend/playwright-report/`, `frontend/test-results/` -- committed test artifacts (dropped)
+- `frontend/hooks/.use-navigation-guard.ts.swp` -- editor swap file (dropped)
+
+Note: `contracts/.github/workflows/*` and `frontend/.github/workflows/*` are
+inert inside a monorepo (GitHub only executes workflows from the repository
+root `.github/workflows/`). Re-pointing CI to the new paths is tracked as a
+wave 11 issue.
 
 ## Guardrails
 
@@ -43,5 +60,6 @@ only** — no source history is carried over. The source repos are being archive
 
 - Credential rotation attestation for anyone who opened an infected clone.
 - GitHub Support request to GC purged objects still reachable by SHA.
-- Re-point CI pipelines to `frontend/` and `contracts/` paths.
+- Re-point CI pipelines to `frontend/` and `contracts/` paths (nested workflows are inert).
 - Dependabot findings on the imported frontend snapshot (34 at import time).
+- Retire the stale `acbu-frontend` gitlink (submodule pointer, no `.gitmodules`).

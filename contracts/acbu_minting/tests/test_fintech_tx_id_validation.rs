@@ -20,13 +20,16 @@
 //  15. Uniqueness: ID reuse after different ID used → still rejected
 #![cfg(test)]
 
-use acbu_minting::{MintingContract, MintingContractClient};
+use acbu_minting::{FiatSettlementProof, MintingContract, MintingContractClient};
+use ed25519_dalek::{Signer, SigningKey};
+use rand::rngs::OsRng;
 use shared::{CurrencyCode, DECIMALS};
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
     testutils::Address as _,
-    Address, Env, String as SorobanString, Vec,
+    Address, Bytes, BytesN, Env, String as SorobanString, Vec,
 };
+use soroban_sdk::xdr::ToXdr;
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -84,6 +87,7 @@ struct Harness {
     recipient: Address,
     acbu_token: Address,
     client: MintingContractClient<'static>,
+    signing_key: SigningKey,
 }
 
 impl Harness {
@@ -111,6 +115,11 @@ impl Harness {
             &contract_id,
         );
 
+        // AC-038: generate an ed25519 keypair for fiat-settlement proof signing.
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let pub_key_bytes = signing_key.verifying_key().to_bytes();
+        let pub_key: BytesN<32> = BytesN::from_array(&env, &pub_key_bytes);
+
         let config = acbu_minting::MintingConfig {
             admin: admin.clone(),
             oracle: oracle.clone(),
@@ -122,6 +131,7 @@ impl Harness {
             fee_rate_bps: 50,
             fee_single_bps: 100,
             operator: admin.clone(),
+            operator_pub_key: pub_key,
         };
         client.initialize(&config);
 
@@ -133,31 +143,60 @@ impl Harness {
             recipient,
             acbu_token,
             client,
+            signing_key,
+        }
+    }
+
+    /// Build a valid `FiatSettlementProof` for the given tx_id and amount.
+    fn make_proof(&self, tx_id: &SorobanString, fiat_amount: i128, currency: &CurrencyCode) -> FiatSettlementProof {
+        let mut preimage = Bytes::new(&self.env);
+        preimage.append(&tx_id.to_xdr(&self.env));
+        preimage.append(&self.recipient.to_xdr(&self.env));
+        preimage.append(&fiat_amount.to_xdr(&self.env));
+        preimage.append(&currency.to_xdr(&self.env));
+        preimage.append(&self.env.ledger().timestamp().to_xdr(&self.env));
+
+        let digest = self.env.crypto().sha256(&preimage);
+        let message_bytes: std::vec::Vec<u8> = digest.to_array().to_vec();
+        let sig_bytes = self.signing_key.sign(&message_bytes).to_bytes();
+        let pub_key_bytes = self.signing_key.verifying_key().to_bytes();
+
+        FiatSettlementProof {
+            pub_key: BytesN::from_array(&self.env, &pub_key_bytes),
+            signature: BytesN::from_array(&self.env, &sig_bytes),
         }
     }
 
     /// Call mint_from_fiat and return the Result so tests can assert on errors.
     fn try_mint(&self, tx_id: &str) -> bool {
         let id = SorobanString::from_str(&self.env, tx_id);
+        let currency = CurrencyCode::new(&self.env, "NGN");
+        let fiat_amount = 50 * DECIMALS;
+        let proof = self.make_proof(&id, fiat_amount, &currency);
         self.client.try_mint_from_fiat(
             &self.operator,
             &self.recipient,
-            &CurrencyCode::new(&self.env, "NGN"),
-            &(50 * DECIMALS), // valid fiat amount
+            &currency,
+            &fiat_amount,
             &id,
+            &proof,
         ).is_ok()
     }
 
     /// Call mint_from_fiat and expect success.
     fn mint_ok(&self, tx_id: &str) -> i128 {
         let id = SorobanString::from_str(&self.env, tx_id);
+        let currency = CurrencyCode::new(&self.env, "NGN");
+        let fiat_amount = 50 * DECIMALS;
+        let proof = self.make_proof(&id, fiat_amount, &currency);
         self.client
             .mint_from_fiat(
                 &self.operator,
                 &self.recipient,
-                &CurrencyCode::new(&self.env, "NGN"),
-                &(50 * DECIMALS),
+                &currency,
+                &fiat_amount,
                 &id,
+                &proof,
             )
     }
 
@@ -633,14 +672,18 @@ fn test_mint_event_carries_validated_tx_id() {
     let h = Harness::new();
     let tx_id_str = "FLW-TXN-20240101";
     let tx_id = SorobanString::from_str(&h.env, tx_id_str);
+    let currency = CurrencyCode::new(&h.env, "NGN");
+    let fiat_amount = 50 * DECIMALS;
+    let proof = h.make_proof(&tx_id, fiat_amount, &currency);
 
     h.client
         .mint_from_fiat(
             &h.operator,
             &h.recipient,
-            &CurrencyCode::new(&h.env, "NGN"),
-            &(50 * DECIMALS),
+            &currency,
+            &fiat_amount,
             &tx_id,
+            &proof,
         );
 
     let events = h.env.events().all();

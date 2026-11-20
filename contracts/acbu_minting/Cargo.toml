@@ -2,6 +2,7 @@
 name = "acbu_minting"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -14,7 +15,10 @@ shared = { path = "../shared" }
 [dev-dependencies]
 proptest = "1.11.0"
 soroban-sdk = { workspace = true, features = ['testutils'] }
+soroban-env-host = { workspace = true }
 serde_json = "1.0"
+ed25519-dalek = { version = "=2.2.0", features = ["rand_core"] }
+rand = "=0.8.5"
 
 [lints]
 workspace = true

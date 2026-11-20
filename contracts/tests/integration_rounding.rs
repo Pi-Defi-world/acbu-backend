@@ -10,7 +10,7 @@ pub struct ConsumerA;
 #[contractimpl]
 impl ConsumerA {
     pub fn compute_net_after_fee(_env: Env, amount: i128, fee_bps: i128) -> i128 {
-        calculate_amount_after_fee(amount, fee_bps)
+        calculate_amount_after_fee(amount, fee_bps).unwrap()
     }
 }
 
@@ -21,7 +21,7 @@ pub struct ConsumerB;
 #[contractimpl]
 impl ConsumerB {
     pub fn compute_fee(_env: Env, amount: i128, fee_bps: i128) -> i128 {
-        calculate_fee(amount, fee_bps)
+        calculate_fee(amount, fee_bps).unwrap()
     }
 }
 
@@ -47,6 +47,6 @@ fn integration_rounding_consistency() {
         // fee + net must equal original amount
         assert_eq!(fee + net, amt, "fee + net should equal amt");
         // fee must match shared helper directly
-        assert_eq!(fee, calculate_fee(amt, fee_bps), "fee should equal calculate_fee(amt, fee_bps)");
+        assert_eq!(Ok(fee), calculate_fee(amt, fee_bps), "fee should equal calculate_fee(amt, fee_bps)");
     }
 }

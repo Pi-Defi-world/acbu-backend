@@ -121,7 +121,7 @@ fn test_pause_without_initialize_returns_uninitialized_admin_error() {
     let client = EscrowClient::new(&env, &contract_id);
 
     let result = client.try_pause();
-    assert_eq!(result, Err(Ok(EscrowError::UninitializedAdmin)), "pause should fail before admin initialization");
+    assert_eq!(result, Err(Ok(EscrowError::UninitializedAdmin.into())), "pause should fail before admin initialization");
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn test_refund_fails_with_insufficient_contract_balance() {
 
     // Refund should fail with InsufficientBalance error.
     let result = client.try_refund(&escrow_id, &payer);
-    assert_eq!(result, Err(Ok(EscrowError::InsufficientBalance)), "refund should fail when the contract balance is insufficient");
+    assert_eq!(result, Err(Ok(EscrowError::InsufficientBalance.into())), "refund should fail when the contract balance is insufficient");
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn test_self_escrow_is_rejected() {
     let result = client.try_create(&payer, &payer, &amount, &escrow_id);
     assert_eq!(
         result,
-        Err(Ok(EscrowError::SelfEscrow)),
+        Err(Ok(EscrowError::SelfEscrow.into())),
         "self-escrow (payee == payer) should be rejected"
     );
 }

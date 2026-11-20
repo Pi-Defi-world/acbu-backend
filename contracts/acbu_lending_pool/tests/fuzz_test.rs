@@ -20,7 +20,7 @@ proptest! {
         }));
         
         // BASIS_POINTS is 10000. So valid fee is 0..=10000
-        if fee_rate < 0 || fee_rate > 10000 {
+        if !(0..=10000).contains(&fee_rate) {
             assert!(res.is_err());
         } else {
             assert!(res.is_ok());

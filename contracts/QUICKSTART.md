@@ -4,11 +4,15 @@ This is a quick start guide to get you up and running with ACBU Soroban contract
 
 ## What's Included
 
-- **4 Core Contracts:**
+- **8 Contracts** (all deployed by `scripts/deploy.sh`, see [DEPLOYMENT.md](DEPLOYMENT.md)):
   - Minting Contract - USDC/Fiat → ACBU
   - Burning Contract - ACBU → Fiat
   - Oracle Contract - Exchange rate aggregation
   - Reserve Tracker Contract - Reserve verification
+  - Savings Vault Contract - Term deposits / yield on ACBU
+  - Lending Pool Contract - Peer-to-peer ACBU lending
+  - Escrow Contract - Conditional and time-locked transfers
+  - Multisig Contract - M-of-N governance for admin actions
 
 - **Backend Integration:**
   - Stellar SDK client
@@ -39,21 +43,39 @@ cargo build
 
 ### 3. Deploy to Testnet
 
+`scripts/deploy.sh` deploys **all 8 contracts** and initialises them, so it
+needs the initialisation parameters (real addresses — no `TODO_*`/`<...>`
+placeholders) in addition to the secret key.  See
+[DEPLOYMENT.md](DEPLOYMENT.md) § Initialisation parameters for the full list
+(`ADMIN_ADDRESS`, `ACBU_TOKEN_ID`, `USDC_TOKEN_ID`, `VAULT_ADDRESS`,
+`TREASURY_ADDRESS`, `WITHDRAWAL_PROCESSOR`, `OPERATOR_ADDRESS`,
+`OPERATOR_PUB_KEY`, `ORACLE_VALIDATORS`, `ORACLE_MIN_SIGNATURES`,
+`MULTISIG_SIGNERS`, `MULTISIG_THRESHOLD`).
+
 ```bash
 export STELLAR_SECRET_KEY="your-testnet-secret-key"
+export DEPLOY_ENV_FILE=.deploy.env     # or export each variable directly
 chmod +x scripts/deploy_testnet.sh
 ./scripts/deploy_testnet.sh
 ```
+
+Savings Vault and Multisig are part of this run — see
+[DEPLOYMENT.md](DEPLOYMENT.md) § Contract initialisation for their
+`initialize` sequences.
 
 ### 4. Set Backend Environment Variables
 
 ```bash
 export STELLAR_NETWORK="testnet"
 export STELLAR_SECRET_KEY="your-secret-key"
-export CONTRACT_ORACLE="<oracle-contract-id>"
-export CONTRACT_RESERVE_TRACKER="<reserve-tracker-contract-id>"
-export CONTRACT_MINTING="<minting-contract-id>"
-export CONTRACT_BURNING="<burning-contract-id>"
+export CONTRACT_ORACLE_TESTNET="<oracle-contract-id>"
+export CONTRACT_RESERVE_TRACKER_TESTNET="<reserve-tracker-contract-id>"
+export CONTRACT_MINTING_TESTNET="<minting-contract-id>"
+export CONTRACT_BURNING_TESTNET="<burning-contract-id>"
+export CONTRACT_SAVINGS_VAULT_TESTNET="<savings-vault-contract-id>"
+export CONTRACT_LENDING_POOL_TESTNET="<lending-pool-contract-id>"
+export CONTRACT_ESCROW_TESTNET="<escrow-contract-id>"
+export CONTRACT_MULTISIG_TESTNET="<multisig-contract-id>"
 ```
 
 ### 5. Use in Backend

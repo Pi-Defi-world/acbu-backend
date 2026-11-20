@@ -92,7 +92,7 @@ mod failing_reserve_mock {
 }
 
 fn init_mint_client(
-    _env: &Env,
+    env: &Env,
     client: &MintingContractClient,
     admin: &Address,
     oracle: &Address,
@@ -115,6 +115,7 @@ fn init_mint_client(
         fee_rate_bps: fee_rate,
         fee_single_bps: fee_single,
         operator: admin.clone(),
+        operator_pub_key: BytesN::from_array(env, &[0u8; 32]),
     };
     client.initialize(&config);
 }

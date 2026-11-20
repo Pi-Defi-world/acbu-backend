@@ -2,6 +2,7 @@
 name = "acbu_burning"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -12,6 +13,7 @@ soroban-sdk = { workspace = true }
 shared = { path = "../shared" }
 
 [dev-dependencies]
+acbu_minting = { path = "../acbu_minting" }
 proptest = "1.11.0"
 soroban-sdk = { workspace = true, features = ['testutils'] }
 

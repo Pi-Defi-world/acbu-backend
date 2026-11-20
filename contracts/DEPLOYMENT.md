@@ -12,7 +12,7 @@
 |--------|-------------------|
 | **CI (preferred)** | GitHub Actions → *Deploy Contracts* → *Run workflow* |
 | **Local testnet** | `STELLAR_SECRET_KEY=<key> make deploy-testnet` |
-| **Local mainnet** | `STELLAR_SECRET_KEY=<key> DEPLOY_CONFIRM=deploy make deploy-mainnet` |
+| **Local mainnet** | `STELLAR_SIGNER=<hardware-or-MPC-identity> DEPLOY_CONFIRM=deploy make deploy-mainnet` |
 | **Registry** | `deployments/registry.json` (committed to git after every deploy) |
 
 ---
@@ -24,6 +24,7 @@ scripts/deploy.sh               — master deploy script (testnet & mainnet)
 scripts/deploy_testnet.sh       — thin wrapper → deploy.sh testnet
 scripts/deploy_mainnet.sh       — thin wrapper → deploy.sh mainnet (DEPLOY_CONFIRM required)
 scripts/update_registry.sh      — merges per-network JSON into deployments/registry.json
+.github/actions/rust-toolchain/ — composite action: installs the toolchain pinned in rust-toolchain.toml
 .github/workflows/deploy.yml    — CI workflow (manual trigger only)
 deployments/
   registry.json                 — canonical contract-address registry (all networks)
@@ -47,6 +48,11 @@ cargo install --locked stellar-cli --version 21.5.0
 # — or —
 cargo install --locked soroban-cli
 ```
+
+`rust-toolchain.toml` is the single source of truth for the Rust version,
+components and targets.  All CI jobs install it via the
+`.github/actions/rust-toolchain` composite action — no workflow hard-codes a
+toolchain version.
 
 ### Stellar account
 
@@ -83,8 +89,8 @@ make deploy-testnet
 ### Mainnet
 
 ```bash
-export STELLAR_SECRET_KEY="S..."   # your mainnet secret key
-export DEPLOY_CONFIRM=deploy        # explicit opt-in guard
+export STELLAR_SIGNER="acbu-mainnet-deployer" # preconfigured hardware/MPC identity
+export DEPLOY_CONFIRM=deploy                 # explicit opt-in guard
 make deploy-mainnet
 ```
 
@@ -94,9 +100,13 @@ the network.
 
 ### What the script does
 
-1. Validates environment (`STELLAR_SECRET_KEY`, `DEPLOY_CONFIRM` for mainnet).
-2. Runs `cargo build --locked --target wasm32-unknown-unknown --release`.
-3. Deploys 8 contracts in dependency order:
+1. Validates the signer (`STELLAR_SECRET_KEY` or `STELLAR_SIGNER` on testnet;
+   hardware/MPC-backed `STELLAR_SIGNER` plus `DEPLOY_CONFIRM` on mainnet).
+2. Loads and validates initialisation parameters (see
+   [Initialisation parameters](#initialisation-parameters)) **before** any XLM
+   is spent — empty or `TODO_*` / `<...>` placeholder values abort the run.
+3. Runs `cargo build --locked --target wasm32-unknown-unknown --release`.
+4. Deploys 8 contracts in dependency order:
    ```
    acbu_oracle          → infrastructure
    acbu_reserve_tracker → infrastructure
@@ -107,8 +117,75 @@ the network.
    acbu_lending_pool    → user-facing
    acbu_escrow          → user-facing
    ```
-4. Writes `deployments/<network>.json` (contract IDs + metadata).
-5. Calls `scripts/update_registry.sh` to merge into `deployments/registry.json`.
+5. Writes `deployments/<network>.json` (contract IDs + metadata).
+6. Calls `initialize` on all 8 deployed contracts using the validated
+   parameters (`SKIP_INIT=1` skips this step and leaves the contracts inert).
+7. Calls `scripts/update_registry.sh` to merge into `deployments/registry.json`.
+
+---
+
+## Initialisation parameters
+
+`scripts/deploy.sh` never hardcodes addresses.  Every value comes from the
+environment (or from a file passed as `DEPLOY_ENV_FILE=<path>`, which is
+`source`d before validation — use it to keep secrets/addresses out of the
+shell history).
+
+```bash
+# Either export the variables…
+export ACBU_TOKEN_ID=C… USDC_TOKEN_ID=C… …
+STELLAR_SIGNER=acbu-mainnet-deployer DEPLOY_CONFIRM=deploy ./scripts/deploy.sh mainnet
+
+# …or keep them in a file (e.g. an untracked/secrets-managed file):
+STELLAR_SIGNER=acbu-mainnet-deployer DEPLOY_ENV_FILE=.deploy.env DEPLOY_CONFIRM=deploy ./scripts/deploy.sh mainnet
+```
+
+Validation runs **before** the build/deploy phase and rejects:
+
+- missing values,
+- placeholders (`TODO_*`, `TBD`, `PLACEHOLDER`, `CHANGEME`, `<anything>`),
+- values that are not valid Stellar addresses / contract IDs,
+- `ORACLE_MIN_SIGNATURES` / `MULTISIG_THRESHOLD` outside `1..=list length`,
+- `ADMIN_ADDRESS == OPERATOR_ADDRESS` (minting requires role separation).
+
+### Required
+
+| Variable | Format | Used by |
+|----------|--------|---------|
+| `ADMIN_ADDRESS` | `G…`/`C…` address | all contracts |
+| `ACBU_TOKEN_ID` | `C…` contract ID | reserve, minting, burning, savings, lending, escrow |
+| `USDC_TOKEN_ID` | `C…` contract ID | minting |
+| `VAULT_ADDRESS` | `G…`/`C…` address | minting, burning |
+| `TREASURY_ADDRESS` | `G…`/`C…` address | minting |
+| `WITHDRAWAL_PROCESSOR` | `G…`/`C…` address | burning |
+| `OPERATOR_ADDRESS` | `G…`/`C…` address | minting (≠ `ADMIN_ADDRESS`) |
+| `OPERATOR_PUB_KEY` | 64 hex chars (ed25519 pubkey) | minting |
+| `ORACLE_VALIDATORS` | JSON array of addresses | oracle |
+| `ORACLE_MIN_SIGNATURES` | integer `1..=validators.len()` | oracle |
+| `MULTISIG_SIGNERS` | JSON array of addresses | multisig |
+| `MULTISIG_THRESHOLD` | integer `1..=signers.len()` | multisig |
+
+### Optional (defaults shown)
+
+| Variable | Default |
+|----------|---------|
+| `ORACLE_CURRENCIES` | `["NGN","KES","RWF","GHS","UGX","TZS","ZAR","EGP"]` |
+| `ORACLE_BASKET_WEIGHTS` | `{"NGN":1800,"KES":1200,"RWF":800,"GHS":900,"UGX":700,"TZS":600,"ZAR":1500,"EGP":1500}` |
+| `MIN_RESERVE_RATIO_BPS` | `10200` |
+| `MINT_FEE_RATE_BPS` / `MINT_FEE_SINGLE_BPS` | `30` / `50` |
+| `BURN_FEE_RATE_BPS` / `BURN_FEE_SINGLE_REDEEM_BPS` | `30` / `100` |
+| `SAVINGS_FEE_RATE_BPS` / `SAVINGS_YIELD_RATE_BPS` | `0` / `500` |
+| `LENDING_FEE_RATE_BPS` | `300` |
+| `SKIP_INIT` | unset — set to `1` to deploy without initialising |
+
+### CI / GitHub Environment setup
+
+The **Deploy Contracts** workflow passes the required parameters from GitHub
+Actions *environment variables* (`vars.*`), e.g. `vars.ACBU_TOKEN_ID`,
+`vars.ADMIN_ADDRESS`, … Configure them per environment
+(**Settings → Environments → `<network>` → Variables**).  If any required
+value is missing (or still a placeholder), `deploy.sh` fails fast before
+deploying anything.
 
 ---
 
@@ -119,10 +196,14 @@ the network.
 1. Go to **Settings → Environments** in the GitHub repo.
 2. Create two environments: `testnet` and `mainnet`.
 3. For `mainnet`: add **Required reviewers** and a **Deployment branch filter** (e.g. `main`).
-4. In each environment, add the secret:
+4. In `testnet`, add the environment secret:
    ```
-   STELLAR_SECRET_KEY = <network-specific stellar secret key>
+   STELLAR_SECRET_KEY = <testnet stellar secret key>
    ```
+5. Register a self-hosted runner with the `mainnet-signer` label. Configure a
+   Stellar CLI identity backed by an MPC/HSM, hardware wallet, or enforced
+   signer quorum; do not place its seed in GitHub. Set the mainnet environment
+   variable `MAINNET_SIGNER_IDENTITY` to that identity name.
 
 ### Running a deploy
 
@@ -134,7 +215,9 @@ the network.
 The workflow:
 
 - **guard** job — validates the confirmation input before any compute starts.
-- **deploy** job — installs Rust + Stellar CLI, builds with `--locked`,
+- **deploy** job — runs behind the selected GitHub Environment approval,
+  installs a pinned checksummed Stellar CLI, signs the WASM checksum manifest,
+  uses the dedicated signer runner for mainnet, builds with `--locked`,
   runs `scripts/deploy.sh`, commits the updated registry back to the
   source branch (`[skip ci]` tag prevents an infinite loop), and uploads
   `deployments/*.json` as a 90-day run artifact.
@@ -199,11 +282,14 @@ print(r['networks']['testnet']['contracts']['minting'])
 
 ## Contract initialisation
 
-After deploying, each contract must be initialised once.  These calls require
-the deployer key (same `STELLAR_SECRET_KEY`).
+`scripts/deploy.sh` runs the `initialize` calls listed below automatically,
+using the validated values from [Initialisation parameters](#initialisation-parameters).
+The commands are kept here for reference and for recovering a deployment that
+ran with `SKIP_INIT=1`. These calls require the configured deployer identity
+(`STELLAR_SIGNER`) or, on testnet only, `STELLAR_SECRET_KEY`.
 
 > **Note:** Replace all `<...>` placeholders with real addresses from the
-> registry or your token infrastructure.
+> registry or your token infrastructure — never commit them.
 
 ### Oracle
 
@@ -233,10 +319,12 @@ stellar contract invoke \
   --admin <admin-address> \
   --oracle <oracle-id> \
   --acbu_token <acbu-token-id> \
-  --min_ratio 10200
+  --min_reserve_ratio_bps 10200
 ```
 
 ### Minting
+
+`initialize` takes a single `MintingConfig` struct, passed as JSON:
 
 ```bash
 stellar contract invoke \
@@ -245,16 +333,22 @@ stellar contract invoke \
   --network-passphrase "Test SDF Network ; September 2015" \
   --rpc-url "https://soroban-testnet.stellar.org" \
   -- initialize \
-  --admin <admin-address> \
-  --oracle <oracle-id> \
-  --reserve_tracker <reserve-tracker-id> \
-  --acbu_token <acbu-token-id> \
-  --usdc_token <usdc-token-id> \
-  --vault <vault-address> \
-  --treasury <treasury-address> \
-  --fee_rate_bps 30 \
-  --fee_single_bps 50
+  --config '{
+    "admin": "<admin-address>",
+    "oracle": "<oracle-id>",
+    "reserve_tracker": "<reserve-tracker-id>",
+    "acbu_token": "<acbu-token-id>",
+    "usdc_token": "<usdc-token-id>",
+    "vault": "<vault-address>",
+    "treasury": "<treasury-address>",
+    "fee_rate_bps": 30,
+    "fee_single_bps": 50,
+    "operator": "<operator-address>",
+    "operator_pub_key": "<64-hex-char-ed25519-pubkey>"
+  }'
 ```
+
+`admin` and `operator` must be different addresses.
 
 ### Burning
 
@@ -285,7 +379,9 @@ stellar contract invoke \
   --rpc-url "https://soroban-testnet.stellar.org" \
   -- initialize \
   --admin <admin-address> \
-  --acbu_token <acbu-token-id>
+  --acbu_token <acbu-token-id> \
+  --fee_rate_bps 0 \
+  --yield_rate_bps 500
 ```
 
 ### Lending Pool
@@ -298,7 +394,8 @@ stellar contract invoke \
   --rpc-url "https://soroban-testnet.stellar.org" \
   -- initialize \
   --admin <admin-address> \
-  --acbu_token <acbu-token-id>
+  --acbu_token <acbu-token-id> \
+  --fee_rate_bps 300
 ```
 
 ### Escrow
@@ -353,19 +450,20 @@ stellar contract invoke \
 
 | Error | Likely cause | Fix |
 |-------|--------------|-----|
-| `STELLAR_SECRET_KEY is not set` | Missing env var | `export STELLAR_SECRET_KEY="S..."` |
+| `Set STELLAR_SIGNER or STELLAR_SECRET_KEY` | Missing testnet signer | Configure either a CLI identity or a testnet-only seed |
+| `STELLAR_SIGNER is required for mainnet` | Missing protected signer identity | Configure the MPC/HSM or hardware-backed CLI identity on the `mainnet-signer` runner |
 | `DEPLOY_CONFIRM is not set` | Mainnet guard triggered | `export DEPLOY_CONFIRM=deploy` |
 | `Unexpected output for Oracle deploy` | CLI version mismatch or invalid key | Check `stellar --version`; validate key is a valid secret (starts with `S`) |
 | `WASM artifact not found` | Build didn't produce .wasm | Run `cargo build --locked --target wasm32-unknown-unknown --release` first |
 | `Insufficient balance` | Not enough XLM for fees | Fund account via Friendbot (testnet) or purchase XLM (mainnet) |
 | `Contract already initialized` | Re-initialization attempted | Deploy a new contract instance |
-| `Unauthorized` | Wrong admin key | Ensure `STELLAR_SECRET_KEY` matches the initialised admin address |
+| `Unauthorized` | Wrong admin signer | Ensure the configured signer identity matches the initialised admin address |
 
 ---
 
 ## Security notes
 
-1. **Never commit secret keys.** Use environment variables or CI secrets.
+1. **Never commit secret keys.** Mainnet deployment rejects raw keys and uses a protected signer identity.
 2. `deployments/registry.json` contains **only contract IDs** — no secrets.
 3. Use the **multisig contract** for all admin operations in production.
 4. The `.soroban/` directory is gitignored — only `deployments/` is tracked.

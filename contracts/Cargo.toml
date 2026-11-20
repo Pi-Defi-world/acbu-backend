@@ -10,8 +10,13 @@ members = [
     "acbu_multisig",
     "shared",
     "verifier",
+    "contracts/zk_verifier",
+    "contracts/zk_gate",
 ]
 resolver = "2"
+
+[workspace.package]
+rust-version = "1.88.0"
 
 # ---------------------------------------------------------------------------
 # Workspace-wide dependency versions
@@ -34,8 +39,32 @@ resolver = "2"
 # Exact pin — caret (`^`) is intentionally *not* used here.
 # (Note: 21.0.0 was yanked from crates.io, using latest 21.x version)
 soroban-sdk = "=21.7.7"
+soroban-env-host = "=21.2.1"
 # Pin serde_with to version compatible with rustc 1.88.0
 serde_with = "=3.9.0"
+
+# ---------------------------------------------------------------------------
+# AZ-006: Canonical `ultrahonk_rust_verifier` git revision
+#
+# This crate is NOT sourced from crates.io and therefore cannot appear as a
+# registry dependency in Cargo.lock.  Because the current supply-chain policy
+# (W2-Z-020, enforced by `deps-guard.yml`) forbids git-sourced entries in the
+# committed Cargo.lock, the crate must NOT be added as a direct Cargo
+# dependency.  Instead, proof verification is implemented natively in the
+# `contracts/zk_verifier` crate (see `contracts/zk_verifier/src/lib.rs`).
+#
+# If this policy is ever relaxed, every manifest that references the crate MUST
+# pin the SAME commit.  The canonical revision is:
+#
+#   rev = "2a73c4ba11f073f1797d90915ebbb9eb9d09f445"
+#
+# Using any other revision risks mismatched VK/proof serialization across
+# contracts, causing silent on-chain verification failures (AZ-006).
+#
+# The CI step "Enforce consistent ultrahonk_rust_verifier rev (AZ-006)" in
+# `.github/workflows/deps-guard.yml` will fail the build if any Cargo.toml
+# declares the crate at a different revision.
+# ---------------------------------------------------------------------------
 
 [profile.release]
 opt-level = "z"      # Optimize for size

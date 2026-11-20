@@ -1,4 +1,7 @@
 # Enhanced CI pipeline for cargo and noir
+# W2-Z-016: Node 20 LTS is pinned via .nvmrc for all jobs that invoke JS
+# helper scripts (invoke/measurement helpers).  Node 18 reached EOL
+# April 2025 and must not be used in CI (AZ-031).
 
 name: CI
 
@@ -15,17 +18,12 @@ jobs:
   cargo-clippy:
     name: Cargo Clippy
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.88.0"
-          targets: wasm32-unknown-unknown
-          components: clippy, rustfmt
+        uses: ./.github/actions/rust-toolchain
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -36,6 +34,12 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      # W2-Z-016: Pin Node 20 LTS; Node 18 is EOL (AZ-031).
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
 
       - name: Fetch token WASM artifact
         run: bash scripts/fetch_token_wasm.sh
@@ -43,23 +47,20 @@ jobs:
       - name: Run clippy
         # AX-011: --locked ensures clippy resolves against the committed Cargo.lock,
         # preventing silent transitive-dependency drift that could change on-chain WASM.
+        # AX-011: --locked pins cargo to the committed Cargo.lock so a transitive
+        # dep bump can never silently change on-chain WASM between CI runs.
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
         continue-on-error: true
 
   cargo-build:
     name: Cargo Build
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.88.0"
-          targets: wasm32-unknown-unknown
-          components: clippy, rustfmt
+        uses: ./.github/actions/rust-toolchain
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -71,12 +72,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # W2-Z-016: Pin Node 20 LTS; Node 18 is EOL (AZ-031).
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
       - name: Fetch token WASM artifact
         run: bash scripts/fetch_token_wasm.sh
 
       - name: Build workspace
         # AX-011: --locked pins cargo to the committed Cargo.lock so a transitive
         # bump can never silently change the on-chain WASM binary.
+        # dep bump can never silently change the on-chain WASM binary.
         run: cargo build --locked --workspace
 
       - name: Build WASM targets
@@ -85,16 +93,12 @@ jobs:
   cargo-test:
     name: Cargo Test
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.88.0"
-          targets: wasm32-unknown-unknown
+        uses: ./.github/actions/rust-toolchain
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -105,6 +109,12 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      # W2-Z-016: Pin Node 20 LTS; Node 18 is EOL (AZ-031).
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
 
       - name: Fetch token WASM artifact
         run: bash scripts/fetch_token_wasm.sh

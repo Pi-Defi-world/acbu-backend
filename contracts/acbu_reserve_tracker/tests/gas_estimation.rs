@@ -37,9 +37,9 @@ mod mock_oracle_gas {
 
     #[contractimpl]
     impl MockOracleGas {
-        /// Returns a fixed ACBU/USD rate of 1 USD (8 decimals).
+        /// Returns a fixed ACBU/USD rate of 1 USD (7 decimals).
         pub fn get_acbu_usd_rate(_env: Env) -> i128 {
-            100_000_000
+            shared::DECIMALS
         }
 
         pub fn get_rate_with_timestamp(env: Env, currency: CurrencyCode) -> (i128, u64) {
@@ -549,8 +549,8 @@ fn gas_is_reserve_sufficient_20_currencies_stays_under_budget() {
     // amount = 1_000_000_000, expected_value_usd = 1_000_000_000 * 1_000_000 / 10_000_000 = 100_000_000
     // So each currency contributes 100_000_000 USD units = 10 USD.
     // 20 currencies × 10 USD = 200 USD in reserves.
-    // Mock oracle ACBU rate = 100_000_000 (1 USD/ACBU, 8 decimals).
-    // Supply = 10 ACBU → total_acbu_usd = 10 * DECIMALS * 100_000_000 / 100_000_000 = 10 * DECIMALS = 100_000_000 → sufficient.
+    // Mock oracle ACBU rate = DECIMALS (1 USD/ACBU, 7 decimals).
+    // Supply = 10 ACBU → total_acbu_usd = 10 * DECIMALS * DECIMALS / DECIMALS = 10 * DECIMALS = 100_000_000 → sufficient.
     let per_currency_rate: i128 = 1_000_000;
     let per_currency_amount: i128 = 1_000_000_000;
     let per_currency_value_usd: i128 = 100_000_000; // = amount * rate / DECIMALS
@@ -562,8 +562,8 @@ fn gas_is_reserve_sufficient_20_currencies_stays_under_budget() {
     }
 
     // 20 currencies × 100_000_000 USD units = 2_000_000_000 total reserve USD.
-    // Mock ACBU rate = 100_000_000, supply = 10 * DECIMALS = 100_000_000.
-    // total_acbu_usd = 100_000_000 * 100_000_000 / 100_000_000 = 100_000_000 → sufficient.
+    // Mock ACBU rate = DECIMALS, supply = 10 * DECIMALS = 100_000_000.
+    // total_acbu_usd = 100_000_000 * DECIMALS / DECIMALS = 100_000_000 → sufficient.
     let supply: i128 = 10 * DECIMALS;
 
     let mut budget: Budget = env.budget();
@@ -601,8 +601,8 @@ fn gas_is_reserve_sufficient_max_i128_supply_stays_under_budget() {
     let ngn = CurrencyCode::new(&env, "NGN");
     // Oracle rate = 1_000_000. amount = 1_000_000_000, value_usd = 100_000_000.
     // expected_value_usd = 1_000_000_000 * 1_000_000 / 10_000_000 = 100_000_000 ✓
-    // Supply is huge; mock oracle ACBU rate = 100_000_000 (1 USD/ACBU).
-    // total_acbu_usd = supply * 100_000_000 / 100_000_000 = supply.
+    // Supply is huge; mock oracle ACBU rate = DECIMALS (1 USD/ACBU).
+    // total_acbu_usd = supply * DECIMALS / DECIMALS = supply.
     // For large supply this arithmetic overflows → expect() panics.
     // The important assertion is that no infinite loop / unbounded work occurs.
     let rate: i128 = 1_000_000;
@@ -617,10 +617,10 @@ fn gas_is_reserve_sufficient_max_i128_supply_stays_under_budget() {
     budget.reset_unlimited();
     budget.reset_tracker();
 
-    // With supply = i128::MAX/2 and acbu_usd_rate = 100_000_000 (1 USD per ACBU,
-    // using the mock's fixed return of 100_000_000), the contract computes:
-    //   total_acbu_usd = supply * 100_000_000 / 100_000_000 = supply
-    // which would overflow checked_mul for i128::MAX/2 * 100_000_000.
+    // With supply = i128::MAX/2 and acbu_usd_rate = DECIMALS (1 USD per ACBU,
+    // using the mock's fixed return of DECIMALS), the contract computes:
+    //   total_acbu_usd = supply * DECIMALS / DECIMALS = supply
+    // which would overflow checked_mul for i128::MAX/2 * DECIMALS.
     // The contract panics via expect() on overflow, so we use try_ to capture it.
     let result = client.try_verify_reserves_manual(&supply);
 
@@ -652,8 +652,8 @@ fn gas_is_reserve_sufficient_one_over_threshold_stays_under_budget() {
     let ngn = CurrencyCode::new(&env, "NGN");
     // Oracle rate = 1_000_000, amount = 1_000_000_000, value_usd = 100_000_000.
     // expected_value_usd = 1_000_000_000 * 1_000_000 / 10_000_000 = 100_000_000 ✓
-    // Mock ACBU rate (fixed by mock) = 100_000_000.
-    // total_acbu_usd = supply * 100_000_000 / 100_000_000 = supply.
+    // Mock ACBU rate (fixed by mock) = DECIMALS.
+    // total_acbu_usd = supply * DECIMALS / DECIMALS = supply.
     // → supply = 100_000_001 means acbu_usd = 100_000_001 > 100_000_000 reserve → insufficient.
     let rate: i128 = 1_000_000;
     let amount: i128 = 1_000_000_000;

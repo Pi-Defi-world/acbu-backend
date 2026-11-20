@@ -1,6 +1,15 @@
 @echo off
+rem AX-002: Never hardcode signing keys. Set STELLAR_SECRET_KEY in your
+rem environment (or CI secrets) before running this script:
+rem
+rem   set STELLAR_SECRET_KEY=S…your-testnet-key…
+rem
+rem Rotate any key that was previously committed to git history (git filter-repo).
+if not defined STELLAR_SECRET_KEY (
+    echo ERROR: STELLAR_SECRET_KEY is not set. AX-002: do not hardcode keys in scripts.
+    exit /b 1
+)
 set STELLAR_NETWORK=testnet
-set STELLAR_SECRET_KEY=SA2P2MWG4L4KMKYXNVSS73NTZWKRYDPJDXLVODDSYCPWQ5LVIZNXIBAR
 set ADMIN=GDHO63RZEUNDRVF6WA7HD4D7PLNLUMSK5H74ONW3MEF3VKF4BZJ6GDML
 set ORACLE=CCJ6L5CVLRSLYVYWMEFSC3QZ5OHAB2DEVFV6GUWCAMF4NZIO7CYE66OQ
 

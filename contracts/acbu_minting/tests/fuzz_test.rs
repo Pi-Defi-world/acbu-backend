@@ -4,7 +4,7 @@ use acbu_minting::{MintingContract, MintingContractClient};
 use shared::DECIMALS;
 use soroban_sdk::{
     testutils::Address as _,
-    Address, Env,
+    Address, BytesN, Env,
 };
 use proptest::prelude::*;
 
@@ -71,6 +71,7 @@ fn setup_fuzz_test(env: &Env) -> (Address, Address, MintingContractClient, Addre
         fee_rate_bps: 300,
         fee_single_bps: 100,
         operator: admin.clone(),
+        operator_pub_key: BytesN::from_array(env, &[0u8; 32]),
     };
     client.initialize(&config);
     (admin, oracle, client, usdc_token, usdc_sac, acbu_client)

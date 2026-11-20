@@ -250,7 +250,9 @@ fn test_mint_from_basket_burn_to_basket() {
     let proof_id = soroban_sdk::String::from_str(&env, "proof_123");
 
     let minted = minting_client.mint_from_basket(&user, &user, &acbu_amount, &proof_id);
-    assert_eq!(minted, acbu_amount, "minted should equal acbu_amount");
+    let expected_fee = shared::calculate_fee(acbu_amount, 300).unwrap();
+    let expected_net = acbu_amount - expected_fee;
+    assert_eq!(minted, expected_net, "minted should equal expected_net");
 
     // Verify S-tokens were transferred to vault
     let ngn_client = TokenClient::new(&env, &ngn_token);

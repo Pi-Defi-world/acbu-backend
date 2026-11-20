@@ -39,6 +39,8 @@ pub enum Error {
     AdminTimelockNotElapsed = 1020,
     NoPendingAdminToCancel = 1021,
     InsufficientYieldReserve = 1022,
+    /// `claim_yield` called with no owed yield (AC-007).
+    NothingToClaim = 1023,
     Unknown = 1999,
 }
 
@@ -66,7 +68,8 @@ impl Display for Error {
             Self::NoPendingAdmin => "no pending admin",
             Self::AdminTimelockNotElapsed => "admin timelock has not elapsed",
             Self::NoPendingAdminToCancel => "no pending admin to cancel",
-            Self::InsufficientYieldReserve => "vault balance cannot cover principal + yield owed",
+            Self::InsufficientYieldReserve => "yield reserve cannot cover this amount",
+            Self::NothingToClaim => "no owed yield to claim",
             Self::Unknown => "unknown savings vault error",
         };
         f.write_str(message)
@@ -89,6 +92,12 @@ pub struct DataKey {
     pub pending_upgrade_eligible_at: Symbol,
     pub pending_admin: Symbol,
     pub pending_admin_eligible_at: Symbol,
+    /// Sum of all depositors' locked principal (AC-007).
+    pub total_principal: Symbol,
+    /// ACBU explicitly funded for yield; the only source of yield payouts (AC-007).
+    pub yield_reserve: Symbol,
+    /// Sum of accrued yield not yet paid because the reserve ran short (AC-007).
+    pub total_owed_yield: Symbol,
 }
 
 const DATA_KEY: DataKey = DataKey {
@@ -102,9 +111,14 @@ const DATA_KEY: DataKey = DataKey {
     pending_upgrade_eligible_at: symbol_short!("PU_ETA"),
     pending_admin: symbol_short!("PEND_ADM"),
     pending_admin_eligible_at: symbol_short!("PA_ETA"),
+    total_principal: symbol_short!("PRINCPL"),
+    yield_reserve: symbol_short!("YLD_RSV"),
+    total_owed_yield: symbol_short!("YLD_OWED"),
 };
 
 const DEPOSIT_KEY: Symbol = symbol_short!("DEPOSITS");
+/// Persistent per-user owed-yield key prefix: `(OWED_KEY, user)` (AC-007).
+const OWED_KEY: Symbol = symbol_short!("OWED");
 const SECONDS_PER_YEAR: i128 = 31_536_000;
 const UPGRADE_TIMELOCK_SECONDS: u64 = 86_400;
 const ADMIN_TIMELOCK_SECONDS: u64 = 86_400;
@@ -114,7 +128,6 @@ const ADMIN_TIMELOCK_SECONDS: u64 = 86_400;
 /// (acbu_token, fee_rate, yield_rate) never archives from inactivity.
 const INSTANCE_TTL_THRESHOLD: u32 = 5_184_000;
 const INSTANCE_TTL_EXTEND_TO: u32 = 5_184_000;
-
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -191,6 +204,14 @@ impl SavingsVault {
             .ok_or(Error::NoYieldRate)
     }
 
+    fn load_i128(env: &Env, key: &Symbol) -> i128 {
+        env.storage().instance().get(key).unwrap_or(0)
+    }
+
+    fn store_i128(env: &Env, key: &Symbol, value: i128) {
+        env.storage().instance().set(key, &value);
+    }
+
     fn check_paused(env: &Env) {
         let phase: ContractPhase = env
             .storage()
@@ -208,7 +229,8 @@ impl SavingsVault {
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
     }
 
-    /// Extends the temporary storage entry backing a user's deposit lots for
+    // Extends the temporary storage entry backing a user's deposit lots for
+    // the configured TTL window. Called internally before every read/write.
 
     // -----------------------------------------------------------------------
     // Public logic
@@ -237,17 +259,27 @@ impl SavingsVault {
             env.panic_with_error(Error::InvalidYieldRate);
         }
         env.storage().instance().set(&DATA_KEY.admin, &admin);
-        env.storage().instance().set(&DATA_KEY.acbu_token, &acbu_token);
-        env.storage().instance().set(&DATA_KEY.fee_rate, &fee_rate_bps);
-        env.storage().instance().set(&DATA_KEY.yield_rate, &yield_rate_bps);
-        env.storage().instance().set(&DATA_KEY.phase, &ContractPhase::Active);
-        env.storage().instance().set(&SharedDataKey::Version, &CONTRACT_VERSION);
+        env.storage()
+            .instance()
+            .set(&DATA_KEY.acbu_token, &acbu_token);
+        env.storage()
+            .instance()
+            .set(&DATA_KEY.fee_rate, &fee_rate_bps);
+        env.storage()
+            .instance()
+            .set(&DATA_KEY.yield_rate, &yield_rate_bps);
+        env.storage()
+            .instance()
+            .set(&DATA_KEY.phase, &ContractPhase::Active);
+        env.storage()
+            .instance()
+            .set(&SharedDataKey::Version, &CONTRACT_VERSION);
         Self::extend_instance_ttl(&env);
     }
 
     /// Deposit (lock) ACBU for a term. User transfers ACBU to this contract.
     pub fn deposit(env: Env, user: Address, amount: i128, term_seconds: u64) -> i128 {
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         user.require_auth();
 
@@ -268,7 +300,8 @@ impl SavingsVault {
             .unwrap_or_else(|| env.panic_with_error(Error::InvalidTerm));
 
         let fee_rate = Self::load_fee_rate(&env).unwrap_or_else(|e| env.panic_with_error(e));
-        let fee_amount = calculate_fee(amount, fee_rate);
+        let fee_amount = calculate_fee(amount, fee_rate)
+            .unwrap_or_else(|_| env.panic_with_error(Error::Overflow));
         let net_amount = amount
             .checked_sub(fee_amount)
             .unwrap_or_else(|| env.panic_with_error(Error::Overflow));
@@ -282,17 +315,18 @@ impl SavingsVault {
         let token = soroban_sdk::token::Client::new(&env, &acbu);
         let vault_addr = env.current_contract_address();
 
-        // Transfer the net amount to the vault first, verifying success.
-        match token.try_transfer(&user, &vault_addr, &net_amount) {
+        // AC-037: Pull the full gross amount in a single transfer so the user
+        // only needs one approval for `amount`.  The fee is then forwarded
+        // from the vault to the admin in a second, vault-initiated transfer
+        // (no user auth required for that leg).
+        match token.try_transfer(&user, &vault_addr, &amount) {
             Ok(Ok(())) => {}
             _ => env.panic_with_error(Error::AccountingError),
         }
-        // Transfer the fee to the admin if applicable, verifying success.
+        // Forward the fee portion from vault to admin (vault-initiated, no
+        // additional user approval needed).
         if fee_amount > 0 {
-            match token.try_transfer(&user, &admin, &fee_amount) {
-                Ok(Ok(())) => {}
-                _ => env.panic_with_error(Error::AccountingError),
-            }
+            token.transfer(&vault_addr, &admin, &fee_amount);
         }
 
         // Record the deposit lot in storage after the transfers succeed
@@ -310,6 +344,10 @@ impl SavingsVault {
         });
 
         env.storage().persistent().set(&key, &lots);
+        let total_principal = Self::load_i128(&env, &DATA_KEY.total_principal)
+            .checked_add(net_amount)
+            .unwrap_or_else(|| env.panic_with_error(Error::Overflow));
+        Self::store_i128(&env, &DATA_KEY.total_principal, total_principal);
         Self::extend_instance_ttl(&env);
 
         env.events().publish(
@@ -325,14 +363,12 @@ impl SavingsVault {
             },
         );
 
-        reentrancy_guard::release_guard(&env);
-
         net_amount
     }
 
     /// Withdraw unlocked ACBU + yield for a specific term.
     pub fn withdraw(env: Env, user: Address, term_seconds: u64, amount: i128) -> i128 {
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         user.require_auth();
 
@@ -418,35 +454,142 @@ impl SavingsVault {
         }
         Self::extend_instance_ttl(&env);
 
+        // AC-007: principal and yield are accounted separately. Principal is
+        // always returned in full; yield is paid only from the explicitly
+        // funded reserve, never from other depositors' principal. Any
+        // shortfall is recorded as owed and paid later via `claim_yield`.
+        let total_principal = Self::load_i128(&env, &DATA_KEY.total_principal);
+        // Saturating: lots deposited before AC-007 were never added to the total.
+        Self::store_i128(
+            &env,
+            &DATA_KEY.total_principal,
+            total_principal.saturating_sub(amount).max(0),
+        );
+        let yield_paid = Self::pay_from_reserve(&env, yield_amount);
+        let yield_short = yield_amount
+            .checked_sub(yield_paid)
+            .unwrap_or_else(|| env.panic_with_error(Error::AccountingError));
+        if yield_short > 0 {
+            Self::add_owed_yield(&env, &user, yield_short);
+        }
+
         let payout_amount = amount
-            .checked_add(yield_amount)
+            .checked_add(yield_paid)
             .unwrap_or_else(|| env.panic_with_error(Error::Overflow));
 
         let acbu = Self::load_acbu_token(&env).unwrap_or_else(|e| env.panic_with_error(e));
         let token = soroban_sdk::token::Client::new(&env, &acbu);
         let vault_addr = env.current_contract_address();
-
-        // Yield is paid directly out of the vault's own ACBU balance — there is no
-        // external yield-generation mechanism funding it. Check the balance up front
-        // so an underfunded vault fails with a clear, specific error instead of the
-        // token contract's generic insufficient-balance panic.
-        if token.balance(&vault_addr) < payout_amount {
-            env.panic_with_error(Error::InsufficientYieldReserve);
-        }
-
-        token.transfer(&vault_addr, &user, &amount);
-        if yield_amount > 0 {
-            token.transfer(&vault_addr, &user, &yield_amount);
-        }
+        token.transfer(&vault_addr, &user, &payout_amount);
 
         env.events().publish(
             (symbol_short!("Withdraw"), user.clone()),
-            (user, amount, 0i128, yield_amount, now),
+            (user, amount, 0i128, yield_paid, now),
         );
 
-        reentrancy_guard::release_guard(&env);
-
         payout_amount
+    }
+
+    /// Add `amount` ACBU to the yield reserve (AC-007). Anyone may fund it —
+    /// typically the treasury. This is the only way yield enters the vault;
+    /// tokens sent to the vault by plain transfer are never paid out as yield.
+    pub fn fund_yield_reserve(env: Env, funder: Address, amount: i128) {
+        funder.require_auth();
+        if amount <= 0 {
+            env.panic_with_error(Error::InvalidAmount);
+        }
+        let acbu = Self::load_acbu_token(&env).unwrap_or_else(|e| env.panic_with_error(e));
+        let token = soroban_sdk::token::Client::new(&env, &acbu);
+        token.transfer(&funder, &env.current_contract_address(), &amount);
+
+        let reserve = Self::load_i128(&env, &DATA_KEY.yield_reserve)
+            .checked_add(amount)
+            .unwrap_or_else(|| env.panic_with_error(Error::Overflow));
+        Self::store_i128(&env, &DATA_KEY.yield_reserve, reserve);
+        Self::extend_instance_ttl(&env);
+        env.events()
+            .publish((symbol_short!("yld_fund"), funder), (amount, reserve));
+    }
+
+    /// Withdraw unused yield reserve to `to` (admin only, AC-007). Only the
+    /// part of the reserve not already owed to depositors can be removed;
+    /// depositors' principal is never reachable through this path.
+    pub fn withdraw_yield_reserve(env: Env, to: Address, amount: i128) {
+        let admin = Self::load_admin(&env).unwrap_or_else(|e| env.panic_with_error(e));
+        admin.require_auth();
+        if amount <= 0 {
+            env.panic_with_error(Error::InvalidAmount);
+        }
+        let reserve = Self::load_i128(&env, &DATA_KEY.yield_reserve);
+        let owed = Self::load_i128(&env, &DATA_KEY.total_owed_yield);
+        if amount > reserve.saturating_sub(owed) {
+            env.panic_with_error(Error::InsufficientYieldReserve);
+        }
+        Self::store_i128(&env, &DATA_KEY.yield_reserve, reserve - amount);
+
+        let acbu = Self::load_acbu_token(&env).unwrap_or_else(|e| env.panic_with_error(e));
+        let token = soroban_sdk::token::Client::new(&env, &acbu);
+        token.transfer(&env.current_contract_address(), &to, &amount);
+        env.events()
+            .publish((symbol_short!("yld_defd"), to), (amount, reserve - amount));
+    }
+
+    /// Pay out yield previously recorded as owed because the reserve ran
+    /// short (AC-007). Pays as much as the reserve currently covers; any
+    /// remainder stays owed. Returns the amount paid.
+    pub fn claim_yield(env: Env, user: Address) -> i128 {
+        let _guard = reentrancy_guard::acquire_guard(&env);
+        user.require_auth();
+        Self::check_paused(&env);
+
+        let owed_key = (OWED_KEY, user.clone());
+        let owed: i128 = env.storage().persistent().get(&owed_key).unwrap_or(0);
+        if owed <= 0 {
+            env.panic_with_error(Error::NothingToClaim);
+        }
+        let paid = Self::pay_from_reserve(&env, owed);
+        if paid == 0 {
+            env.panic_with_error(Error::InsufficientYieldReserve);
+        }
+        let remaining = owed - paid;
+        if remaining == 0 {
+            env.storage().persistent().remove(&owed_key);
+        } else {
+            env.storage().persistent().set(&owed_key, &remaining);
+        }
+        let total_owed = Self::load_i128(&env, &DATA_KEY.total_owed_yield);
+        Self::store_i128(&env, &DATA_KEY.total_owed_yield, total_owed.saturating_sub(paid).max(0));
+
+        let acbu = Self::load_acbu_token(&env).unwrap_or_else(|e| env.panic_with_error(e));
+        let token = soroban_sdk::token::Client::new(&env, &acbu);
+        token.transfer(&env.current_contract_address(), &user, &paid);
+        env.events()
+            .publish((symbol_short!("yld_clm"), user), (paid, remaining));
+
+        paid
+    }
+
+    /// Return the funded yield reserve available for payouts (AC-007).
+    pub fn get_yield_reserve(env: Env) -> i128 {
+        Self::load_i128(&env, &DATA_KEY.yield_reserve)
+    }
+
+    /// Return the total principal locked by depositors (AC-007).
+    pub fn get_total_principal(env: Env) -> i128 {
+        Self::load_i128(&env, &DATA_KEY.total_principal)
+    }
+
+    /// Return the accrued yield owed to `user` but not yet paid (AC-007).
+    pub fn get_owed_yield(env: Env, user: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&(OWED_KEY, user))
+            .unwrap_or(0)
+    }
+
+    /// Return the total accrued yield owed to all depositors (AC-007).
+    pub fn get_total_owed_yield(env: Env) -> i128 {
+        Self::load_i128(&env, &DATA_KEY.total_owed_yield)
     }
 
     /// Return the total locked principal `user` holds across all deposit lots for
@@ -839,6 +982,32 @@ impl SavingsVault {
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
+
+    /// Take up to `amount` from the yield reserve; returns what was taken.
+    fn pay_from_reserve(env: &Env, amount: i128) -> i128 {
+        if amount <= 0 {
+            return 0;
+        }
+        let reserve = Self::load_i128(env, &DATA_KEY.yield_reserve);
+        let paid = amount.min(reserve);
+        Self::store_i128(env, &DATA_KEY.yield_reserve, reserve - paid);
+        paid
+    }
+
+    fn add_owed_yield(env: &Env, user: &Address, amount: i128) {
+        let owed_key = (OWED_KEY, user.clone());
+        let owed: i128 = env.storage().persistent().get(&owed_key).unwrap_or(0);
+        let owed = owed
+            .checked_add(amount)
+            .unwrap_or_else(|| env.panic_with_error(Error::Overflow));
+        env.storage().persistent().set(&owed_key, &owed);
+        let total_owed = Self::load_i128(env, &DATA_KEY.total_owed_yield)
+            .checked_add(amount)
+            .unwrap_or_else(|| env.panic_with_error(Error::Overflow));
+        Self::store_i128(env, &DATA_KEY.total_owed_yield, total_owed);
+        env.events()
+            .publish((symbol_short!("yld_owed"), user.clone()), (amount, owed));
+    }
 
     fn sum_lots(lots: &Vec<DepositLot>) -> i128 {
         let mut total = 0i128;

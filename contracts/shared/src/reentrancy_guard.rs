@@ -27,26 +27,26 @@ const REENTRANCY_GUARD_KEY: ReentrancyGuardKey = ReentrancyGuardKey {
     guard: symbol_short!("REENTRANT"),
 };
 
-/// Acquire the re-entrancy guard
-/// This must be called at the beginning of any function that makes external calls
-/// If the guard is already set, it will panic with ReentrancyError::ReentrantCall
-pub fn acquire_guard(env: &Env) {
+/// An acquired re-entrancy guard that releases itself when dropped.
+pub struct ReentrancyGuard<'a> {
+    env: &'a Env,
+}
+
+impl Drop for ReentrancyGuard<'_> {
+    fn drop(&mut self) {
+        self.env.storage().instance().remove(&REENTRANCY_GUARD_KEY);
+    }
+}
+
+/// Acquire the re-entrancy guard.
+/// This must be called at the beginning of any function that makes external calls.
+/// If the guard is already set, it will panic with ReentrancyError::ReentrantCall.
+pub fn acquire_guard(env: &Env) -> ReentrancyGuard<'_> {
     if env.storage().instance().has(&REENTRANCY_GUARD_KEY) {
         env.panic_with_error(ReentrancyError::ReentrantCall);
     }
     env.storage().instance().set(&REENTRANCY_GUARD_KEY, &true);
-}
-
-/// Release the re-entrancy guard
-/// This must be called at the end of any function that acquired the guard.
-/// Panics if the guard is not currently held, preventing a caller from
-/// accidentally releasing a guard it never acquired (which would clear a
-/// legitimate outer guard prematurely).
-pub fn release_guard(env: &Env) {
-    if !env.storage().instance().has(&REENTRANCY_GUARD_KEY) {
-        env.panic_with_error(ReentrancyError::ReentrantCall);
-    }
-    env.storage().instance().remove(&REENTRANCY_GUARD_KEY);
+    ReentrancyGuard { env }
 }
 
 /// Check if the re-entrancy guard is currently set

@@ -323,7 +323,8 @@ make deploy-testnet
 ### Mainnet
 
 ```bash
-export STELLAR_SECRET_KEY="your-secret-key"
+export STELLAR_SIGNER="acbu-mainnet-deployer" # hardware/MPC-backed CLI identity
+export DEPLOY_CONFIRM=deploy
 make deploy-mainnet
 ```
 

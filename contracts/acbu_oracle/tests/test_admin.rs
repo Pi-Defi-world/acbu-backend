@@ -230,7 +230,11 @@ fn test_transfer_admin_requires_current_admin_auth() {
 }
 
 #[test]
-fn test_update_rate_single_submission() {
+#[should_panic(expected = "#7009")]
+fn test_update_rate_rejects_single_submission() {
+    // AC-014 (#737): a single source no longer bypasses aggregation — the
+    // quorum floor (min_signatures, MIN_ORACLE_SOURCE_FEEDS) applies even
+    // when sources.len() == 1.
     let (env, _admin, client) = setup();
     let validators = client.get_validators();
     let validator = validators.get(0).unwrap();
@@ -242,9 +246,6 @@ fn test_update_rate_single_submission() {
     sources.push_back(125_000i128);
 
     client.update_rate(&validator, &currency, &125_000i128, &sources, &0u64);
-
-    let (rate, _ts) = client.get_rate_with_timestamp(&currency);
-    assert_eq!(rate, 125_000i128);
 }
 
 #[test]

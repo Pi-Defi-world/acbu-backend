@@ -10,7 +10,7 @@ use soroban_sdk::{
 const MAX_MEDIAN_UPDATE_CPU: u64 = 15_000_000;
 const MAX_MEDIAN_UPDATE_MEM: u64 = 4_000_000;
 
-fn setup_oracle(env: &Env) -> (OracleContractClient<'static>, Address, CurrencyCode) {
+fn setup_oracle(env: &Env) -> (OracleContractClient<'static>, Address, Address, CurrencyCode) {
     env.mock_all_auths();
     env.ledger().with_mut(|ledger| {
         ledger.timestamp = 1_000_000;
@@ -24,7 +24,7 @@ fn setup_oracle(env: &Env) -> (OracleContractClient<'static>, Address, CurrencyC
 
     let mut validators = Vec::new(env);
     validators.push_back(validator.clone());
-    validators.push_back(validator2);
+    validators.push_back(validator2.clone());
     validators.push_back(validator3);
 
     let currency = CurrencyCode::new(env, "NGN");
@@ -38,7 +38,7 @@ fn setup_oracle(env: &Env) -> (OracleContractClient<'static>, Address, CurrencyC
     let client = OracleContractClient::new(env, &contract_id);
     client.initialize(&admin, &validators, &2u32, &currencies, &basket_weights);
 
-    (client, validator, currency)
+    (client, validator, validator2, currency)
 }
 
 fn source_rates(env: &Env) -> Vec<i128> {
@@ -55,15 +55,25 @@ fn source_rates(env: &Env) -> Vec<i128> {
 #[test]
 fn gas_update_rate_median_quorum_sources_stays_under_budget() {
     let env = Env::default();
-    let (client, validator, currency) = setup_oracle(&env);
+    let (client, validator, validator2, currency) = setup_oracle(&env);
     let sources = source_rates(&env);
+
+    // First of the two quorum submissions (min_signatures = 2) is not measured;
+    // the second records its submission and commits, the most expensive path.
+    client.update_rate(
+        &validator,
+        &currency,
+        &1_000_000,
+        &sources,
+        &env.ledger().timestamp(),
+    );
 
     let mut budget: Budget = env.budget();
     budget.reset_unlimited();
     budget.reset_tracker();
 
     client.update_rate(
-        &validator,
+        &validator2,
         &currency,
         &1_000_000,
         &sources,

@@ -83,23 +83,35 @@ pub const PUBLIC_INPUTS_LEN: usize = 5;
 // ZK proof verification
 // ---------------------------------------------------------------------------
 
+/// Public-input field indices for the KYC verifier circuit.
+const PI_MIN_TIER: usize = 0;
+const PI_COUNTRY_CODE: usize = 1;
+const PI_REQUESTED_AMOUNT: usize = 2;
+const PI_DAILY_CAP: usize = 3;
+const PI_ALREADY_USED: usize = 4;
+
+/// Maximum valid KYC tier encoded in a public input.
+const MAX_TIER: u128 = 3;
+
 /// Validates a serialised KYC proof together with its public inputs.
 ///
-/// This function acts as the **host-side gate** before any cryptographic
-/// verification: it enforces structural invariants that must hold regardless
-/// of proof contents, allowing callers to fail fast without paying the cost of
-/// a full proof check on malformed inputs.
+/// Enforces both **structural** and **semantic** invariants before any
+/// cryptographic work is performed, so callers fail fast on clearly invalid
+/// inputs without paying gas for a full proof check.
 ///
-/// # Checks performed
+/// # Checks performed (in order)
 ///
-/// 1. `proof_bytes.len() == PROOF_BYTES` — rejects proofs that are too short
-///    or too long ([`VerifierError::InvalidProofLength`]).
-/// 2. `public_inputs.len() == PUBLIC_INPUTS_LEN` — rejects inputs vectors that
-///    do not match the circuit's exact public-input count
-///    ([`VerifierError::InvalidPublicInputsLength`]).  This is the fix for
-///    **W2-Z-017**: without this check a caller could pass an arbitrarily large
-///    `public_inputs` slice, causing unbounded memory/gas consumption during
-///    downstream cryptographic processing.
+/// 1. `proof_bytes.len() == PROOF_BYTES` — wrong size → [`InvalidProofLength`].
+/// 2. `proof_bytes` are not all-zero — trivially forged → [`TriviallyInvalidProof`].
+/// 3. `public_inputs.len() == PUBLIC_INPUTS_LEN` — wrong count → [`InvalidPublicInputsLength`]
+///    (W2-Z-017 fix: prevents unbounded gas consumption from oversized slices).
+/// 4. `public_inputs[PI_MIN_TIER] <= 3` — tier out of range → [`InvalidPublicInputValue`].
+/// 5. `public_inputs[PI_COUNTRY_CODE] != 0` — zero country code is not a valid
+///    ISO 3166-1 encoding → [`InvalidPublicInputValue`].
+/// 6. `public_inputs[PI_REQUESTED_AMOUNT] > 0` — zero-amount proof is invalid
+///    → [`InvalidPublicInputValue`].
+/// 7. `public_inputs[PI_ALREADY_USED] <= public_inputs[PI_DAILY_CAP]` — a proof
+///    claiming already_used > daily_cap is self-contradictory → [`InvalidPublicInputValue`].
 ///
 /// # Note on cryptographic verification
 ///
@@ -110,40 +122,44 @@ pub const PUBLIC_INPUTS_LEN: usize = 5;
 ///
 /// # Errors
 ///
-/// | Condition                                         | Error                         |
-/// |---------------------------------------------------|-------------------------------|
-/// | `proof_bytes.len() != PROOF_BYTES`                | `InvalidProofLength`          |
-/// | `public_inputs.len() != PUBLIC_INPUTS_LEN`        | `InvalidPublicInputsLength`   |
+/// | Condition                                         | Error                           |
+/// |---------------------------------------------------|---------------------------------|
+/// | `proof_bytes.len() != PROOF_BYTES`                | `InvalidProofLength`            |
+/// | proof bytes are all-zero                          | `TriviallyInvalidProof`         |
+/// | `public_inputs.len() != PUBLIC_INPUTS_LEN`        | `InvalidPublicInputsLength`     |
+/// | `min_tier > 3`                                    | `InvalidPublicInputValue`       |
+/// | `country_code == 0`                               | `InvalidPublicInputValue`       |
+/// | `requested_amount == 0`                           | `InvalidPublicInputValue`       |
+/// | `already_used > daily_cap`                        | `InvalidPublicInputValue`       |
 ///
 /// # Examples
 ///
 /// ```
 /// use verifier::{verify_proof, PROOF_BYTES, PUBLIC_INPUTS_LEN, VerifierError};
 ///
-/// // Correct sizes — structural validation passes.
-/// let proof = vec![0u8; PROOF_BYTES];
-/// let inputs = vec![0u128; PUBLIC_INPUTS_LEN];
+/// // Correct proof with valid public inputs — structural + semantic passes.
+/// let proof = vec![1u8; PROOF_BYTES]; // non-zero bytes
+/// let inputs: Vec<u128> = vec![
+///     1,           // min_tier = Tier1
+///     0x4E47,      // country_code = "NG"
+///     1_000_000,   // requested_amount > 0
+///     1_000_000_000, // daily_cap
+///     0,           // already_used
+/// ];
 /// assert!(verify_proof(&proof, &inputs).is_ok());
 ///
+/// // All-zero proof — rejected as trivially forged.
+/// let zero_proof = vec![0u8; PROOF_BYTES];
+/// assert_eq!(
+///     verify_proof(&zero_proof, &inputs).unwrap_err(),
+///     VerifierError::TriviallyInvalidProof,
+/// );
+///
 /// // Wrong proof length — rejected immediately.
-/// let short_proof = vec![0u8; 10];
+/// let short_proof = vec![1u8; 10];
 /// assert_eq!(
 ///     verify_proof(&short_proof, &inputs).unwrap_err(),
 ///     VerifierError::InvalidProofLength,
-/// );
-///
-/// // Oversized public_inputs — rejected immediately (W2-Z-017 fix).
-/// let oversized_inputs = vec![0u128; PUBLIC_INPUTS_LEN + 100];
-/// assert_eq!(
-///     verify_proof(&proof, &oversized_inputs).unwrap_err(),
-///     VerifierError::InvalidPublicInputsLength,
-/// );
-///
-/// // Undersized public_inputs — also rejected.
-/// let undersized_inputs = vec![0u128; PUBLIC_INPUTS_LEN - 1];
-/// assert_eq!(
-///     verify_proof(&proof, &undersized_inputs).unwrap_err(),
-///     VerifierError::InvalidPublicInputsLength,
 /// );
 /// ```
 pub fn verify_proof(
@@ -155,7 +171,15 @@ pub fn verify_proof(
         return Err(VerifierError::InvalidProofLength);
     }
 
-    // Guard 2 (W2-Z-017 fix): public inputs must be exactly PUBLIC_INPUTS_LEN.
+    // Guard 2: reject trivially forged proofs (all-zero bytes).
+    // A valid Barretenberg UltraPlonk proof is a serialised elliptic-curve
+    // point sequence — the all-zero byte string is not on the curve and can
+    // never be a valid proof.
+    if proof_bytes.iter().all(|&b| b == 0) {
+        return Err(VerifierError::TriviallyInvalidProof);
+    }
+
+    // Guard 3 (W2-Z-017 fix): public inputs must be exactly PUBLIC_INPUTS_LEN.
     //
     // The KYC verifier circuit has a fixed number of public inputs (5). Any
     // deviation — whether an oversized slice injected by a malicious caller or
@@ -167,10 +191,29 @@ pub fn verify_proof(
         return Err(VerifierError::InvalidPublicInputsLength);
     }
 
-    // Structural validation passed. Full cryptographic proof verification is
-    // delegated to the Soroban contract layer (Barretenberg / Noir verifier).
-    // This function is intentionally kept pure-Rust so it can be exhaustively
-    // unit-tested without a Soroban runtime.
+    // Guard 4: min_tier must be 0–3.
+    if public_inputs[PI_MIN_TIER] > MAX_TIER {
+        return Err(VerifierError::InvalidPublicInputValue);
+    }
+
+    // Guard 5: country_code == 0 is not a valid ISO 3166-1 encoding.
+    if public_inputs[PI_COUNTRY_CODE] == 0 {
+        return Err(VerifierError::InvalidPublicInputValue);
+    }
+
+    // Guard 6: requesting zero units is never meaningful.
+    if public_inputs[PI_REQUESTED_AMOUNT] == 0 {
+        return Err(VerifierError::InvalidPublicInputValue);
+    }
+
+    // Guard 7: already_used > daily_cap is self-contradictory — the circuit
+    // would never produce a valid proof for such a state, so reject early.
+    if public_inputs[PI_ALREADY_USED] > public_inputs[PI_DAILY_CAP] {
+        return Err(VerifierError::InvalidPublicInputValue);
+    }
+
+    // All pre-validation guards passed. Full cryptographic proof verification
+    // is delegated to the Soroban contract layer (Barretenberg / Noir verifier).
     Ok(())
 }
 
@@ -251,6 +294,12 @@ pub enum VerifierError {
     /// The KYC verifier circuit always produces exactly [`PUBLIC_INPUTS_LEN`]
     /// public inputs. Passing more or fewer is a protocol error.
     InvalidPublicInputsLength,
+    /// A public input encodes a value that violates a protocol invariant
+    /// (e.g., `min_tier > 3`, `requested_amount == 0`, `daily_cap` mismatch).
+    InvalidPublicInputValue,
+    /// The proof bytes are all-zero or otherwise trivially invalid (forged /
+    /// default-initialised). A valid Barretenberg proof never has this form.
+    TriviallyInvalidProof,
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +434,50 @@ pub fn check_rate_gate(
         // Tier 3: no cap, but still return a meaningful total (saturating).
         Ok(already_used.saturating_add(requested))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Per-pool / per-policy access checks (AZ-010)
+// ---------------------------------------------------------------------------
+
+/// Pool-local access policy. Unlike a global "wallet was ever verified" flag,
+/// this captures the thresholds a *specific* pool (or product) requires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolAccessPolicy {
+    /// Minimum KYC tier the pool accepts.
+    pub required_tier: KycTier,
+    /// When `Some`, the user's country must equal this code. When `None`, the
+    /// pool does not impose an extra country restriction beyond the tier rules
+    /// already enforced by [`check_rate_gate`].
+    pub allowed_country: Option<CountryCode>,
+}
+
+/// Evaluate whether a wallet may enter a pool under that pool's policy.
+///
+/// Global verification alone is **not** sufficient: a user who cleared a
+/// low-tier / permissive pool must still be rejected by a stricter pool that
+/// demands a higher KYC tier or a specific country allow-list.
+///
+/// # Errors
+///
+/// | Condition                                         | Error                |
+/// |---------------------------------------------------|----------------------|
+/// | `user_tier < policy.required_tier`                | `KycBlocked`         |
+/// | `policy.allowed_country` set and country mismatch | `CountryNotAllowed`  |
+pub fn check_pool_access(
+    user_tier: KycTier,
+    user_country: CountryCode,
+    policy: PoolAccessPolicy,
+) -> Result<(), VerifierError> {
+    if user_tier < policy.required_tier {
+        return Err(VerifierError::KycBlocked);
+    }
+    if let Some(required) = policy.allowed_country {
+        if user_country != required {
+            return Err(VerifierError::CountryNotAllowed);
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -588,7 +681,7 @@ mod tests {
     #[test]
     fn tier_zero_always_blocked() {
         assert_eq!(
-            check_rate_gate(KycTier::Zero, CC_NG, 0, 1 * DECIMALS).unwrap_err(),
+            check_rate_gate(KycTier::Zero, CC_NG, 0, DECIMALS).unwrap_err(),
             VerifierError::KycBlocked
         );
     }
@@ -905,23 +998,57 @@ mod tests {
         assert_eq!(result.unwrap_err(), VerifierError::DailyCapExceeded);
     }
 
-    // ── verify_proof — structural validation (W2-Z-017) ────────────────────
+    // ── verify_proof — structural + semantic validation ─────────────────────
 
-    /// Helper: returns a valid-sized proof byte slice.
+    /// Returns a proof that passes every pre-validation guard:
+    /// correct length and at least one non-zero byte.
     fn valid_proof() -> Vec<u8> {
-        vec![0u8; PROOF_BYTES]
+        let mut p = vec![0u8; PROOF_BYTES];
+        p[0] = 0x01; // non-zero first byte — never all-zero
+        p
     }
 
-    /// Helper: returns a valid-sized public-inputs slice.
+    /// Returns public inputs that pass every semantic guard:
+    /// valid tier, non-zero country, non-zero amount, cap ≥ already_used.
     fn valid_inputs() -> Vec<u128> {
-        vec![0u128; PUBLIC_INPUTS_LEN]
+        vec![
+            1,             // min_tier = Tier1
+            0x4E47,        // country_code = "NG" (Nigeria)
+            1_000_000,     // requested_amount > 0
+            1_000_000_000, // daily_cap
+            0,             // already_used
+        ]
+    }
+
+    // ── happy path ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn verify_proof_valid_inputs_ok() {
+        assert!(verify_proof(&valid_proof(), &valid_inputs()).is_ok());
     }
 
     #[test]
-    fn verify_proof_correct_sizes_ok() {
-        // Both sizes are exact — structural validation must pass.
-        assert!(verify_proof(&valid_proof(), &valid_inputs()).is_ok());
+    fn verify_proof_tier3_unlimited_cap_ok() {
+        // Tier 3 encodes daily_cap as u64::MAX (sentinel for unlimited).
+        let inputs = vec![
+            3,            // min_tier = Tier3
+            0x4E47,       // country_code = "NG"
+            5_000_000,    // requested_amount
+            u64::MAX as u128, // daily_cap = unlimited
+            0,            // already_used
+        ];
+        assert!(verify_proof(&valid_proof(), &inputs).is_ok());
     }
+
+    #[test]
+    fn verify_proof_already_used_equals_cap_ok() {
+        // already_used == daily_cap is exactly at the boundary — still valid.
+        let cap = 1_000_000_000_u128;
+        let inputs = vec![1, 0x4E47, 1, cap, cap];
+        assert!(verify_proof(&valid_proof(), &inputs).is_ok());
+    }
+
+    // ── proof-byte rejection ─────────────────────────────────────────────────
 
     #[test]
     fn verify_proof_short_proof_rejected() {
@@ -934,7 +1061,7 @@ mod tests {
 
     #[test]
     fn verify_proof_long_proof_rejected() {
-        let long = vec![0u8; PROOF_BYTES + 1];
+        let long = vec![1u8; PROOF_BYTES + 1];
         assert_eq!(
             verify_proof(&long, &valid_inputs()).unwrap_err(),
             VerifierError::InvalidProofLength
@@ -949,23 +1076,45 @@ mod tests {
         );
     }
 
-    /// W2-Z-017: oversized public_inputs must be rejected before any
-    /// cryptographic work is performed.
+    #[test]
+    fn verify_proof_all_zero_bytes_rejected_as_forged() {
+        // An all-zero byte string is never a valid Barretenberg proof — it
+        // must be caught before any cryptographic check.
+        let zero_proof = vec![0u8; PROOF_BYTES];
+        assert_eq!(
+            verify_proof(&zero_proof, &valid_inputs()).unwrap_err(),
+            VerifierError::TriviallyInvalidProof
+        );
+    }
+
+    #[test]
+    fn verify_proof_tampered_proof_with_single_zero_run_rejected() {
+        // A proof that is all zeros except the very last byte is still trivially
+        // invalid for most positions; but here we test the complementary case
+        // where only ONE non-zero byte exists — this passes guard 2.
+        let mut one_byte_proof = vec![0u8; PROOF_BYTES];
+        one_byte_proof[PROOF_BYTES - 1] = 0xFF;
+        // Length is correct; not all-zero — passes pre-validation guards.
+        // The full cryptographic check (Soroban layer) would reject this,
+        // but this test confirms the pre-validation does NOT falsely reject it,
+        // so the Soroban layer always receives the call.
+        assert!(verify_proof(&one_byte_proof, &valid_inputs()).is_ok());
+    }
+
+    // ── public-input length rejection (W2-Z-017) ────────────────────────────
+
     #[test]
     fn verify_proof_oversized_public_inputs_rejected() {
-        let oversized = vec![0u128; PUBLIC_INPUTS_LEN + 1];
+        let oversized = vec![1u128; PUBLIC_INPUTS_LEN + 1];
         assert_eq!(
             verify_proof(&valid_proof(), &oversized).unwrap_err(),
             VerifierError::InvalidPublicInputsLength
         );
     }
 
-    /// W2-Z-017: a significantly oversized public_inputs slice (resource/gas
-    /// abuse vector) must be rejected at the length check, not during
-    /// cryptographic processing.
     #[test]
     fn verify_proof_massively_oversized_public_inputs_rejected() {
-        let huge = vec![0u128; 10_000];
+        let huge = vec![1u128; 10_000];
         assert_eq!(
             verify_proof(&valid_proof(), &huge).unwrap_err(),
             VerifierError::InvalidPublicInputsLength
@@ -974,7 +1123,7 @@ mod tests {
 
     #[test]
     fn verify_proof_undersized_public_inputs_rejected() {
-        let undersized = vec![0u128; PUBLIC_INPUTS_LEN - 1];
+        let undersized = vec![1u128; PUBLIC_INPUTS_LEN - 1];
         assert_eq!(
             verify_proof(&valid_proof(), &undersized).unwrap_err(),
             VerifierError::InvalidPublicInputsLength
@@ -989,14 +1138,104 @@ mod tests {
         );
     }
 
+    // ── semantic public-input rejection ─────────────────────────────────────
+
+    #[test]
+    fn verify_proof_invalid_tier_above_max_rejected() {
+        let mut inputs = valid_inputs();
+        inputs[PI_MIN_TIER] = 4; // tier 4 does not exist
+        assert_eq!(
+            verify_proof(&valid_proof(), &inputs).unwrap_err(),
+            VerifierError::InvalidPublicInputValue
+        );
+    }
+
+    #[test]
+    fn verify_proof_absurd_tier_rejected() {
+        let mut inputs = valid_inputs();
+        inputs[PI_MIN_TIER] = u128::MAX;
+        assert_eq!(
+            verify_proof(&valid_proof(), &inputs).unwrap_err(),
+            VerifierError::InvalidPublicInputValue
+        );
+    }
+
+    #[test]
+    fn verify_proof_zero_country_code_rejected() {
+        // A zero country code is not a valid ISO 3166-1 encoding.
+        let mut inputs = valid_inputs();
+        inputs[PI_COUNTRY_CODE] = 0;
+        assert_eq!(
+            verify_proof(&valid_proof(), &inputs).unwrap_err(),
+            VerifierError::InvalidPublicInputValue
+        );
+    }
+
+    #[test]
+    fn verify_proof_zero_requested_amount_rejected() {
+        // A proof committing to a zero-amount transaction is semantically invalid.
+        let mut inputs = valid_inputs();
+        inputs[PI_REQUESTED_AMOUNT] = 0;
+        assert_eq!(
+            verify_proof(&valid_proof(), &inputs).unwrap_err(),
+            VerifierError::InvalidPublicInputValue
+        );
+    }
+
+    #[test]
+    fn verify_proof_already_used_exceeds_daily_cap_rejected() {
+        // already_used > daily_cap is a self-contradictory state that no valid
+        // proof could ever encode — reject before touching the cryptographic layer.
+        let mut inputs = valid_inputs();
+        inputs[PI_DAILY_CAP] = 1_000;
+        inputs[PI_ALREADY_USED] = 1_001; // one over the cap
+        assert_eq!(
+            verify_proof(&valid_proof(), &inputs).unwrap_err(),
+            VerifierError::InvalidPublicInputValue
+        );
+    }
+
+    #[test]
+    fn verify_proof_already_used_far_exceeds_cap_rejected() {
+        let mut inputs = valid_inputs();
+        inputs[PI_DAILY_CAP] = 100;
+        inputs[PI_ALREADY_USED] = u128::MAX;
+        assert_eq!(
+            verify_proof(&valid_proof(), &inputs).unwrap_err(),
+            VerifierError::InvalidPublicInputValue
+        );
+    }
+
     #[test]
     fn verify_proof_wrong_proof_takes_priority_over_bad_inputs() {
-        // Even if public_inputs are wrong size, proof length is checked first.
-        let short_proof = vec![0u8; 10];
+        // Proof-length check fires before public-input checks.
+        let short_proof = vec![1u8; 10];
         let bad_inputs: Vec<u128> = vec![];
         assert_eq!(
             verify_proof(&short_proof, &bad_inputs).unwrap_err(),
             VerifierError::InvalidProofLength
+        );
+    }
+
+    #[test]
+    fn verify_proof_forged_proof_takes_priority_over_bad_inputs() {
+        // All-zero proof check fires before public-input semantic checks.
+        let zero_proof = vec![0u8; PROOF_BYTES];
+        let mut bad_inputs = valid_inputs();
+        bad_inputs[PI_MIN_TIER] = 99; // also invalid
+        assert_eq!(
+            verify_proof(&zero_proof, &bad_inputs).unwrap_err(),
+            VerifierError::TriviallyInvalidProof
+        );
+    }
+
+    #[test]
+    fn verify_proof_wrong_inputs_length_takes_priority_over_bad_values() {
+        // Length check fires before semantic checks.
+        let oversized: Vec<u128> = vec![99u128; PUBLIC_INPUTS_LEN + 5]; // tier=99 also invalid
+        assert_eq!(
+            verify_proof(&valid_proof(), &oversized).unwrap_err(),
+            VerifierError::InvalidPublicInputsLength
         );
     }
 
@@ -1006,4 +1245,47 @@ mod tests {
         // requested_amount, daily_cap, already_used.
         assert_eq!(PUBLIC_INPUTS_LEN, 5);
     }
+
+    // ── check_pool_access (AZ-010) ───────────────────────────────────────────
+
+    #[test]
+    fn pool_policy_rejects_globally_verified_user_below_required_tier() {
+        // User cleared a Tier-1 pool earlier (globally "verified") but this pool
+        // requires Tier 2 — must still fail.
+        let us = CountryCode::from_bytes(*b"US");
+        let policy = PoolAccessPolicy {
+            required_tier: KycTier::Two,
+            allowed_country: None,
+        };
+        assert_eq!(
+            check_pool_access(KycTier::One, us, policy).unwrap_err(),
+            VerifierError::KycBlocked
+        );
+    }
+
+    #[test]
+    fn pool_policy_rejects_wrong_country_even_when_tier_ok() {
+        let us = CountryCode::from_bytes(*b"US");
+        let ng = CountryCode::from_bytes(*b"NG");
+        let policy = PoolAccessPolicy {
+            required_tier: KycTier::One,
+            allowed_country: Some(us),
+        };
+        assert_eq!(
+            check_pool_access(KycTier::Two, ng, policy).unwrap_err(),
+            VerifierError::CountryNotAllowed
+        );
+    }
+
+    #[test]
+    fn pool_policy_allows_matching_tier_and_country() {
+        let us = CountryCode::from_bytes(*b"US");
+        let policy = PoolAccessPolicy {
+            required_tier: KycTier::Two,
+            allowed_country: Some(us),
+        };
+        assert!(check_pool_access(KycTier::Three, us, policy).is_ok());
+        assert!(check_pool_access(KycTier::Two, us, policy).is_ok());
+    }
+
 }

@@ -42,6 +42,17 @@ nargo test --show-output
 CI runs these automatically on every PR that modifies `zk/**` via
 `.github/workflows/circuit-tests.yml`.
 
+## Cryptographic implementation note
+
+> **No native Stellar/Soroban precompile.**
+> Soroban has no hardware-accelerated or protocol-level precompile for BN254
+> elliptic curve operations or Poseidon2 hashing. All proof generation and
+> on-chain verification run as **pure-WASM Rust** compiled to
+> `wasm32-unknown-unknown`. The `BN254` curve and `Poseidon2` hash are
+> Noir/Barretenberg implementation details — they are not accelerated by any
+> particular Stellar protocol version. Do not infer on-chain guarantees from
+> those names beyond what the pure-WASM verifier provides.
+
 ## How KYC proofs work
 
 ```
@@ -57,10 +68,10 @@ CI runs these automatically on every PR that modifies `zk/**` via
              └─────────────────────────────────┘       ▼
                                                    Proof π
                                                        │
-                                                       │  verify
-                                                       ▼
+                                                       │  verify (pure-WASM Rust,
+                                                       ▼  no Soroban precompile)
                                               on-chain verifier
-                                              (future integration)
+                                              (zk_verifier Soroban contract)
 ```
 
 The circuit enforces:

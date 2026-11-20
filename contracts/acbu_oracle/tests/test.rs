@@ -457,9 +457,12 @@ fn test_update_rate_uses_even_source_median_average() {
     // Sorted = [980000, 1000000, 1020000, 1040000], median = (1000000 + 1020000) / 2
     assert_eq!(stored_rate, 1010000, "stored_rate should equal 1010000");
 }
-
 #[test]
-fn test_update_rate_falls_back_to_provided_rate_when_sources_empty() {
+#[should_panic(expected = "#7009")]
+fn test_update_rate_rejects_empty_sources() {
+    // AC-014 (#737): the source-count quorum applies unconditionally — an
+    // empty submission can no longer store the raw `rate` argument without
+    // median/outlier aggregation.
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().with_mut(|l| l.timestamp = 1_000_000);
@@ -472,6 +475,7 @@ fn test_update_rate_falls_back_to_provided_rate_when_sources_empty() {
     let ngn = CurrencyCode::new(&env, "NGN");
     let mut currencies = Vec::new(&env);
     currencies.push_back(ngn.clone());
+
     let mut basket_weights = Map::new(&env);
     basket_weights.set(ngn.clone(), 10000i128);
 
@@ -488,7 +492,6 @@ fn test_update_rate_falls_back_to_provided_rate_when_sources_empty() {
         &sources,
         &env.ledger().timestamp(),
     );
-    assert_eq!(client.get_rate(&ngn), submitted_rate, "client.get_rate(&ngn) should equal submitted_rate");
 }
 
 // ─── Staleness tests ──────────────────────────────────────────────────────────
@@ -703,6 +706,50 @@ fn test_stale_basket_component_blocks_acbu_rate() {
     );
 }
 
+/// AC-001: get_acbu_usd_rate_with_timestamp (used by minting and burning) must
+/// return the same 7-decimal basket rate as get_acbu_usd_rate. It previously
+/// omitted the BASIS_POINTS rescale and under-reported the rate by 10,000x.
+#[test]
+fn test_acbu_rate_with_timestamp_matches_acbu_rate() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    let admin = Address::generate(&env);
+    let validator = Address::generate(&env);
+    let mut validators = Vec::new(&env);
+    validators.push_back(validator.clone());
+
+    let ngn = CurrencyCode::new(&env, "NGN");
+    let kes = CurrencyCode::new(&env, "KES");
+    let mut currencies = Vec::new(&env);
+    currencies.push_back(ngn.clone());
+    currencies.push_back(kes.clone());
+    let mut basket_weights = Map::new(&env);
+    basket_weights.set(ngn.clone(), 6_000i128); // 60%
+    basket_weights.set(kes.clone(), 4_000i128); // 40%
+
+    let contract_id = env.register_contract(None, OracleContract);
+    let client = OracleContractClient::new(&env, &contract_id);
+    client.initialize(&admin, &validators, &1u32, &currencies, &basket_weights);
+
+    let now = env.ledger().timestamp();
+    for (currency, rate) in [(ngn.clone(), 1_000_000i128), (kes.clone(), 2_000_000i128)] {
+        let mut sources = Vec::new(&env);
+        sources.push_back(rate);
+        sources.push_back(rate);
+        sources.push_back(rate);
+        client.update_rate(&validator, &currency, &rate, &sources, &now);
+    }
+
+    // 0.6 * 1_000_000 + 0.4 * 2_000_000 = 1_400_000 (7 decimals).
+    let expected = 1_400_000i128;
+    let (rate_ts, ts) = client.get_acbu_usd_rate_with_timestamp();
+    assert_eq!(rate_ts, expected, "basket rate with timestamp must be 7-decimal USD");
+    assert_eq!(client.get_acbu_usd_rate(), rate_ts, "both basket getters must agree");
+    assert_eq!(ts, now, "timestamp should be the oldest contributing rate timestamp");
+}
+
 /// Oracle must return RateNotInitialized error before any rate submissions.
 /// This prevents division by zero or 0-rate mints/burns before the first epoch.
 #[test]
@@ -743,4 +790,143 @@ fn test_rate_not_initialized_before_first_submission() {
     // get_acbu_usd_rate_with_timestamp should fail before first submission
     let result = client.try_get_acbu_usd_rate_with_timestamp();
     assert!(result.is_err(), "get_acbu_usd_rate_with_timestamp should fail before first submission");
+}
+
+// ─── Oracle quorum / InsufficientOracleSources tests (#319) ──────────────────
+
+/// Submitting sources.len() > 0 but below max(min_signatures, MIN_ORACLE_SOURCE_FEEDS=3)
+/// must panic with InsufficientOracleSources (#7009).
+#[test]
+#[should_panic]
+fn test_update_rate_too_few_sources_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    let admin = Address::generate(&env);
+    let validator = Address::generate(&env);
+    let mut validators = Vec::new(&env);
+    validators.push_back(validator.clone());
+
+    let ngn = CurrencyCode::new(&env, "NGN");
+    let mut currencies = Vec::new(&env);
+    currencies.push_back(ngn.clone());
+    let mut basket_weights = Map::new(&env);
+    basket_weights.set(ngn.clone(), 10_000i128);
+
+    let contract_id = env.register_contract(None, OracleContract);
+    let client = OracleContractClient::new(&env, &contract_id);
+    // min_signatures = 1, but MIN_ORACLE_SOURCE_FEEDS = 3, so required = max(1,3) = 3
+    client.initialize(&admin, &validators, &1u32, &currencies, &basket_weights);
+
+    let mut two_sources = Vec::new(&env);
+    two_sources.push_back(1_000_000i128);
+    two_sources.push_back(1_000_000i128);
+    // 2 sources < 3 required → must panic
+    client.update_rate(&validator, &ngn, &1_000_000i128, &two_sources, &env.ledger().timestamp());
+}
+
+/// Submitting exactly MIN_ORACLE_SOURCE_FEEDS sources must succeed.
+#[test]
+fn test_update_rate_exactly_min_sources_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    let admin = Address::generate(&env);
+    let validator = Address::generate(&env);
+    let mut validators = Vec::new(&env);
+    validators.push_back(validator.clone());
+
+    let ngn = CurrencyCode::new(&env, "NGN");
+    let mut currencies = Vec::new(&env);
+    currencies.push_back(ngn.clone());
+    let mut basket_weights = Map::new(&env);
+    basket_weights.set(ngn.clone(), 10_000i128);
+
+    let contract_id = env.register_contract(None, OracleContract);
+    let client = OracleContractClient::new(&env, &contract_id);
+    client.initialize(&admin, &validators, &1u32, &currencies, &basket_weights);
+
+    // Exactly 3 sources (MIN_ORACLE_SOURCE_FEEDS) — must not panic.
+    let mut three_sources = Vec::new(&env);
+    three_sources.push_back(1_000_000i128);
+    three_sources.push_back(1_001_000i128);
+    three_sources.push_back(999_000i128);
+    client.update_rate(&validator, &ngn, &1_000_000i128, &three_sources, &env.ledger().timestamp());
+
+    let stored = client.get_rate(&ngn);
+    // median of [999_000, 1_000_000, 1_001_000] = 1_000_000
+    assert_eq!(stored, 1_000_000, "median of 3 sources should be 1_000_000");
+}
+
+/// Submitting zero sources must still be accepted (bypass path — rate param is used directly).
+#[test]
+fn test_update_rate_zero_sources_bypasses_quorum_check() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    let admin = Address::generate(&env);
+    let validator = Address::generate(&env);
+    let mut validators = Vec::new(&env);
+    validators.push_back(validator.clone());
+
+    let ngn = CurrencyCode::new(&env, "NGN");
+    let mut currencies = Vec::new(&env);
+    currencies.push_back(ngn.clone());
+    let mut basket_weights = Map::new(&env);
+    basket_weights.set(ngn.clone(), 10_000i128);
+
+    let contract_id = env.register_contract(None, OracleContract);
+    let client = OracleContractClient::new(&env, &contract_id);
+    client.initialize(&admin, &validators, &1u32, &currencies, &basket_weights);
+
+    // Empty sources: quorum guard is skipped entirely; rate param is stored as-is.
+    let empty_sources = Vec::new(&env);
+    let submitted_rate = 1_234_567i128;
+    client.update_rate(&validator, &ngn, &submitted_rate, &empty_sources, &env.ledger().timestamp());
+
+    assert_eq!(client.get_rate(&ngn), submitted_rate, "empty sources should store the rate param directly");
+}
+
+/// When min_signatures > MIN_ORACLE_SOURCE_FEEDS the larger threshold applies.
+#[test]
+#[should_panic]
+fn test_update_rate_min_sigs_larger_than_min_feeds_is_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+
+    let admin = Address::generate(&env);
+    let v1 = Address::generate(&env);
+    let v2 = Address::generate(&env);
+    let v3 = Address::generate(&env);
+    let v4 = Address::generate(&env);
+    let v5 = Address::generate(&env);
+
+    let mut validators = Vec::new(&env);
+    validators.push_back(v1.clone());
+    validators.push_back(v2.clone());
+    validators.push_back(v3.clone());
+    validators.push_back(v4.clone());
+    validators.push_back(v5.clone());
+
+    let ngn = CurrencyCode::new(&env, "NGN");
+    let mut currencies = Vec::new(&env);
+    currencies.push_back(ngn.clone());
+    let mut basket_weights = Map::new(&env);
+    basket_weights.set(ngn.clone(), 10_000i128);
+
+    let contract_id = env.register_contract(None, OracleContract);
+    let client = OracleContractClient::new(&env, &contract_id);
+    // min_signatures = 5 > MIN_ORACLE_SOURCE_FEEDS = 3, so required = 5
+    client.initialize(&admin, &validators, &5u32, &currencies, &basket_weights);
+
+    // Only 3 sources — below min_signatures=5 threshold → must panic
+    let mut three_sources = Vec::new(&env);
+    three_sources.push_back(1_000_000i128);
+    three_sources.push_back(1_001_000i128);
+    three_sources.push_back(999_000i128);
+    client.update_rate(&v1, &ngn, &1_000_000i128, &three_sources, &env.ledger().timestamp());
 }

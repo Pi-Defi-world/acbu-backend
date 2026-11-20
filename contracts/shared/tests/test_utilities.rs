@@ -1,19 +1,21 @@
 #![cfg(test)]
 
-use shared::{calculate_amount_after_fee, calculate_fee, calculate_deviation, BASIS_POINTS};
+use shared::{
+    calculate_amount_after_fee, calculate_deviation, calculate_fee, ContractError, BASIS_POINTS,
+};
 
 #[test]
 fn test_calculate_fee_zero_fee_rate() {
     let amount = 10_000_000i128;
     let fee_rate = 0i128;
-    assert_eq!(calculate_fee(amount, fee_rate), 0);
+    assert_eq!(calculate_fee(amount, fee_rate), Ok(0));
 }
 
 #[test]
 fn test_calculate_fee_zero_amount() {
     let amount = 0i128;
     let fee_rate = 300i128;
-    assert_eq!(calculate_fee(amount, fee_rate), 0);
+    assert_eq!(calculate_fee(amount, fee_rate), Ok(0));
 }
 
 #[test]
@@ -21,7 +23,7 @@ fn test_calculate_fee_1_percent() {
     let amount = 10_000_000i128;
     let fee_rate = 100i128;
     let expected = 100_000i128;
-    assert_eq!(calculate_fee(amount, fee_rate), expected);
+    assert_eq!(calculate_fee(amount, fee_rate), Ok(expected));
 }
 
 #[test]
@@ -29,7 +31,7 @@ fn test_calculate_fee_3_percent() {
     let amount = 10_000_000i128;
     let fee_rate = 300i128;
     let expected = 300_000i128;
-    assert_eq!(calculate_fee(amount, fee_rate), expected);
+    assert_eq!(calculate_fee(amount, fee_rate), Ok(expected));
 }
 
 #[test]
@@ -37,7 +39,7 @@ fn test_calculate_fee_10_percent() {
     let amount = 10_000_000i128;
     let fee_rate = 1_000i128;
     let expected = 1_000_000i128;
-    assert_eq!(calculate_fee(amount, fee_rate), expected);
+    assert_eq!(calculate_fee(amount, fee_rate), Ok(expected));
 }
 
 #[test]
@@ -45,7 +47,7 @@ fn test_calculate_fee_100_percent() {
     let amount = 10_000_000i128;
     let fee_rate = BASIS_POINTS;
     let expected = 10_000_000i128;
-    assert_eq!(calculate_fee(amount, fee_rate), expected);
+    assert_eq!(calculate_fee(amount, fee_rate), Ok(expected));
 }
 
 #[test]
@@ -53,14 +55,14 @@ fn test_calculate_fee_large_amount() {
     let amount = 1_000_000_000_000i128;
     let fee_rate = 300i128;
     let expected = 30_000_000_000i128;
-    assert_eq!(calculate_fee(amount, fee_rate), expected);
+    assert_eq!(calculate_fee(amount, fee_rate), Ok(expected));
 }
 
 #[test]
 fn test_calculate_fee_small_amount() {
     let amount = 1i128;
     let fee_rate = 300i128;
-    assert_eq!(calculate_fee(amount, fee_rate), 0);
+    assert_eq!(calculate_fee(amount, fee_rate), Ok(0));
 }
 
 #[test]
@@ -69,21 +71,21 @@ fn test_calculate_amount_after_fee_basic() {
     let fee_rate = 300i128;
     let fee = 300_000i128;
     let expected = 9_700_000i128;
-    assert_eq!(calculate_amount_after_fee(amount, fee_rate), expected);
+    assert_eq!(calculate_amount_after_fee(amount, fee_rate), Ok(expected));
 }
 
 #[test]
 fn test_calculate_amount_after_fee_zero_fee() {
     let amount = 10_000_000i128;
     let fee_rate = 0i128;
-    assert_eq!(calculate_amount_after_fee(amount, fee_rate), amount);
+    assert_eq!(calculate_amount_after_fee(amount, fee_rate), Ok(amount));
 }
 
 #[test]
 fn test_calculate_amount_after_fee_zero_amount() {
     let amount = 0i128;
     let fee_rate = 300i128;
-    assert_eq!(calculate_amount_after_fee(amount, fee_rate), 0);
+    assert_eq!(calculate_amount_after_fee(amount, fee_rate), Ok(0));
 }
 
 #[test]
@@ -91,7 +93,7 @@ fn test_calculate_amount_after_fee_high_fee() {
     let amount = 10_000_000i128;
     let fee_rate = 5_000i128;
     let expected = 5_000_000i128;
-    assert_eq!(calculate_amount_after_fee(amount, fee_rate), expected);
+    assert_eq!(calculate_amount_after_fee(amount, fee_rate), Ok(expected));
 }
 
 #[test]
@@ -155,4 +157,34 @@ fn test_calculate_deviation_7decimal_rates() {
     let value1 = 1_050_000i128;
     let value2 = 1_000_000i128;
     assert_eq!(calculate_deviation(value1, value2), 500);
+}
+
+// ── AC-028: overflow returns an error / saturates instead of panicking ──────
+
+#[test]
+fn test_calculate_fee_overflow_returns_error() {
+    assert_eq!(
+        calculate_fee(i128::MAX, 300),
+        Err(ContractError::ArithmeticOverflow)
+    );
+}
+
+#[test]
+fn test_calculate_amount_after_fee_overflow_returns_error() {
+    assert_eq!(
+        calculate_amount_after_fee(i128::MAX, 300),
+        Err(ContractError::ArithmeticOverflow)
+    );
+}
+
+#[test]
+fn test_calculate_deviation_mul_overflow_saturates() {
+    // diff * BASIS_POINTS overflows i128.
+    assert_eq!(calculate_deviation(i128::MAX, 1), i128::MAX);
+}
+
+#[test]
+fn test_calculate_deviation_sub_overflow_saturates() {
+    // value1 - value2 overflows i128.
+    assert_eq!(calculate_deviation(i128::MAX, -1), i128::MAX);
 }

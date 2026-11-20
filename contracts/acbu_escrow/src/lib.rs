@@ -205,7 +205,7 @@ impl Escrow {
     /// Escrow ID is unique per payer and provided by caller to prevent collisions
     pub fn create(env: Env, payer: Address, payee: Address, amount: i128, escrow_id: u64) {
         // Re-entrancy guard
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         Self::check_paused(&env);
 
@@ -256,14 +256,13 @@ impl Escrow {
         );
 
         // Release re-entrancy guard
-        reentrancy_guard::release_guard(&env);
     }
 
     /// Release escrow: payee receives ACBU.
     /// Only the payer or admin can authorize the release.
     pub fn release(env: Env, escrow_id: u64, payer: Address) {
         // Re-entrancy guard
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         Self::check_paused(&env);
 
@@ -300,13 +299,14 @@ impl Escrow {
         );
 
         // Release re-entrancy guard
-        reentrancy_guard::release_guard(&env);
     }
     /// Refund escrow: payer gets ACBU back (admin or dispute resolution, or payer after expiry)
     /// key is same as release since it identifies which escrow to refund
     pub fn refund(env: Env, escrow_id: u64, payer: Address) {
         // Re-entrancy guard
-        reentrancy_guard::acquire_guard(&env);
+        let _guard = reentrancy_guard::acquire_guard(&env);
+
+        Self::check_paused(&env);
 
         let admin = Self::load_admin(&env).unwrap_or_else(|e| env.panic_with_error(e));
 
@@ -355,7 +355,6 @@ impl Escrow {
         );
 
         // Release re-entrancy guard
-        reentrancy_guard::release_guard(&env);
     }
 
     /// Pause the contract, disabling escrow creation/release/refund (admin only).

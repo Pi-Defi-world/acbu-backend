@@ -25,6 +25,7 @@ declare -A EXPECTED_HASHES=(
     ["acbu_savings_vault"]="6b14997b915dee21082884cd5a2f1f2f0aef0073d1dcb9c5b3c674cf487fb41d"
     ["acbu_lending_pool"]="6b14997b915dee21082884cd5a2f1f2f0aef0073d1dcb9c5b3c674cf487fb41d"
     ["acbu_escrow"]="6b14997b915dee21082884cd5a2f1f2f0aef0073d1dcb9c5b3c674cf487fb41d"
+    ["acbu_multisig"]="6b14997b915dee21082884cd5a2f1f2f0aef0073d1dcb9c5b3c674cf487fb41d"
 )
 
 # Token WASM hash
