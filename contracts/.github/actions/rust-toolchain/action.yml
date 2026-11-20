@@ -1,0 +1,66 @@
+name: 'Install pinned Rust toolchain'
+description: >-
+  Installs the exact Rust toolchain (channel, components, targets) declared in
+  rust-toolchain.toml.  Single source of truth — no workflow may hard-code a
+  toolchain version (W10-I-020).
+
+runs:
+  using: composite
+  steps:
+    - name: Read rust-toolchain.toml and install
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        TOML="rust-toolchain.toml"
+        if [[ ! -f "$TOML" ]]; then
+          echo "::error::${TOML} not found - the pinned toolchain source is missing."
+          exit 1
+        fi
+
+        # Scalar value: channel = "1.88.0"
+        read_scalar() {
+          local key="$1" line
+          line="$(grep -E "^${key}[[:space:]]*=" "$TOML" | head -n 1 || true)"
+          printf '%s' "$line" | sed -E 's/^[^=]*=//' | tr -d '"'"'" | tr -d '[:space:]'
+        }
+
+        # Array value: targets = ["wasm32-unknown-unknown"] -> one entry per line
+        read_array() {
+          local key="$1" line
+          line="$(grep -E "^${key}[[:space:]]*=" "$TOML" | head -n 1 || true)"
+          printf '%s' "$line" \
+            | sed -E 's/^[^=]*=//' \
+            | tr -d '"'"'" \
+            | tr -d '[]' \
+            | tr ',' '\n' \
+            | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+            | grep -v '^[[:space:]]*$' || true
+        }
+
+        CHANNEL="$(read_scalar channel)"
+        PROFILE="$(read_scalar profile)"
+        [[ -n "$PROFILE" ]] || PROFILE="minimal"
+
+        if [[ -z "$CHANNEL" ]]; then
+          echo "::error::'channel' is not set in ${TOML}."
+          exit 1
+        fi
+
+        mapfile -t COMPONENTS < <(read_array components)
+        mapfile -t TARGETS < <(read_array targets)
+
+        args=(toolchain install "$CHANNEL" --profile "$PROFILE")
+        for component in ${COMPONENTS[@]+"${COMPONENTS[@]}"}; do
+          args+=(--component "$component")
+        done
+        for target in ${TARGETS[@]+"${TARGETS[@]}"}; do
+          args+=(--target "$target")
+        done
+
+        echo "::notice::Installing Rust toolchain from ${TOML}: ${CHANNEL} (profile ${PROFILE})"
+        rustup "${args[@]}"
+        rustup default "$CHANNEL"
+
+        rustc --version
+        cargo --version
