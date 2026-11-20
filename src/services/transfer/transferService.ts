@@ -64,6 +64,8 @@ const MAX_SUBMIT_ATTEMPTS = 3;
  */
 const PAYMENT_VALIDITY_SECONDS = 60;
 
+const HOLDING_TRANSFER_STATUSES = ["pending", "processing"] as const;
+
 /**
  * Horizon/Stellar result codes that unambiguously mean "the fee on this
  * transaction was below the network's base fee".
@@ -374,8 +376,20 @@ export async function createTransfer(
 
   const balanceSnapshot = await fetchWalletBalance(senderUserId);
   const balanceInSmallestUnit = amountToSmallestUnit(balanceSnapshot.snapshot.balance || "0");
-  if (balanceInSmallestUnit < amountInSmallestUnit) {
-    throw new Error("Insufficient balance");
+  const pendingTransfers = await prisma.transaction.aggregate({
+    where: {
+      userId: senderUserId,
+      type: "transfer",
+      status: { in: [...HOLDING_TRANSFER_STATUSES] },
+    },
+    _sum: { acbuAmount: true },
+  });
+  const pendingAmountInSmallestUnit = amountToSmallestUnit(
+    pendingTransfers._sum.acbuAmount?.toString() ?? "0",
+  );
+  const availableBalanceInSmallestUnit = balanceInSmallestUnit - pendingAmountInSmallestUnit;
+  if (availableBalanceInSmallestUnit < amountInSmallestUnit) {
+    throw new Error("Insufficient available balance");
   }
 
   const recipientAddress = await resolveRecipientAddress(to, senderUserId);
