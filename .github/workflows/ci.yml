@@ -7,6 +7,90 @@ on:
     branches: [main, dev, develop]
 
 jobs:
+  frontend:
+    name: Frontend · Lint, Test & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check frontend workspace
+        id: workspace
+        shell: bash
+        run: |
+          if [ -f acbu-frontend/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Frontend workspace is not present in this checkout; skipping frontend checks."
+          fi
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: steps.workspace.outputs.present == 'true'
+        with:
+          version: "10.33.1"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.workspace.outputs.present == 'true'
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: acbu-frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        if: steps.workspace.outputs.present == 'true'
+        working-directory: acbu-frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint frontend
+        if: steps.workspace.outputs.present == 'true'
+        working-directory: acbu-frontend
+        run: pnpm run lint --if-present
+
+      - name: Test frontend
+        if: steps.workspace.outputs.present == 'true'
+        working-directory: acbu-frontend
+        run: pnpm run test --if-present
+
+      - name: Build frontend
+        if: steps.workspace.outputs.present == 'true'
+        working-directory: acbu-frontend
+        run: pnpm run build
+
+  contracts:
+    name: Contracts · Test & Clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check contracts workspace
+        id: workspace
+        shell: bash
+        run: |
+          if [ -f contracts/Cargo.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Contracts workspace is not present in this checkout; skipping contract checks."
+          fi
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        if: steps.workspace.outputs.present == 'true'
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Test contracts
+        if: steps.workspace.outputs.present == 'true'
+        working-directory: contracts
+        run: cargo test --workspace
+
+      - name: Clippy contracts
+        if: steps.workspace.outputs.present == 'true'
+        working-directory: contracts
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
   lint-and-format:
     name: Lint, Format & Security Audit
     runs-on: ubuntu-latest
