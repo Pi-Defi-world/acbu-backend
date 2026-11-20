@@ -8,6 +8,13 @@ import { stopMemoryMonitor } from "./utils/memoryMonitor";
 type AppServer = Server & { closeIdleConnections?: () => void };
 let httpServer: AppServer | null = null;
 let memoryMonitorHandle: NodeJS.Timeout | null = null;
+let balanceWsServer: { close: () => void } | null = null;
+
+export const setBalanceWebSocketServer = (
+  server: { close: () => void } | null,
+): void => {
+  balanceWsServer = server;
+};
 
 export const setHttpServer = (server: AppServer | null): void => {
   httpServer = server;
@@ -46,6 +53,14 @@ const closeServer = async (): Promise<void> => {
 export const shutdown = async (): Promise<void> => {
   logger.info("Shutting down gracefully...");
   if (memoryMonitorHandle) stopMemoryMonitor(memoryMonitorHandle);
+  if (balanceWsServer) {
+    try {
+      balanceWsServer.close();
+    } catch (error) {
+      logger.warn("Failed to close WebSocket server", error);
+    }
+    balanceWsServer = null;
+  }
   // W10-I-013: Stop reserve metrics job
   try {
     const { stopReserveMetricsJob } = await import("./jobs/reserveMetricsJob");
