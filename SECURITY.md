@@ -96,6 +96,10 @@ This script:
 - Use `git-filter-repo` to remove commits containing secrets (requires careful coordination)
 - Force push to rewrite history (notify the team before doing this)
 
+## Administrative & Audit Event Monitoring
+
+GitHub organization and repository administrative events (collaborator/membership changes, repository changes, and branch protection modifications) are monitored via external security webhooks (Slack, Discord, or SIEM) and the `.github/workflows/security-audit-alerts.yml` workflow. See [docs/SECURITY_AUDIT_WEBHOOKS.md](docs/SECURITY_AUDIT_WEBHOOKS.md) for webhook configuration, automated verification (`scripts/ci/configure-security-webhooks.js`), and incident triage procedures.
+
 ### Safe Harbor
 
 We consider good-faith security research to be helpful. Please avoid:
