@@ -43,7 +43,8 @@
     "compute:basket-weights": "ts-node --transpile-only scripts/compute-basket-weights.ts",
     "event-schema:check": "node scripts/check-event-schema.js",
     "test:event-schema": "node --test scripts/check-event-schema.test.js",
-    "postinstall": "node scripts/prisma-generate-if-needed.js && git config core.hooksPath scripts/hooks || true",
+    "hooks:install": "git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/*",
+    "postinstall": "node scripts/prisma-generate-if-needed.js && git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/* || true",
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0",
     "changelog:update": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s"
   },

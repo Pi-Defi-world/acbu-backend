@@ -23,8 +23,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint:staged": "lint-staged",
-    "deadcode": "knip",
-    "prepare": "husky"
+    "deadcode": "knip"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^1.2.1",

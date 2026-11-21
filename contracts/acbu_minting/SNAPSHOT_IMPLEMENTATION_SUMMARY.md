@@ -84,7 +84,7 @@ make clean-snapshots      # Delete all test snapshots (before regeneration)
 
 ### 4. Pre-Commit Hook Integration
 
-Enhanced `.githooks/pre-commit` to automatically:
+Enhanced the root `scripts/validate-staged-contracts.sh` hook to automatically:
 - Detect when snapshot-related files are modified
 - Run snapshot validation before allowing commits
 - Provide clear error messages and remediation steps
@@ -147,7 +147,7 @@ git commit -m "chore: regenerate snapshots after refactoring"
 ### Modified Files
 - `acbu_minting/Cargo.toml` - Added serde_json dependency
 - `acbu_minting/tests/test.rs` - Included snapshot_validation module
-- `.githooks/pre-commit` - Added snapshot validation check
+- `scripts/validate-staged-contracts.sh` - Added snapshot validation check
 - `Makefile` - Added snapshot management targets
 - `shared/src/lib.rs` - Fixed contractevent compatibility (replaced with contracttype)
 

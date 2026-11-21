@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# Unified commit-msg hook for the ACBU monorepo.
+#
+# Commit messages are validated with the frontend's commitlint configuration,
+# which is the only commitlint setup in the repository. The hook is a no-op
+# when frontend dependencies have not been installed yet (for example in a
+# backend-only checkout).
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+MESSAGE_FILE="$1"
+
+case "$MESSAGE_FILE" in
+  /*) ;;
+  *) MESSAGE_FILE="$ROOT/$MESSAGE_FILE" ;;
+esac
+
+if [ -x "$ROOT/frontend/node_modules/.bin/commitlint" ] && [ -f "$ROOT/frontend/commitlint.config.cjs" ]; then
+  (
+    cd "$ROOT/frontend"
+    node_modules/.bin/commitlint --config commitlint.config.cjs --edit "$MESSAGE_FILE"
+  )
+else
+  echo "[commit-msg] commitlint is not installed; skipping commit message validation."
+fi
