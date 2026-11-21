@@ -196,6 +196,13 @@ const envSchema = z.object({
   STELLAR_HORIZON_URL: z.string().optional(),
   STELLAR_SOROBAN_RPC_URL: z.string().optional(),
   STELLAR_SECRET_KEY: z.string().optional(),
+  // W11-AUD-006: comma-separated Horizon / Soroban RPC endpoint pools used for
+  // automatic failover. The primary URL above remains the first entry in the pool.
+  STELLAR_HORIZON_URLS: z.string().optional(),
+  STELLAR_SOROBAN_RPC_URLS: z.string().optional(),
+  STELLAR_RPC_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().positive().default(3),
+  STELLAR_RPC_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().positive().default(30000),
+  STELLAR_RPC_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   STELLAR_NATIVE_ASSET_CODE: z.string().optional(),
   // These four are fallbacks for one another; `config.stellar.activationAmount`
   // applies the "1" default and validates it, so they stay plain strings here.
@@ -317,6 +324,19 @@ export const config = {
     timestampToleranceMs: env.WEBHOOK_TIMESTAMP_TOLERANCE_MS,
   },
   corsOrigins: parseCorsOrigins(env.CORS_ORIGIN),
+  stellarRpc: {
+    horizonUrls: parseEndpointPool(
+      env.STELLAR_HORIZON_URLS,
+      env.STELLAR_HORIZON_URL ?? "https://horizon-testnet.stellar.org",
+    ),
+    sorobanRpcUrls: parseEndpointPool(
+      env.STELLAR_SOROBAN_RPC_URLS,
+      env.STELLAR_SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org",
+    ),
+    circuitBreakerThreshold: env.STELLAR_RPC_CIRCUIT_BREAKER_THRESHOLD,
+    circuitBreakerCooldownMs: env.STELLAR_RPC_CIRCUIT_BREAKER_COOLDOWN_MS,
+    requestTimeoutMs: env.STELLAR_RPC_REQUEST_TIMEOUT_MS,
+  },
   // ... remaining config consumers are unchanged and read from `env` as before
 };
 
