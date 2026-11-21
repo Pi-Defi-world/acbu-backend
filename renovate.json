@@ -3,7 +3,8 @@
   "extends": [
     "config:recommended",
     ":dependencyDashboard",
-    ":pinVersions"
+    ":pinVersions",
+    "helpers:pinGitHubActionDigests"
   ],
   "baseBranches": ["dev"],
   "semanticCommits": "enabled",
