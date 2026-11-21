@@ -50,6 +50,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install frontend dependencies
+        working-directory: frontend
+        # The root lint/format scripts delegate to the frontend's own ESLint and
+        # Prettier configuration, so the frontend toolchain must be available.
+        run: pnpm install --frozen-lockfile --config.engine-strict=false
+
       - name: Run security audit
         # W10-TEST-010: fail the pipeline on high-severity (and critical) advisories.
         # --audit-level high  → non-zero exit for high + critical (pnpm default is critical-only).

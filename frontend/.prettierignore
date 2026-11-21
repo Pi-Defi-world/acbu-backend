@@ -1,0 +1,17 @@
+# Dependencies and package-manager output
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+
+# Next.js and test build output
+.next/
+out/
+build/
+coverage/
+playwright-report/
+test-results/
+
+# Generated assets and type shims
+public/
+next-env.d.ts
+*.tsbuildinfo

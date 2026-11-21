@@ -8,6 +8,7 @@
     "plugin:prettier/recommended"
   ],
   "reportUnusedDisableDirectives": true,
+  "ignorePatterns": ["frontend/**", "contracts/**", "dist/**", "coverage/**"],
   "rules": {
     "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }]
