@@ -1,4 +1,9 @@
-import { isValidStellarAddress, assertValidStellarAddress } from "../src/utils/stellar";
+import {
+  isValidStellarAddress,
+  assertValidStellarAddress,
+  isValidRecipientAccount,
+  assertValidRecipientAccount,
+} from "../src/utils/stellar";
 import { Keypair } from "@stellar/stellar-sdk";
 
 describe("Stellar address validation", () => {
@@ -55,5 +60,18 @@ describe("Stellar address validation", () => {
       expect(kp.publicKey()).toMatch(/^G/);
       expect(kp.publicKey()).toHaveLength(56);
     }
+  });
+
+  test("accepts a valid G-address as a recipient account", () => {
+    expect(isValidRecipientAccount(validAddress)).toBe(true);
+    expect(() => assertValidRecipientAccount(validAddress)).not.toThrow();
+  });
+
+  test("rejects contract addresses as recipient accounts", () => {
+    const contractAddress = "C" + "A".repeat(55);
+    expect(isValidRecipientAccount(contractAddress)).toBe(false);
+    expect(() => assertValidRecipientAccount(contractAddress)).toThrow(
+      /Invalid recipient account/,
+    );
   });
 });

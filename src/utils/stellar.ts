@@ -32,3 +32,22 @@ export function assertValidStellarAddress(address: string): void {
     );
   }
 }
+
+/**
+ * Validate a recipient account for minting and redemption.
+ *
+ * Only Stellar account public keys (G-addresses) are valid recipients.
+ * Contract addresses (C-addresses) cannot hold redeemed underlying assets
+ * and must not be accepted as recipient accounts.
+ */
+export function isValidRecipientAccount(address: string): boolean {
+  return isValidStellarAddress(address);
+}
+
+export function assertValidRecipientAccount(address: string): void {
+  if (!isValidRecipientAccount(address)) {
+    throw new Error(
+      `Invalid recipient account: must be a valid 56-character Stellar G-address, got "${address?.slice(0, 8) ?? "(empty)"}..."`,
+    );
+  }
+}
