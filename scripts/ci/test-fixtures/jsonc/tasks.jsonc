@@ -1,0 +1,11 @@
+{
+  // VS Code task files allow JSONC comments.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Valid JSONC",
+      "command": "npm test", // Inline comments are allowed.
+      "args": ["a string containing // comment syntax"],
+    },
+  ],
+}
