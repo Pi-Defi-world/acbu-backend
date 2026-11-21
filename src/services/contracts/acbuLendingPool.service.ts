@@ -16,19 +16,19 @@ export interface BorrowParams {
   lender: string;
   amount: string;
   collateralAmount: string;
-  loanId: number;
+  loanId: bigint;
 }
 
 export interface RepayParams {
   borrower: string;
   amount: string;
-  loanId: number;
+  loanId: bigint;
 }
 
 export interface LiquidateParams {
   liquidator: string;
   borrower: string;
-  loanId: number;
+  loanId: bigint;
 }
 
 export class LendingPoolService {

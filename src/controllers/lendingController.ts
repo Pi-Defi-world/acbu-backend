@@ -4,6 +4,43 @@ import { getContractAddresses } from "../config/contracts";
 import type { AuthRequest } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
+const MAX_U64 = 18446744073709551615n; // 2^64 - 1
+
+export function parseLoanId(value: unknown): bigint {
+  if (value === undefined || value === null || value === "") {
+    throw new AppError("loanId is required and must be a non-negative integer", 400);
+  }
+
+  let parsed: bigint;
+
+  if (typeof value === "bigint") {
+    parsed = value;
+  } else if (typeof value === "number") {
+    if (!Number.isInteger(value) || value < 0 || !Number.isSafeInteger(value)) {
+      throw new AppError("Invalid loanId: must be a safe non-negative integer", 400);
+    }
+    parsed = BigInt(value);
+  } else if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      throw new AppError("Invalid loanId: must be a non-negative integer", 400);
+    }
+    try {
+      parsed = BigInt(trimmed);
+    } catch {
+      throw new AppError("Invalid loanId: unable to parse integer", 400);
+    }
+  } else {
+    throw new AppError("Invalid loanId: must be a non-negative integer", 400);
+  }
+
+  if (parsed < 0n || parsed > MAX_U64) {
+    throw new AppError("Invalid loanId: value out of range (0 to 2^64 - 1)", 400);
+  }
+
+  return parsed;
+}
+
 export async function postLendingDeposit(
   req: AuthRequest,
   res: Response,
@@ -77,12 +114,21 @@ export async function postLendingBorrow(
 ): Promise<void> {
   try {
     const { borrower, lender, amount, collateralAmount, loanId } = req.body || {};
-    if (!borrower || !lender || !amount || !collateralAmount || loanId === undefined) {
+    if (
+      !borrower ||
+      !lender ||
+      !amount ||
+      !collateralAmount ||
+      loanId === undefined ||
+      loanId === null ||
+      loanId === ""
+    ) {
       throw new AppError(
         "borrower, lender, amount, collateralAmount, and loanId required",
         400,
       );
     }
+    const validatedLoanId = parseLoanId(loanId);
     if (!getContractAddresses().lendingPool) {
       throw new AppError("Lending pool contract not configured", 503);
     }
@@ -91,7 +137,7 @@ export async function postLendingBorrow(
       lender,
       amount: String(amount),
       collateralAmount: String(collateralAmount),
-      loanId: Number(loanId),
+      loanId: validatedLoanId,
     });
     res.status(200).json({ transaction_hash: txHash });
   } catch (e) {
@@ -106,16 +152,23 @@ export async function postLendingRepay(
 ): Promise<void> {
   try {
     const { borrower, amount, loanId } = req.body || {};
-    if (!borrower || !amount || loanId === undefined) {
+    if (
+      !borrower ||
+      !amount ||
+      loanId === undefined ||
+      loanId === null ||
+      loanId === ""
+    ) {
       throw new AppError("borrower, amount, and loanId required", 400);
     }
+    const validatedLoanId = parseLoanId(loanId);
     if (!getContractAddresses().lendingPool) {
       throw new AppError("Lending pool contract not configured", 503);
     }
     const txHash = await acbuLendingPoolService.repay({
       borrower,
       amount: String(amount),
-      loanId: Number(loanId),
+      loanId: validatedLoanId,
     });
     res.status(200).json({ transaction_hash: txHash });
   } catch (e) {
@@ -130,16 +183,23 @@ export async function postLendingLiquidate(
 ): Promise<void> {
   try {
     const { liquidator, borrower, loanId } = req.body || {};
-    if (!liquidator || !borrower || loanId === undefined) {
+    if (
+      !liquidator ||
+      !borrower ||
+      loanId === undefined ||
+      loanId === null ||
+      loanId === ""
+    ) {
       throw new AppError("liquidator, borrower, and loanId required", 400);
     }
+    const validatedLoanId = parseLoanId(loanId);
     if (!getContractAddresses().lendingPool) {
       throw new AppError("Lending pool contract not configured", 503);
     }
     const txHash = await acbuLendingPoolService.liquidate({
       liquidator,
       borrower,
-      loanId: Number(loanId),
+      loanId: validatedLoanId,
     });
     res.status(200).json({ transaction_hash: txHash });
   } catch (e) {
