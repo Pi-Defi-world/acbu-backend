@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { xdr } from "@stellar/stellar-sdk";
 import { execSync } from "node:child_process";
 
@@ -5,6 +7,11 @@ import { ContractClient } from "../src/services/stellar/contractClient";
 import { stellarClient } from "../src/services/stellar/client";
 import { getContractAddresses } from "../src/config/contracts";
 import { BASKET_CURRENCIES, BASKET_WEIGHTS } from "../src/config/basket";
+import {
+  ORACLE_MIN_SIGNATURES,
+  meetsOracleQuorum,
+  parseOracleValidatorAddresses,
+} from "../src/config/oracleValidators";
 
 function currencyCodeToScVal(code: string): xdr.ScVal {
   const c = code.trim().toUpperCase();
@@ -62,10 +69,10 @@ function tryDeployOrResolveAssetContractId(opts: {
   }
 
   // If deploy fails (already deployed / transient), resolve id deterministically.
-  const out = execSync(
-    `stellar contract id asset --asset "${asset}" --network ${opts.network}`,
-    { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" },
-  );
+  const out = execSync(`stellar contract id asset --asset "${asset}" --network ${opts.network}`, {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
   const m = out.match(/\bC[A-Z2-7]{55}\b/);
   if (!m?.[0]) {
     throw new Error(`Could not resolve SAC contract id for asset ${asset}`);
@@ -101,18 +108,29 @@ async function main(): Promise<void> {
       args: [basketCurrenciesScVal(), basketWeightsMapScVal()],
     });
   } catch {
+    const validators = parseOracleValidatorAddresses(process.env.ORACLE_VALIDATOR_ADDRESSES);
     await client.invokeContract({
       contractId: oracleId,
       functionName: "initialize",
       sourceAccount: source,
       args: [
         ContractClient.toScVal(source), // admin
-        ContractClient.toScVal([source]), // validators
-        xdr.ScVal.scvU32(1), // min_signatures
+        ContractClient.toScVal(validators),
+        xdr.ScVal.scvU32(ORACLE_MIN_SIGNATURES),
         basketCurrenciesScVal(), // currencies
         basketWeightsMapScVal(), // basket_weights (bps)
       ],
     });
+  }
+
+  const [validatorsResult, minSignaturesResult] = await Promise.all([
+    client.readContract(oracleId, "get_validators", []),
+    client.readContract(oracleId, "get_min_signatures", []),
+  ]);
+  const validators = ContractClient.fromScVal(validatorsResult);
+  const minSignatures = Number(ContractClient.fromScVal(minSignaturesResult));
+  if (!Array.isArray(validators) || !meetsOracleQuorum(validators, minSignatures)) {
+    throw new Error("Oracle contract quorum is below 3-of-5; refusing to seed rates");
   }
 
   const demoSupply = BigInt("100000000000000000"); // 10B whole units @ 7 decimals
@@ -138,10 +156,7 @@ async function main(): Promise<void> {
       contractId: tokenContractId,
       functionName: "mint",
       sourceAccount: source,
-      args: [
-        ContractClient.toScVal(mintingId),
-        ContractClient.bigIntToI128(demoSupply),
-      ],
+      args: [ContractClient.toScVal(mintingId), ContractClient.bigIntToI128(demoSupply)],
     });
   }
 
@@ -167,4 +182,3 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
-

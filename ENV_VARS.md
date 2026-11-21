@@ -145,6 +145,7 @@ This file documents the environment variables required by the ACBU backend and t
 
 ### Oracle
 
+- `ORACLE_VALIDATOR_ADDRESSES` - required by oracle initialization scripts; five unique Stellar account public keys, comma-separated. The contract is initialized with a 3-of-5 minimum.
 - `ORACLE_UPDATE_INTERVAL_HOURS` - defaults to `6`
 - `ORACLE_EMERGENCY_THRESHOLD` - defaults to `0.05`
 - `ORACLE_MAX_DEVIATION_PER_UPDATE` - defaults to `0.05`

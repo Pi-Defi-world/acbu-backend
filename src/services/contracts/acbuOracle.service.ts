@@ -1,6 +1,8 @@
 import { contractClient, ContractClient } from "../stellar/contractClient";
 import { stellarClient } from "../stellar/client";
 import { logger } from "../../config/logger";
+import { meetsOracleQuorum } from "../../config/oracleValidators";
+import { xdr } from "@stellar/stellar-sdk";
 
 export interface UpdateRateParams {
   validator: string; // The validator address
@@ -19,9 +21,7 @@ export class OracleService {
     this.contractClient = contractClient;
   }
 
-  /**
-   * Update exchange rate for a currency (validator function)
-   */
+  /** Submit this backend's validator rate; the contract commits it only at quorum. */
   async updateRate(params: UpdateRateParams): Promise<string> {
     try {
       logger.info("Updating oracle rate", params);
@@ -30,22 +30,36 @@ export class OracleService {
       if (!sourceAccount) {
         throw new Error("No source account available");
       }
+      if (params.validator !== sourceAccount) {
+        throw new Error("Oracle rate submission signer must match the validator address");
+      }
 
-      // Custodial MVP: use admin override to reliably write rates on-chain.
-      // This avoids validator-path failures while still populating the same on-chain `rates`
-      // storage read by minting flows.
-      const currencyScVal = ContractClient.toScVal([[params.currency]]);
-      const args = [currencyScVal, ContractClient.toScVal(BigInt(params.rate))];
+      const validators = await this.getValidators();
+      const minSignatures = await this.getMinSignatures();
+      if (!meetsOracleQuorum(validators, minSignatures)) {
+        throw new Error("Oracle contract must enforce a 3-of-5 minimum validator quorum");
+      }
+      if (!validators.includes(params.validator)) {
+        throw new Error("Oracle rate submission signer is not an authorized validator");
+      }
 
-      // Invoke contract
+      const args = [
+        ContractClient.toScVal(params.validator),
+        ContractClient.toScVal([[params.currency]]),
+        ContractClient.bigIntToI128(BigInt(params.rate)),
+        ContractClient.toScVal(params.sources.map((source) => BigInt(source))),
+        xdr.ScVal.scvU64(xdr.Uint64.fromString(String(params.timestamp))),
+      ];
+
+      // Each invocation is one validator's independently authorized submission.
       const result = await this.contractClient.invokeContract({
         contractId: this.contractId,
-        functionName: "set_rate_admin",
+        functionName: "update_rate",
         args,
         sourceAccount,
       });
 
-      logger.info("Rate update successful", {
+      logger.info("Oracle validator rate submission successful", {
         transactionHash: result.transactionHash,
         currency: params.currency,
       });
