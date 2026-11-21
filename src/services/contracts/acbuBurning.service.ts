@@ -1,6 +1,7 @@
 import { contractClient, ContractClient } from "../stellar/contractClient";
 import { stellarClient } from "../stellar/client";
 import { logger } from "../../config/logger";
+import { assertValidRecipientAccount } from "../../utils/stellar";
 
 export interface RedeemSingleParams {
   user: string;
@@ -39,6 +40,7 @@ export class BurningService {
   }> {
     try {
       logger.info("Redeeming ACBU for single currency", params);
+      assertValidRecipientAccount(params.recipient);
 
       const idempotencyKey = this.extractIdempotencyKey(params);
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
@@ -84,6 +86,7 @@ export class BurningService {
   }> {
     try {
       logger.info("Redeeming ACBU for basket", params);
+      assertValidRecipientAccount(params.recipient);
 
       const idempotencyKey = this.extractIdempotencyKey(params);
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
