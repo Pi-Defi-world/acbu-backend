@@ -29,7 +29,15 @@ jobs:
           gitleaks version
 
       - name: Run gitleaks
-        run: gitleaks detect --verbose --redact
+        run: |
+          # A depth-0 checkout fetches every branch, so an unscoped scan also
+          # reports findings from unrelated branch history. On pull requests,
+          # scan only the commits the PR would add.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gitleaks detect --verbose --redact --log-opts="origin/${{ github.base_ref }}..HEAD"
+          else
+            gitleaks detect --verbose --redact
+          fi
 
   lint-and-format:
     name: Lint, Format & Security Audit
