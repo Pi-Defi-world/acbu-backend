@@ -1,4 +1,10 @@
-import { isValidStellarAddress, assertValidStellarAddress } from "../src/utils/stellar";
+import {
+  isValidStellarAddress,
+  assertValidStellarAddress,
+  isPlaceholderStellarAddress,
+  isValidNonPlaceholderStellarAddress,
+  sanitizeStellarAddress,
+} from "../src/utils/stellar";
 import { Keypair } from "@stellar/stellar-sdk";
 
 describe("Stellar address validation", () => {
@@ -55,5 +61,46 @@ describe("Stellar address validation", () => {
       expect(kp.publicKey()).toMatch(/^G/);
       expect(kp.publicKey()).toHaveLength(56);
     }
+  });
+});
+
+describe("placeholder Stellar address prevention (#1313)", () => {
+  const validAddress = Keypair.random().publicKey();
+
+  test("recognises every known dummy pattern", () => {
+    const placeholders = [
+      `G${"A".repeat(55)}`,
+      `G${"B".repeat(55)}`,
+      `G${"0".repeat(55)}`,
+      `GTEST${"A".repeat(51)}`,
+      `GDUMMY${"A".repeat(50)}`,
+      `GPLACEHOLDER${"A".repeat(44)}`,
+      `GXXXXXXXX${"A".repeat(47)}`,
+    ];
+
+    for (const placeholder of placeholders) {
+      expect(isPlaceholderStellarAddress(placeholder)).toBe(true);
+      expect(isValidNonPlaceholderStellarAddress(placeholder)).toBe(false);
+      expect(sanitizeStellarAddress(placeholder)).toBeNull();
+    }
+  });
+
+  test("sanitizes the legacy non-G placeholder written on signup", () => {
+    const legacyPlaceholder = `P${"A".repeat(55)}`;
+    expect(isPlaceholderStellarAddress(legacyPlaceholder)).toBe(true);
+    expect(sanitizeStellarAddress(legacyPlaceholder)).toBeNull();
+  });
+
+  test("passes a real key through unchanged", () => {
+    expect(isPlaceholderStellarAddress(validAddress)).toBe(false);
+    expect(isValidNonPlaceholderStellarAddress(validAddress)).toBe(true);
+    expect(sanitizeStellarAddress(validAddress)).toBe(validAddress);
+  });
+
+  test("sanitizes nullish, empty and malformed values", () => {
+    expect(sanitizeStellarAddress(null)).toBeNull();
+    expect(sanitizeStellarAddress(undefined)).toBeNull();
+    expect(sanitizeStellarAddress("")).toBeNull();
+    expect(sanitizeStellarAddress("GABC")).toBeNull();
   });
 });
