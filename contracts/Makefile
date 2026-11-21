@@ -73,8 +73,9 @@ update-registry:
 	@printf "Registry updated.\n"
 
 setup-hooks:
-	@printf "Setting up git hooks...\n"
-	bash scripts/setup-git-hooks.sh
+	@printf "Configuring the unified monorepo git hooks...\n"
+	git -C .. config core.hooksPath scripts/hooks
+	chmod +x ../scripts/hooks/*
 
 validate-snapshots:
 	@printf "Validating test snapshots...\n"

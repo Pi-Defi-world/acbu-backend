@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "rootDir": ".",
+    "outDir": "./.next/ts-project",
+    "tsBuildInfoFile": "./.next/ts-project/tsconfig.tsbuildinfo"
+  }
+}

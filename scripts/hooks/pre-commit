@@ -1,21 +1,94 @@
 #!/usr/bin/env bash
 
-# Pre-commit guard to prevent accidental commits of .env.local or .env
+# Unified pre-commit hook for the ACBU monorepo.
+#
+# Installed by `pnpm install` (postinstall -> `pnpm run hooks:install`) and
+# shared by the backend, frontend, and contracts workspaces. Keeping a single
+# root hook prevents the backend, frontend, and contracts copies from drifting
+# apart and ensures the checks cannot be bypassed by forgetting to install a
+# workspace-local hook.
 
-# Get a list of staged files
-staged_files=$(git diff --cached --name-only)
+set -euo pipefail
 
-# Check if .env.local or .env is in the staged files
-for file in $staged_files; do
-  if [[ "$file" == ".env.local" || "$file" == ".env" ]]; then
-    echo "🚨 ERROR: You are attempting to commit '$file'!"
-    echo "This file contains local secrets and must not be tracked in Git."
-    echo ""
-    echo "To fix this, unstage the file by running:"
-    echo "  git restore --staged $file"
-    echo ""
-    exit 1
-  fi
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+staged_files=()
+while IFS= read -r file; do
+  [ -n "$file" ] && staged_files+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ "${#staged_files[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 1. Never commit local environment files.
+# ---------------------------------------------------------------------------
+for file in "${staged_files[@]}"; do
+  case "$(basename "$file")" in
+    .env | .env.local)
+      echo "ERROR: refusing to commit '$file'."
+      echo "Local environment files must stay untracked."
+      echo "Unstage it with: git restore --staged '$file'"
+      exit 1
+      ;;
+  esac
 done
 
-exit 0
+# ---------------------------------------------------------------------------
+# 2. Lint and format staged backend files.
+# ---------------------------------------------------------------------------
+backend_files=()
+for file in "${staged_files[@]}"; do
+  case "$file" in
+    frontend/* | contracts/*) continue ;;
+    *.js | *.jsx | *.ts | *.tsx) backend_files+=("$file") ;;
+  esac
+done
+
+if [ "${#backend_files[@]}" -gt 0 ]; then
+  if [ -x "$ROOT/node_modules/.bin/eslint" ] && [ -x "$ROOT/node_modules/.bin/prettier" ]; then
+    echo "[pre-commit] Linting and formatting backend files..."
+    ESLINT_USE_FLAT_CONFIG=false "$ROOT/node_modules/.bin/eslint" --fix "${backend_files[@]}"
+    "$ROOT/node_modules/.bin/prettier" --write "${backend_files[@]}"
+    git add -- "${backend_files[@]}"
+  else
+    echo "[pre-commit] WARNING: backend dependencies are not installed; skipping ESLint/Prettier."
+    echo "[pre-commit] Run 'pnpm install' at the repository root to enable these checks."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Lint and format staged frontend files with the frontend's own config.
+# ---------------------------------------------------------------------------
+frontend_files=()
+for file in "${staged_files[@]}"; do
+  case "$file" in
+    frontend/*) frontend_files+=("$file") ;;
+  esac
+done
+
+if [ "${#frontend_files[@]}" -gt 0 ]; then
+  if [ -x "$ROOT/frontend/node_modules/.bin/eslint" ] && [ -x "$ROOT/frontend/node_modules/.bin/prettier" ]; then
+    echo "[pre-commit] Linting and formatting frontend files..."
+    frontend_paths=()
+    for file in "${frontend_files[@]}"; do
+      frontend_paths+=("../$file")
+    done
+    (
+      cd "$ROOT/frontend"
+      node_modules/.bin/eslint --fix "${frontend_paths[@]}"
+      node_modules/.bin/prettier --write "${frontend_paths[@]}"
+    )
+    git add -- "${frontend_files[@]}"
+  else
+    echo "[pre-commit] WARNING: frontend dependencies are not installed; skipping ESLint/Prettier."
+    echo "[pre-commit] Run 'pnpm install' in frontend/ to enable these checks."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 4. Secret scanning plus contract WASM/snapshot integrity checks.
+# ---------------------------------------------------------------------------
+bash "$ROOT/scripts/validate-staged-contracts.sh"

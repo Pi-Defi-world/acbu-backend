@@ -1,23 +1,31 @@
-# Setting Up Git Hooks
+# Git Hooks
 
-This project includes git hooks to enforce WASM integrity verification at commit time.
+The monorepo uses one root hook manager at `scripts/hooks/`. The backend,
+frontend, and contracts workspaces all share it, so there is no separate
+`contracts/.githooks` or `frontend/.husky` installation step.
 
 ## Installation
 
-Run this command once after cloning the repository:
+The root `postinstall` script configures the hooks automatically:
 
 ```bash
-git config core.hooksPath .githooks
-chmod +x .githooks/pre-commit
+pnpm install
+```
+
+To configure them without reinstalling dependencies:
+
+```bash
+pnpm run hooks:install
+# or
+git config core.hooksPath scripts/hooks
+chmod +x scripts/hooks/*
 ```
 
 ## Verification
 
-To verify hooks are installed:
-
 ```bash
 git config core.hooksPath
-# Should output: .githooks
+# Should output: scripts/hooks
 ```
 
 ## What the Hooks Do
@@ -25,10 +33,19 @@ git config core.hooksPath
 ### pre-commit
 
 Runs before each commit to:
-1. Detect if WASM artifact is being modified
-2. Verify all contract imports are updated with new hash
-3. Ensure hash consistency across all three contracts
-4. Prevent commits that would break the build
+
+1. Block accidental commits of `.env` and `.env.local`.
+2. Lint and format staged backend TypeScript/JavaScript with the root ESLint and
+   Prettier configuration.
+3. Lint and format staged frontend files with the frontend's ESLint and Prettier
+   configuration.
+4. Scan staged files for secrets and credentials.
+5. Verify contract WASM hashes and test snapshots when contract files change.
+
+### commit-msg
+
+Validates the commit message with the frontend's commitlint configuration when
+the frontend dependencies are installed.
 
 ## Bypassing Hooks (Not Recommended)
 
@@ -44,28 +61,31 @@ git commit --no-verify
 
 ### Hook not running
 
-**Check if hooks are configured**:
+Check that the root hook path is configured:
+
 ```bash
 git config core.hooksPath
 ```
 
-**Reconfigure if needed**:
+Reconfigure it if needed:
+
 ```bash
-git config core.hooksPath .githooks
-chmod +x .githooks/pre-commit
+pnpm run hooks:install
 ```
 
 ### Hook fails on WASM update
 
-**If you intentionally updated the WASM**:
-1. Get the new hash: `sha256sum soroban_token_contract.wasm`
-2. Update all three contract imports
-3. Update verification scripts
-4. Try committing again
+If you intentionally updated the WASM:
+
+1. Get the new hash: `sha256sum contracts/soroban_token_contract.wasm`
+2. Update all three contract imports.
+3. Update verification scripts.
+4. Try committing again.
 
 ### Permission denied
 
-**Make hook executable**:
+Make the hooks executable:
+
 ```bash
-chmod +x .githooks/pre-commit
+chmod +x scripts/hooks/*
 ```
