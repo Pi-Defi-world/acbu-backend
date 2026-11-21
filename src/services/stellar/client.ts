@@ -13,12 +13,21 @@ import { validateOperationsForTreasuryAccount } from "./operationSecurity";
 
 const Server = Horizon.Server;
 
+export interface StellarTransactionSigner {
+  /** Public key (G...) of the signing account, HSM key, or multi-sig coordinator. */
+  publicKey: string;
+  /** Sign a Stellar transaction via an external HSM, KMS, or multi-sig custodial service. */
+  sign(transaction: Transaction): Promise<Transaction> | Transaction;
+}
+
 export interface StellarNetworkConfig {
   network: "testnet" | "mainnet";
   horizonUrl: string;
   networkPassphrase: string;
   secretKey?: string;
   treasuryAccountId?: string;
+  /** Optional external signer (HSM / multi-sig custody) used instead of a raw secretKey. */
+  signer?: StellarTransactionSigner;
 }
 
 export type StellarServer = InstanceType<typeof Server>;
@@ -35,6 +44,7 @@ export class StellarClient {
   private network: "testnet" | "mainnet";
   private networkPassphrase: string;
   private keypair: Keypair | null = null;
+  private signer?: StellarTransactionSigner;
   /** Public key of the configured treasury account, when a secret key is provided. */
   private treasuryAccountId?: string;
   readonly horizonBreaker = new CircuitBreaker({
@@ -58,6 +68,16 @@ export class StellarClient {
     this.networkPassphrase = networkPassphrase;
     this.server = new Server(horizonUrl);
     this.treasuryAccountId = cfg?.treasuryAccountId ?? config.stellar.treasuryAccountId;
+    this.signer = cfg?.signer;
+
+    if (this.signer) {
+      this.treasuryAccountId ??= this.signer.publicKey;
+      logger.info("External Stellar transaction signer configured", {
+        publicKey: this.signer.publicKey,
+        network,
+      });
+      return;
+    }
 
     // Initialize keypair if secret key is provided
     const secretKey = cfg?.secretKey ?? config.stellar.secretKey;
@@ -192,7 +212,11 @@ export class StellarClient {
 
       const transaction = builder.build();
 
-      // Sign if keypair is available
+      // Sign via external HSM/multi-sig signer when configured, or fall back to local keypair.
+      if (this.signer) {
+        return await this.signer.sign(transaction);
+      }
+
       if (this.keypair) {
         transaction.sign(this.keypair);
       }
