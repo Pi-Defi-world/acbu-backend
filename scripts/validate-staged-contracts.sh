@@ -7,7 +7,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(git rev-parse --show-toplevel)/contracts"
 
 # Colors
 RED='\033[0;31m'
@@ -136,7 +136,7 @@ echo -e "${GREEN}[PASS]${NC} WASM integrity checks passed"
 # Check snapshot validity if snapshot-related files are being modified
 echo -e "${YELLOW}[Pre-commit Hook]${NC} Checking test snapshots..."
 
-SNAPSHOT_RELATED_FILES=$(git diff --cached --name-only | grep -E "(acbu_minting/src/|acbu_minting/tests/|acbu_minting/test_snapshots/|shared/src/)" || true)
+SNAPSHOT_RELATED_FILES=$(git diff --cached --name-only | grep -E "(^|/)(acbu_minting/src/|acbu_minting/tests/|acbu_minting/test_snapshots/|shared/src/)" || true)
 
 if [ -n "$SNAPSHOT_RELATED_FILES" ]; then
     echo -e "${YELLOW}⚠️  Snapshot-related files modified, validating snapshots...${NC}"
