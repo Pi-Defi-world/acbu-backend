@@ -50,8 +50,11 @@ jobs:
           # A GitHub source archive contains tracked backend files but never
           # initializes Git submodules. No checksum values are generated here.
           mkdir -p backend
+          # Encode the requested revision as one URL path segment. A raw '#'
+          # would otherwise be treated as a fragment and silently change ref.
+          encoded_ref="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["BACKEND_REF"], safe=""))')"
           curl --fail --location --silent --show-error --retry 3 \
-            "https://api.github.com/repos/${BACKEND_REPOSITORY}/tarball/${BACKEND_REF}" \
+            "https://api.github.com/repos/${BACKEND_REPOSITORY}/tarball/${encoded_ref}" \
             | tar -xz --strip-components=1 -C backend
           test -f backend/scripts/ci/verify-wasm-integrity.js
           test -f backend/tests/wasmIntegrity.test.js
