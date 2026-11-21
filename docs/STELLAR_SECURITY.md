@@ -1,5 +1,7 @@
 # Stellar Security Measures
 
+For the Wave 11 incident post-mortem, attack timeline, affected commits, purge verification, and permanent guardrails, see [INCIDENT_RESPONSE_WAVE11.md](./security/INCIDENT_RESPONSE_WAVE11.md).
+
 User wallets are self-custodied: the backend generates no keypair, never receives
 a private key, and stores no material it can turn back into one. See
 [WALLET_CUSTODY.md](./WALLET_CUSTODY.md) for the full custody model.
