@@ -110,13 +110,13 @@ jobs:
       - name: Run contract operation budget benchmark tests
         env:
           RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
-        run: ${{ matrix.repo.check }}
+        run: ${{ matrix.repo.check }} --locked
 
       - name: Build release WASM binaries for budget inspection
         env:
           RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
         run: |
-          cargo build --release --target wasm32-unknown-unknown || true
+          cargo build --release --locked --target wasm32-unknown-unknown || true
 
       - name: Checkout backend repository scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
