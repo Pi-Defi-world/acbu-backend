@@ -4,6 +4,7 @@ import {
   listPrivilegedKeys,
   requestAdminMfaChallenge,
   revokePrivilegedKey,
+  signin,
   verifyCaptcha,
 } from "./authService";
 import axios from "axios";
@@ -16,6 +17,7 @@ import bcrypt from "bcrypt";
 import { totp } from "otplib";
 import { getRabbitMQChannel, QUEUES } from "../../config/rabbitmq";
 import { generateSecureOtp } from "../../utils/secureOtp";
+import { authBruteGuard } from "../../utils/authBruteGuard";
 
 jest.mock("../../config/database", () => ({
   prisma: {
@@ -56,7 +58,9 @@ jest.mock("../../config/logger", () => ({
 }));
 
 jest.mock("../wallet/walletService", () => ({
-  ensureWalletForUser: jest.fn().mockResolvedValue({ wallet_created: false }),
+  getWalletEnrollmentStatus: jest
+    .fn()
+    .mockResolvedValue({ enrolled: false, stellar_address: null }),
 }));
 
 jest.mock("../audit", () => ({
@@ -328,5 +332,34 @@ describe("verifyCaptcha", () => {
     config.auth.captchaSecret = "";
     await expect(verifyCaptcha("tok")).resolves.toBe(false);
     expect(axios.post).not.toHaveBeenCalled();
+  });
+});
+
+describe("signin captcha enforcement", () => {
+  const originalSecret = config.auth.captchaSecret;
+
+  afterAll(() => {
+    config.auth.captchaSecret = originalSecret;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("rejects signin when a supplied captcha token is invalid", async () => {
+    config.auth.captchaSecret = "turnstile-secret";
+    jest.spyOn(authBruteGuard, "getStatus").mockResolvedValue({
+      attempts: 3,
+      locked: false,
+      requiresCaptcha: true,
+    });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { success: false } });
+
+    await expect(
+      signin({ identifier: "user-1", passcode: "passcode", ip: "1.2.3.4", captchaToken: "bad" }),
+    ).rejects.toThrow("CAPTCHA required");
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 });

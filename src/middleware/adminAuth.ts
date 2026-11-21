@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
-import crypto from "crypto";
 import { config } from "../config/env";
+import { constantTimeEqual } from "../utils/secureCompare";
 import { AppError } from "./errorHandler";
 
 export interface AdminRequest extends Request {
@@ -15,7 +15,8 @@ export interface AdminRequest extends Request {
  * If no admin keys are configured, the endpoint is blocked entirely.
  */
 export function requireAdminApiKey(req: Request, _res: Response, next: NextFunction): void {
-  const configuredKeys = (config as any).adminApiKeys as Array<{ id: string; key: string }> | undefined;
+  const configuredKeys = (config as any).adminApiKeys as
+    Array<{ id: string; key: string }> | undefined;
 
   const adminApiKeys =
     configuredKeys && configuredKeys.length > 0
@@ -34,20 +35,16 @@ export function requireAdminApiKey(req: Request, _res: Response, next: NextFunct
     return;
   }
 
-  const providedBuf = Buffer.from(provided, "utf8");
+  // Compare against every configured key with a constant-time comparison.
+  // (W10-BE-006) A plain `!==` — or a `timingSafeEqual` guarded by a length
+  // check — leaks information about the expected secret through response
+  // timing. `constantTimeEqual` hashes both values to a fixed-size digest
+  // first, so neither the key's content nor its length is observable.
   let matchedAdmin: { id: string; key: string } | null = null;
 
   for (const admin of adminApiKeys) {
-    const expectedBuf = Buffer.from(admin.key, "utf8");
-    if (providedBuf.length === expectedBuf.length) {
-      try {
-        if (crypto.timingSafeEqual(providedBuf, expectedBuf)) {
-          matchedAdmin = admin;
-          break;
-        }
-      } catch {
-        // continue checking next key
-      }
+    if (constantTimeEqual(provided, admin.key) && matchedAdmin === null) {
+      matchedAdmin = admin;
     }
   }
 

@@ -5,18 +5,20 @@
  * OTP (sms/email) is created and published to RabbitMQ OTP_SEND for delivery.
  */
 import bcrypt from "bcrypt";
+import axios from "axios";
 import { totp } from "otplib";
 import { randomUUID, createHash } from "crypto";
 import { config } from "../../config/env";
 import { prisma } from "../../config/database";
 import { generateApiKey } from "../../middleware/auth";
+import { revokeApiKey } from "../../middleware/auth";
 import { signChallengeToken, verifyChallengeToken, revokeJti } from "../../utils/jwt";
 import { logger } from "../../config/logger";
 import { getRabbitMQChannel } from "../../config/rabbitmq";
 import { generateId } from "../../utils/idGenerator";
 import { generateSecureOtp } from "../../utils/secureOtp";
 import { QUEUES } from "../../config/rabbitmq";
-import { ensureWalletForUser } from "../wallet/walletService";
+import { getWalletEnrollmentStatus } from "../wallet/walletService";
 import { logAudit } from "../audit";
 import { authBruteGuard } from "../../utils/authBruteGuard";
 import { PermissionsArraySchema, PermissionScope } from "../../types/permissions";
@@ -45,6 +47,25 @@ import {
 
 const DUMMY_HASH = "$2a$10$CwTycUXWue0Thq9StjUM0uEnOTWj2XOTl0pypEQuA7y2h2H6jX.m2"; // hash for 'dummy'
 
+export async function verifyCaptcha(token: string, ip?: string): Promise<boolean> {
+  const secret = config.auth.captchaSecret;
+  if (!secret || !token.trim()) return false;
+
+  const body = new URLSearchParams({ secret, response: token });
+  if (ip) body.set("remoteip", ip);
+
+  try {
+    const response = await axios.post(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      body,
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 5000 },
+    );
+    return response.data?.success === true;
+  } catch {
+    return false;
+  }
+}
+
 export interface SignupParams {
   username: string;
   passcode: string;
@@ -68,9 +89,7 @@ export type SigninResult =
   | {
       api_key: string;
       user_id: string;
-      wallet_created?: boolean;
-      passphrase?: string;
-      encryption_method_required?: boolean;
+      wallet_enrollment_required: boolean;
       stellar_address?: string | null;
       refresh_token?: string;
       refresh_token_expires_at?: string;
@@ -86,9 +105,7 @@ export interface Verify2faParams {
 export interface Verify2faResult {
   api_key: string;
   user_id: string;
-  wallet_created?: boolean;
-  passphrase?: string;
-  encryption_method_required?: boolean;
+  wallet_enrollment_required: boolean;
   stellar_address?: string | null;
   refresh_token?: string;
   refresh_token_expires_at?: string;
@@ -134,6 +151,20 @@ const ADMIN_TIER = "enterprise";
 const BREAK_GLASS_DEFAULT_TTL_MINUTES = 15;
 const BREAK_GLASS_MAX_TTL_MINUTES = 60;
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+
+/**
+ * Revoke any previously issued api_key(s) tied to the given refresh-token family
+ * so that key rotation on refresh retires the old key instead of accumulating keys.
+ */
+async function revokePriorApiKeysForFamily(refreshTokenFamilyId: string): Promise<void> {
+  const priorKeys = await prisma.apiKey.findMany({
+    where: { refreshTokenFamilyId, revokedAt: null },
+    select: { id: true },
+  });
+  for (const key of priorKeys) {
+    await revokeApiKey(key.id);
+  }
+}
 const ADMIN_SCOPES = ["p2p:admin", "sme:admin", "gateway:admin", "enterprise:admin"] as const;
 
 function normalizeIdentifier(s: string): {
@@ -343,8 +374,9 @@ export async function signin(params: SigninParams): Promise<SigninResult> {
   if (status.requiresCaptcha && !captchaToken) {
     throw new CaptchaRequiredError();
   }
-
-  // TODO: Verify captchaToken here if provided
+  if (captchaToken && !(await verifyCaptcha(captchaToken, ip))) {
+    throw new CaptchaRequiredError();
+  }
 
   const user = await resolveUserByIdentifier(identifier);
 
@@ -441,11 +473,7 @@ export async function signin(params: SigninParams): Promise<SigninResult> {
   }
 
   const api_key = await generateApiKey(user.id, [], { keyType: "USER_KEY" });
-  const wallet = await ensureWalletForUser(user.id);
-  const userFull = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { stellarAddress: true },
-  });
+  const wallet = await getWalletEnrollmentStatus(user.id);
 
   await logAudit({
     eventType: "auth",
@@ -461,18 +489,16 @@ export async function signin(params: SigninParams): Promise<SigninResult> {
   const out: {
     api_key: string;
     user_id: string;
-    wallet_created?: boolean;
-    passphrase?: string;
-    encryption_method_required?: boolean;
+    wallet_enrollment_required: boolean;
     stellar_address?: string | null;
     refresh_token?: string;
     refresh_token_expires_at?: string;
-  } = { api_key, user_id: user.id, stellar_address: userFull?.stellarAddress };
-  if (wallet.wallet_created && wallet.passphrase) {
-    out.wallet_created = true;
-    out.passphrase = wallet.passphrase;
-    out.encryption_method_required = true;
-  }
+  } = {
+    api_key,
+    user_id: user.id,
+    wallet_enrollment_required: !wallet.enrolled,
+    stellar_address: wallet.stellar_address,
+  };
 
   if (params.issueRefreshToken) {
     const refreshToken = await issueRefreshToken({ userId: user.id });
@@ -572,11 +598,7 @@ export async function verify2fa(params: Verify2faParams): Promise<Verify2faResul
   }
 
   const api_key = await generateApiKey(user.id, []);
-  const wallet = await ensureWalletForUser(user.id);
-  const userFull = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { stellarAddress: true },
-  });
+  const wallet = await getWalletEnrollmentStatus(user.id);
 
   await logAudit({
     eventType: "auth",
@@ -592,18 +614,16 @@ export async function verify2fa(params: Verify2faParams): Promise<Verify2faResul
   const out: {
     api_key: string;
     user_id: string;
-    wallet_created?: boolean;
-    passphrase?: string;
-    encryption_method_required?: boolean;
+    wallet_enrollment_required: boolean;
     stellar_address?: string | null;
     refresh_token?: string;
     refresh_token_expires_at?: string;
-  } = { api_key, user_id: user.id, stellar_address: userFull?.stellarAddress };
-  if (wallet.wallet_created && wallet.passphrase) {
-    out.wallet_created = true;
-    out.passphrase = wallet.passphrase;
-    out.encryption_method_required = true;
-  }
+  } = {
+    api_key,
+    user_id: user.id,
+    wallet_enrollment_required: !wallet.enrolled,
+    stellar_address: wallet.stellar_address,
+  };
 
   if (params.issueRefreshToken) {
     const refreshToken = await issueRefreshToken({ userId: user.id });

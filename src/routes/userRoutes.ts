@@ -15,7 +15,7 @@ import {
 import {
   getWallet,
   getMeBalance,
-  postWalletConfirm,
+  postWalletEnroll,
   postWalletActivate,
   putWalletAddress,
   deleteWallet,
@@ -152,13 +152,21 @@ router.get("/me/wallet", getWallet);
 
 /**
  * @swagger
- * /v1/users/me/wallet/confirm:
+ * /v1/users/me/wallet/enroll:
  *   post:
  *     tags:
  *       - Users
- *     summary: Confirm wallet setup
+ *     summary: Enroll a client-generated wallet
+ *     description: Binds a keypair generated in the client. The backend never generates, receives or stores a usable private key.
  *     security:
  *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: If-Match
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Current wallet ETag
  *     requestBody:
  *       required: true
  *       content:
@@ -166,22 +174,25 @@ router.get("/me/wallet", getWallet);
  *           schema:
  *             type: object
  *             required:
- *               - encryption_method
- *               - passcode
- *               - passphrase
+ *               - stellar_address
  *             properties:
- *               encryption_method:
+ *               stellar_address:
  *                 type: string
- *                 enum: [passcode]
- *               passcode:
+ *               wrapped_key:
  *                 type: string
- *               passphrase:
+ *               wrap_algorithm:
+ *                 type: string
+ *               wrap_kdf:
  *                 type: string
  *     responses:
  *       200:
- *         description: Wallet confirmed successfully
+ *         description: Wallet enrolled successfully
+ *       400:
+ *         description: Invalid address or unencrypted key material
+ *       409:
+ *         description: A different wallet is already enrolled
  */
-router.post("/me/wallet/confirm", postWalletConfirm);
+router.post("/me/wallet/enroll", postWalletEnroll);
 
 /**
  * @swagger

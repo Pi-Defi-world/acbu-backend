@@ -6,7 +6,7 @@ import type { TransactionStatus } from "../src/utils/transactionStateMachine";
 
 jest.mock("../src/services/stellar/contractClient", () => ({
   contractClient: { invokeContract: jest.fn() },
-  ContractClient: { toScVal: jest.fn(), fromScVal: jest.fn() },
+  ContractClient: { toScVal: jest.fn(), fromScVal: jest.fn(), bigIntToI128: jest.fn() },
 }));
 
 jest.mock("../src/services/stellar/client", () => ({
@@ -22,6 +22,8 @@ jest.mock("../src/config/database", () => ({
 jest.mock("../src/config/logger", () => ({
   logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
 }));
+
+const VALID_STATUSES: readonly string[] = ["pending", "processing", "completed", "failed"];
 
 describe("MintingService Compensation", () => {
   beforeEach(() => {

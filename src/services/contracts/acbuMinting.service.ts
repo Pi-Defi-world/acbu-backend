@@ -93,6 +93,28 @@ export class MintingService {
   }
 
   /**
+   * Mark the transaction behind a failed on-chain mint as failed.
+   *
+   * Compensation must never mask the original error, so DB failures are logged
+   * and swallowed.
+   */
+  private async markTransactionFailed(params: CompensationParams): Promise<void> {
+    const txId = params.txId;
+    if (!txId) {
+      return;
+    }
+    try {
+      await prisma.transaction.update({
+        where: { id: txId },
+        data: { status: COMPENSATION_STATUS },
+      });
+      logger.info(`Compensated: Marked transaction ${txId} as ${COMPENSATION_STATUS}`);
+    } catch (dbError) {
+      logger.error("CRITICAL: DB compensation failed", { txId, dbError });
+    }
+  }
+
+  /**
    * Mint ACBU from USDC deposit
    */
   async mintFromUsdc(params: MintFromUsdcParams): Promise<{

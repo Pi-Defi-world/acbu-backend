@@ -147,9 +147,7 @@ export async function deliverWebhook(
     const payloadStr = JSON.stringify(webhook.payload);
     const signature =
       webhook.signature ??
-      (config.webhook.secret
-        ? signPayload(payloadStr, config.webhook.secret)
-        : null);
+      (config.webhook.secret ? signPayload(payloadStr, config.webhook.secret) : null);
 
     try {
       await axios.post(url, webhook.payload, {

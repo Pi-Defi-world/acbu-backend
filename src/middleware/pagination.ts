@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { config } from "../config/env";
 import { logger } from "../config/logger";
+import { constantTimeEqual } from "../utils/secureCompare";
 import { AppError } from "./errorHandler";
 
 /**
@@ -76,7 +77,7 @@ export function decodeCursor(cursor: string | undefined, scope: string): string 
   }
 
   const expectedSignature = sign(payload);
-  if (!timingSafeEqual(providedSignature, expectedSignature)) {
+  if (!constantTimeEqual(providedSignature, expectedSignature)) {
     throw invalidCursor();
   }
 
@@ -89,7 +90,7 @@ export function decodeCursor(cursor: string | undefined, scope: string): string 
   const cursorScope = payload.slice(0, sep);
   const id = payload.slice(sep + 1);
 
-  if (!timingSafeEqual(cursorScope, scope) || !id) {
+  if (!constantTimeEqual(cursorScope, scope) || !id) {
     // Valid signature but wrong scope means the cursor was minted for another
     // caller — surface as an invalid cursor rather than leaking cross-scope data.
     logger.warn("Rejected pagination cursor with mismatched scope");
@@ -101,12 +102,4 @@ export function decodeCursor(cursor: string | undefined, scope: string): string 
 
 function invalidCursor(): AppError {
   return new AppError("Invalid pagination cursor", 400, "INVALID_CURSOR");
-}
-
-/** Constant-time string comparison that tolerates length differences. */
-function timingSafeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
 }

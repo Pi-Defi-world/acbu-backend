@@ -128,6 +128,7 @@ import {
   createSalaryBatch,
   processSalaryBatch,
   getSalaryBatches,
+  getSalarySchedules,
   createSalarySchedule,
   triggerSchedule,
 } from "../src/services/salary/salaryService";
@@ -228,7 +229,7 @@ describe("createSalaryBatch", () => {
 
     // findUnique is called twice: once for idempotency check, once in processSalaryBatch
     mockBatch.findUnique
-      .mockResolvedValueOnce(null)                    // idempotency check → no existing batch
+      .mockResolvedValueOnce(null) // idempotency check → no existing batch
       .mockResolvedValueOnce({ ...batch, items: [] }); // processSalaryBatch lookup
     mockBatch.update.mockResolvedValue({ ...batch, status: "completed" });
 
@@ -301,9 +302,7 @@ describe("createSalaryBatch", () => {
 
   it("accepts correct totalAmount matching item sum", async () => {
     const batch = makeBatch({ id: "batch-correct-total" });
-    mockBatch.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ ...batch, items: [] });
+    mockBatch.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...batch, items: [] });
     mockBatch.create.mockResolvedValue(batch);
     mockBatch.update.mockResolvedValue({ ...batch, status: "completed" });
 
@@ -498,9 +497,7 @@ describe("getSalaryBatches", () => {
 
     await getSalaryBatches({ organizationId: "org-1", limit: 5, offset: 10 });
 
-    expect(mockBatch.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 5, skip: 10 }),
-    );
+    expect(mockBatch.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 5, skip: 10 }));
   });
 
   it("includes _count.items in the query", async () => {
@@ -669,5 +666,37 @@ describe("triggerSchedule", () => {
     // nextRunAt should be ~60s in the future (within test timing tolerance of ±5s)
     expect(nextRun.getTime()).toBeGreaterThanOrEqual(before + 55_000);
     expect(nextRun.getTime()).toBeLessThanOrEqual(after + 65_000);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("getSalarySchedules", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("applies default pagination instead of returning every schedule (W10-BE-017)", async () => {
+    mockSchedule.findMany.mockResolvedValue([]);
+
+    await getSalarySchedules({ userId: "user-1" });
+
+    expect(mockSchedule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 20,
+        skip: 0,
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+  });
+
+  it("applies explicit limit and offset", async () => {
+    mockSchedule.findMany.mockResolvedValue([]);
+
+    await getSalarySchedules({ organizationId: "org-1", limit: 100, offset: 200 });
+
+    expect(mockSchedule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 100, skip: 200 }),
+    );
   });
 });

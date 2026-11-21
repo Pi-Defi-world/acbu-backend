@@ -2,6 +2,7 @@
  * MTN Mobile Money API client (RWF, UGX, etc.). Implements FintechProvider for balance and disbursement.
  * FX (convertCurrency) does not have a generic API; use getProviderById('flutterwave') for rate fallback.
  */
+import crypto from "crypto";
 import { AxiosInstance } from "axios";
 import { config } from "../../config/env";
 import { logger } from "../../config/logger";
@@ -144,8 +145,6 @@ export class MTNMoMoClient implements FintechProvider {
   ): Promise<DisburseResult> {
     try {
       const token = await this.ensureToken();
-      const crypto = require("crypto");
-      const referenceId = `acbu-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
       const referenceId = `acbu-${crypto.randomUUID()}`;
       const body = {
         amount: String(amount),

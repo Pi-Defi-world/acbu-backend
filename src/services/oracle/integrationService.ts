@@ -21,6 +21,42 @@ import { computeSyntheticBasketOneAcbuForBasket } from "./syntheticBasket";
 const OUTLIER_DEVIATION = 0.03; // 3%
 const ORACLE_RATE_DECIMALS = 1e7;
 
+/** Result of checking a rate move against the per-update deviation limit. */
+export interface RateDeviationAssessment {
+  /** Relative move vs. the previous stored rate, or null when there is none. */
+  deviation: number | null;
+  /** Whether the move exceeds the limit and therefore needs review. */
+  reviewRequired: boolean;
+}
+
+/**
+ * Assess a computed rate against the per-update deviation limit
+ * (`ORACLE_MAX_DEVIATION_PER_UPDATE`, 5% by default).
+ *
+ * W10-DOC-014: a move larger than the limit is an *emergency* update. It is not
+ * rejected outright and it is not silently applied either — it must carry the
+ * review flag, so the same 5% rule governs the normal validator path and the
+ * emergency/admin path. On-chain the contract requires N-of-M emergency votes
+ * before an above-threshold write is accepted (`AdminDeviationTooLarge`
+ * otherwise); in the backend the flag is persisted on the rate row and logged.
+ *
+ * The assessment is made against the raw rate move, before any circuit-breaker
+ * smoothing, so an operator can see the size of the market move that triggered
+ * the emergency rather than only the smoothed value that ends up stored.
+ */
+export function assessRateDeviation(
+  previousRate: number | null | undefined,
+  newRate: number,
+  maxDeviation: number,
+): RateDeviationAssessment {
+  if (previousRate == null || !Number.isFinite(previousRate) || previousRate <= 0) {
+    return { deviation: null, reviewRequired: false };
+  }
+
+  const deviation = Math.abs(newRate - previousRate) / previousRate;
+  return { deviation, reviewRequired: deviation > maxDeviation };
+}
+
 /** Weights for 25/25/25/25 oracle aggregation (central bank, fintech, forex, world bank) */
 const LAYER_WEIGHT_CB = 0.25;
 const LAYER_WEIGHT_FINTECH = 0.25;
@@ -114,31 +150,40 @@ export async function fetchAndStoreRates(): Promise<void> {
         where: { currency },
         orderBy: { timestamp: "desc" },
       });
-      const prevRateNum = prevRate?.medianRate != null ? Number(prevRate.medianRate.toString()) : undefined;
+      const prevRateNum =
+        prevRate?.medianRate != null ? Number(prevRate.medianRate.toString()) : undefined;
       const maxDeviation = config.oracle.maxDeviationPerUpdate ?? 0.05;
       const circuitThreshold = config.oracle.circuitBreakerThreshold ?? 0.1;
 
-      if (prevRateNum != null && prevRateNum > 0) {
-        const deviation = Math.abs(composite - prevRateNum) / prevRateNum;
-        if (deviation > circuitThreshold) {
-          const avg48h = await getAverageRateOverHours(currency, 48);
-          if (avg48h != null) {
-            logger.warn("Oracle: circuit breaker triggered, using 48h average", {
-              currency,
-              composite,
-              prevRateNum,
-              avg48h,
-            });
-            composite = avg48h;
-          }
-        } else if (deviation > maxDeviation) {
-          logger.warn("Oracle: deviation exceeds max, consider manual review", {
+      const { deviation: deviationFromPreviousRate, reviewRequired } = assessRateDeviation(
+        prevRateNum,
+        composite,
+        maxDeviation,
+      );
+
+      if (deviationFromPreviousRate != null && deviationFromPreviousRate > circuitThreshold) {
+        const avg48h = await getAverageRateOverHours(currency, 48);
+        if (avg48h != null) {
+          logger.warn("Oracle: circuit breaker triggered, using 48h average", {
             currency,
             composite,
             prevRateNum,
-            deviation,
+            avg48h,
           });
+          composite = avg48h;
         }
+      }
+
+      if (reviewRequired) {
+        // W10-DOC-014: emergency updates set the review flag instead of being
+        // rejected (normal path) or silently applied (emergency path).
+        logger.warn("Oracle: emergency rate update flagged for review", {
+          currency,
+          composite,
+          prevRateNum,
+          deviation: deviationFromPreviousRate,
+          reviewRequired: true,
+        });
       }
 
       await prisma.oracleRate.create({
@@ -151,6 +196,8 @@ export async function fetchAndStoreRates(): Promise<void> {
           medianRate: new Decimal(composite),
           rawValues: {
             worldBankRate: worldBankRate != null ? worldBankRate : null,
+            deviationFromPreviousRate,
+            reviewRequired,
           },
         },
       });

@@ -3,12 +3,13 @@ import { Decimal } from "@prisma/client/runtime/library";
 import { Prisma, SalaryItem } from "@prisma/client";
 import { createTransfer } from "../transfer/transferService";
 import { logger, logFinancialEvent } from "../../config/logger";
-import { CreateSalaryBatchParams, CreateSalaryBatchResult } from "./types";
+import { AmountConfig, CreateSalaryBatchParams, CreateSalaryBatchResult } from "./types";
 import { AppError } from "../../middleware/errorHandler";
 import { getInitialDailyMidnight, getNextDailyMidnight } from "../../utils/dateUtils";
 import { retryWithBackoff } from "../../utils/retry";
 import crypto from "crypto";
 import { decimalToNumber } from "../../utils/decimalUtils";
+import { DEFAULT_PAGE_LIMIT } from "../../utils/pagination";
 
 /**
  * Creates a new salary batch with items. Supports idempotency via idempotencyKey.
@@ -235,7 +236,7 @@ export async function getSalaryBatches(params: {
   limit?: number;
   offset?: number;
 }) {
-  const { organizationId, userId, limit = 20, offset = 0 } = params;
+  const { organizationId, userId, limit = DEFAULT_PAGE_LIMIT, offset = 0 } = params;
 
   return prisma.salaryBatch.findMany({
     where: {
@@ -272,7 +273,7 @@ export async function triggerSchedule(scheduleId: string): Promise<void> {
 
   if (!schedule || schedule.status !== "active") return;
 
-  const amountConfig = schedule.amountConfig as unknown as any[]; // Temporary fix until types are perfect
+  const amountConfig = schedule.amountConfig as unknown as AmountConfig;
   const totalAmount = amountConfig.reduce(
     (acc, item) => acc.add(new Decimal(item.amount)),
     new Decimal(0),
@@ -286,7 +287,7 @@ export async function triggerSchedule(scheduleId: string): Promise<void> {
     items: amountConfig.map((item) => ({
       recipientId: item.recipient_id,
       recipientAddress: item.recipient_address,
-      amount: item.amount,
+      amount: String(item.amount),
     })),
   });
 
@@ -313,7 +314,7 @@ export async function createSalarySchedule(params: {
   userId: string;
   name: string;
   cron: string;
-  amountConfig: any;
+  amountConfig: AmountConfig;
   currency?: string;
 }) {
   const { organizationId, userId, name, cron, amountConfig, currency = "ACBU" } = params;
@@ -332,7 +333,7 @@ export async function createSalarySchedule(params: {
       userId,
       name,
       cron,
-      amountConfig,
+      amountConfig: amountConfig as unknown as Prisma.InputJsonValue,
       currency,
       status: "active",
       nextRunAt: nextRun,
@@ -351,8 +352,13 @@ export async function createSalarySchedule(params: {
 /**
  * Lists salary schedules for an organization or user.
  */
-export async function getSalarySchedules(params: { organizationId?: string; userId?: string }) {
-  const { organizationId, userId } = params;
+export async function getSalarySchedules(params: {
+  organizationId?: string;
+  userId?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const { organizationId, userId, limit = DEFAULT_PAGE_LIMIT, offset = 0 } = params;
 
   return prisma.salarySchedule.findMany({
     where: {
@@ -361,5 +367,7 @@ export async function getSalarySchedules(params: { organizationId?: string; user
       ),
     },
     orderBy: { createdAt: "desc" },
+    take: limit,
+    skip: offset,
   });
 }

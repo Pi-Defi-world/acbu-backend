@@ -391,33 +391,52 @@
         }
       }
     },
-    "/v1/users/me/wallet/confirm": {
+    "/v1/users/me/wallet/enroll": {
       "post": {
         "tags": ["Users"],
-        "summary": "Confirm wallet encryption",
-        "description": "Confirm wallet setup with encryption method and passphrase.",
+        "summary": "Enroll a client-generated wallet",
+        "description": "Binds a keypair generated in the client. The backend never generates, receives or stores a usable private key; wrapped_key is an opaque backup only the client can open.",
         "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Current wallet ETag"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["encryption_method", "passcode", "passphrase"],
+                "required": ["stellar_address"],
                 "properties": {
-                  "encryption_method": {
+                  "stellar_address": {
                     "type": "string",
-                    "enum": ["passcode"]
+                    "minLength": 56,
+                    "maxLength": 56,
+                    "description": "Stellar public key generated in the client"
                   },
-                  "passcode": {
+                  "wrapped_key": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Passcode for wallet encryption"
+                    "maxLength": 512,
+                    "description": "Client-encrypted key backup, base64; unreadable by the backend"
                   },
-                  "passphrase": {
+                  "wrap_algorithm": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Wallet passphrase"
+                    "maxLength": 64,
+                    "description": "Encryption algorithm the client used"
+                  },
+                  "wrap_kdf": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "description": "Key derivation function the client used"
                   }
                 }
               }
@@ -425,8 +444,10 @@
           }
         },
         "responses": {
-          "200": { "description": "Wallet confirmed" },
-          "401": { "description": "User-scoped API key required" }
+          "200": { "description": "Wallet enrolled" },
+          "400": { "description": "Invalid address, or key material that is not client-encrypted" },
+          "401": { "description": "User-scoped API key required" },
+          "409": { "description": "A different wallet is already enrolled" }
         }
       }
     },
@@ -452,9 +473,6 @@
                     "type": "number"
                   },
                   "recipient": {
-                    "type": "string"
-                  },
-                  "passcode": {
                     "type": "string"
                   }
                 }
@@ -487,9 +505,6 @@
                   },
                   "amount": {
                     "type": "number"
-                  },
-                  "passcode": {
-                    "type": "string"
                   }
                 }
               }

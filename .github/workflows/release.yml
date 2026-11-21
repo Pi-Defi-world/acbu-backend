@@ -25,9 +25,35 @@ permissions:
   packages: write
 
 jobs:
+  # ── Step 0: Secret scan must pass before release ────────────────────────
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION="8.18.2"
+          curl -sSLo gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -zxf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+
+      - name: Run gitleaks
+        run: gitleaks detect --verbose --redact
+
   # ── Step 1: Quality gate & verify build ─────────────────────────────────────
   build-and-test:
     name: Build & Verify Artifacts
+    needs: [secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 25
 

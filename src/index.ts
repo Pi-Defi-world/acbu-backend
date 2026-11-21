@@ -1,6 +1,8 @@
 // Load environment variables first (handles dotenv loading with proper order)
 import "./config/env";
 
+import { assertWebhookSignatureConfigSafe } from "./config/webhookSignatureGuard";
+
 import { initTracing } from "./config/tracing";
 initTracing();
 
@@ -171,6 +173,9 @@ function assertPrismaMigrationHistoryReplicated(): void {
     );
   }
 }
+
+// W10-SEC-014: fail closed on webhook signature bypass outside an explicit test profile.
+assertWebhookSignatureConfigSafe();
 
 // Security middleware — single source of truth for all helmet/security-header config.
 // middleware/securityHeaders.ts was a duplicate export of this config that was never
@@ -343,6 +348,9 @@ async function startServer() {
   try {
     assertPrismaMigrationHistoryReplicated();
 
+    // W10-SEC-014: runtime production assertion independent of NODE_ENV.
+    assertWebhookSignatureConfigSafe();
+
     // Establish the DB connection with backoff + jitter so coordinated restarts
     // don't stampede the database's connection slots (#402).
     await connectWithRetry();
@@ -441,6 +449,10 @@ async function startServer() {
       // Start weekly weight drift audit job (Monday 00:00 UTC)
       const { startWeightDriftAuditScheduler } = await import("./jobs/weightDriftAuditJob");
       await startWeightDriftAuditScheduler();
+
+      // W10-I-013: Start reserve metrics job (every 5 minutes)
+      const { startReserveMetricsJob } = await import("./jobs/reserveMetricsJob");
+      startReserveMetricsJob();
 
       // Salary schedule: trigger recurring salary payments
       const { startSalaryScheduleScheduler } = await import("./jobs/salaryScheduleJob");

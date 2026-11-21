@@ -39,7 +39,7 @@ test("event type drift fails validation until the schema is updated", () => {
     changedListener,
     fs
       .readFileSync(changedListener, "utf8")
-      .replace('"contract_effect",', '"contract_effect",\n  "contract_new",'),
+      .replace('"contract_effect"', '"contract_effect",\n  "contract_new"'),
   );
 
   assert.match(

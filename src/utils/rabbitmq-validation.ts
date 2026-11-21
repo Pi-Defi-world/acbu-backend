@@ -43,7 +43,10 @@ export type QueuePayload<Q extends QueueName> = z.infer<(typeof QUEUE_SCHEMAS)[Q
  * const notification = validateMessage(QUEUES.NOTIFICATIONS, raw); // Notification
  * ```
  */
-export function validateMessage<Q extends QueueSchemaName>(queue: Q, payload: unknown): QueuePayload<Q>;
+export function validateMessage<Q extends QueueSchemaName>(
+  queue: Q,
+  payload: unknown,
+): QueuePayload<Q>;
 /**
  * Validate a payload when the queue name is only known at runtime (e.g. a
  * producer holding `protected queue: string`). Callers must supply the expected
@@ -61,9 +64,7 @@ export function validateMessage<T>(queue: string, payload: unknown): T {
     // The registry is keyed by runtime queue names, so this lookup cannot be
     // statically tied to T; the double assertion is confined to this one place
     // and only the compatibility overload can reach it.
-    const schema = QUEUE_SCHEMAS[queue as QueueSchemaName] as unknown as
-      | z.ZodSchema<T>
-      | undefined;
+    const schema = QUEUE_SCHEMAS[queue as QueueSchemaName] as unknown as z.ZodSchema<T> | undefined;
     if (!schema) {
       throw new Error(`No schema defined for queue: ${queue}`);
     }

@@ -28,9 +28,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Stage 0: Secret scan must pass before any promotion ────────────────
+  secret-scan:
+    name: 0. Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+          fetch-depth: 0
+
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION="8.18.2"
+          curl -sSLo gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -zxf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+
+      - name: Run gitleaks
+        run: gitleaks detect --verbose --redact
+
   # ── Stage 1: Pre-flight Verification & Migration Drift Gate ────────────────
   preflight-and-drift-gate:
     name: 1. Pre-flight & Migration Drift Gate
+    needs: [secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
