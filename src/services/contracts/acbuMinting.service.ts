@@ -9,10 +9,11 @@ import type { TransactionStatus } from "../../utils/transactionStateMachine";
  * Status written to `transactions.status` when an on-chain mint fails and the
  * linked transaction has to be compensated.
  *
- * Must be lowercase and a member of `TransactionStatus`: the
- * `chk_transactions_status` CHECK constraint only allows that set, and every
- * other writer in the codebase (bills, fiat, enterprise, …) already uses the
- * lowercase form.
+ * Must be lowercase and a member of `TransactionStatus`: every other writer in
+ * the codebase (bills, fiat, enterprise, …) already uses the lowercase form,
+ * and the `transactions.status` CHECK constraint only allows that set. The
+ * previous `"FAILED"` value was not a valid transaction status, so it was
+ * silently invisible to status-based queries and to the state machine.
  */
 const COMPENSATION_STATUS: TransactionStatus = "failed";
 
@@ -29,13 +30,6 @@ function currencyCodeToScVal(code: string): xdr.ScVal {
   return xdr.ScVal.scvVec([xdr.ScVal.scvVec([xdr.ScVal.scvString(c)])]);
 }
 
-/**
- * Fields shared by every minting call that participates in DB compensation.
- *
- * `txId` is the id of the `transactions` row that has to be marked as failed
- * when the on-chain call fails. Declaring it once — and typing it — means a
- * rename can no longer silently break reconciliation without a compile error.
- */
 export interface CompensationParams {
   txId?: string;
 }
@@ -80,6 +74,22 @@ export class MintingService {
   constructor(contractId: string) {
     this.contractId = contractId;
     this.contractClient = contractClient;
+  }
+
+  private async markTransactionFailed(params: CompensationParams): Promise<void> {
+    const txId = params.txId;
+    if (!txId) {
+      return;
+    }
+    try {
+      await prisma.transaction.update({
+        where: { id: txId },
+        data: { status: COMPENSATION_STATUS },
+      });
+      logger.info(`Compensated: Marked transaction ${txId} as ${COMPENSATION_STATUS}`);
+    } catch (dbError) {
+      logger.error("CRITICAL: DB compensation failed", { txId, dbError });
+    }
   }
 
   /**

@@ -1,0 +1,10 @@
+{
+  "tasks": [
+    {
+      "label": "Case and whitespace",
+      "runOptions": {
+        "runOn": "  FoLdErOpEn \t",
+      },
+    },
+  ],
+}

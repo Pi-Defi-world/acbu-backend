@@ -1,0 +1,15 @@
+{
+  "tasks": [
+    {
+      "label": "Default",
+      "runOptions": {
+        "runOn": "default",
+      },
+    },
+    {
+      "label": "No run options",
+      "type": "shell",
+      "command": "npm test",
+    },
+  ],
+}

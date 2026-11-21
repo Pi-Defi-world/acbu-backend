@@ -1,0 +1,22 @@
+{
+  "tasks": [
+    {
+      "label": "Build",
+      "windows": {
+        "runOptions": {
+          "runOn": "folderOpen",
+        },
+      },
+      "linux": {
+        "runOptions": {
+          "runOn": "folderOpen",
+        },
+      },
+      "osx": {
+        "runOptions": {
+          "runOn": "folderOpen",
+        },
+      },
+    },
+  ],
+}
