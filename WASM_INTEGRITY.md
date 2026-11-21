@@ -34,12 +34,21 @@ Updating the source revision or build settings **requires a new reviewed lock**.
 | ACBU savings vault | `acbu_savings_vault.wasm` |
 | ZK verifier | `zk_verifier.wasm` |
 
-**Important:** This backend does not currently contain trustworthy compiled
-binaries or previously approved checksums for these nine outputs. Therefore no
-real checksums can safely be committed yet. Do not copy the **token import**
-SHA-256 (`soroban_token_contract.wasm`) into the nine release-artifact entries:
-that hash belongs to a *different binary*. Do not create an empty or made-up lock;
-the gate will intentionally fail until auditors approve the baseline.
+**Candidate baseline pending independent approval:** The nine real SHA-256
+values proposed in `.wasm-checksums` were taken from GitHub Actions run
+[#44879682265](https://github.com/Peaostrel/acbu-backend/actions/runs/44879682265),
+artifact `candidate-wasm-sha256`. This run checked out immutable contract-source
+revision `3160312a7c9334447be81ebe17ca2f5e3fa83057`, used Rust 1.88.0,
+and completed `cargo build --locked --release --target wasm32-unknown-unknown`
+for all nine binaries. The manifest contains nine distinct checksums with the
+expected filenames and format.
+
+**Passing CI is not independent approval.** A maintainer or security reviewer
+must verify the pinned source and reproducibility of these compiled binaries
+before approving the manifest. Do not copy the **token import** SHA-256
+(`soroban_token_contract.wasm`) into this file: it belongs to a *different*
+binary. Regenerating checksums in CI may produce candidates for review but must
+never overwrite the approved lock.
 
 ## Establishing a real approved SHA-256 baseline
 
@@ -50,8 +59,9 @@ the gate will intentionally fail until auditors approve the baseline.
 2. Review the source commit, pinned dependencies, build toolchain, outputs and
    binary provenance. Independently reproduce the build where feasible and
    investigate any differences.
-3. Commit the **reviewed** `wasm-candidates.sha256` as `.wasm-checksums` in the
-   backend repository. The file must contain **exactly nine distinct entries**,
+3. Review and approve the **proposed** `.wasm-checksums` lock in the PR,
+   or regenerate it from independently reproduced binaries if they differ.
+   The file must contain **exactly nine distinct entries**,
    one per filename above, in standard `sha256sum` format:
 
    ```text
@@ -64,7 +74,7 @@ the gate will intentionally fail until auditors approve the baseline.
    rejects them. Lock changes require security review and should be paired
    with source-revision changes when upgrading a contract.
 4. Rerun the workflow and require a green **Verify nine pinned contract WASMs**
-   status before any dependent build or deployment.
+   status plus independent security approval before any dependent build or deployment.
 
 Local check with compiled artifacts:
 
