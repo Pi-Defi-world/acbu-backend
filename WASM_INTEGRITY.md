@@ -98,3 +98,25 @@ workflow. That repository's `deploy.yml` currently tolerates failure of
 verify the same approved artifact digests **at the point of actual on-chain
 submission**. A backend status check alone cannot prove that independently
 submitted on-chain bytecode matches reviewed artifacts.
+
+## Separate Soroban performance and budget guard
+
+WASM integrity checks are **not** a substitute for contract performance checks.
+The pre-existing `.github/workflows/soroban-contract-benchmarks.yml` and
+`scripts/ci/check-contract-budget.js` cover budget ceilings for contract
+binaries and invocations independently of the SHA-256 approval lock:
+
+- Maximum WASM binary size: 256 KiB (262,144 bytes)
+- Maximum CPU instructions: 100,000,000 per invocation
+- Maximum memory: 40 MiB (41,943,040 bytes)
+- Maximum storage read/write: 1 MiB (1,048,576 bytes)
+
+Local checks:
+
+```bash
+node scripts/ci/check-contract-budget.js
+MAX_WASM_SIZE_KB=300 MAX_CPU_INSTRUCTIONS=120000000 node scripts/ci/check-contract-budget.js --dir contracts
+```
+
+These checks must remain in place; passing the nine-hash integrity gate does
+not imply compliance with any of the limits above.
