@@ -29,7 +29,10 @@ The automated release workflow is defined in `.github/workflows/release.yml`. Ev
    - Package definitions (`package.json`, `pnpm-lock.yaml`)
    - Documentation and licenses (`README.md`, `CHANGELOG.md`)
 2. **Cryptographic Checksums**: `SHA256SUMS` attached to every GitHub Release.
-3. **OCI Container Image**: Built via Docker buildx and published to GitHub Container Registry (GHCR):
+3. **Software Bill of Materials (SBOM)**: CycloneDX and SPDX SBOM manifests generated with `syft` (or `trivy`) and attached to every GitHub Release, covering both the compiled application archive and the OCI container image. SBOMs are signed alongside the checksums so consumers can independently verify dependency provenance and monitor for newly disclosed CVEs.
+   - `acbu-backend-vX.Y.Z.cdx.json` (CycloneDX)
+   - `acbu-backend-vX.Y.Z.spdx.json` (SPDX)
+4. **OCI Container Image**: Built via Docker buildx and published to GitHub Container Registry (GHCR):
    - `ghcr.io/Pi-Defi-world/acbu-backend:vX.Y.Z`
    - `ghcr.io/Pi-Defi-world/acbu-backend:X.Y`
    - `ghcr.io/Pi-Defi-world/acbu-backend:latest`
@@ -73,7 +76,8 @@ git push upstream v1.1.0
 
 ### Step 4: Verify Automated Pipeline
 1. Navigate to **Actions** -> **Release & Artifact Publish**.
-2. Confirm the workflow builds the bundle, pushes the GHCR image, and publishes the GitHub Release with attached `.tar.gz` and `SHA256SUMS`.
+2. Confirm the workflow builds the bundle, pushes the GHCR image, and publishes the GitHub Release with attached `.tar.gz`, `SHA256SUMS`, and the CycloneDX and SPDX SBOM manifests.
+3. Verify the SBOM step succeeded and that the SBOM files are present on the release.
 
 ---
 

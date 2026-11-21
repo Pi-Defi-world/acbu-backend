@@ -109,6 +109,36 @@ jobs:
           sha256sum "${ARCHIVE_NAME}" > SHA256SUMS
           cd ..
 
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@e11c554f704a0b820cbf8c51673f6945e0731532 # v0.20.0
+
+      - name: Generate SBOM (CycloneDX & SPDX)
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          mkdir -p sbom
+          syft dir:. -o cyclonedx-json="sbom/acbu-backend-${TAG}.cdx.json"
+          syft dir:. -o spdx-json="sbom/acbu-backend-${TAG}.spdx.json"
+          cp sbom/* release-dist/
+          cd release-dist
+          sha256sum *.cdx.json *.spdx.json >> SHA256SUMS
+          cd ..
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign SBOM manifests (keyless)
+        run: |
+          cd release-dist
+          for f in *.cdx.json *.spdx.json; do
+            cosign sign-blob --yes \
+              --output-signature "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              "${f}"
+          done
+          cd ..
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+
       - name: Upload Release Archive Artifact
         uses: actions/upload-artifact@v7
         with:
@@ -217,3 +247,7 @@ jobs:
           files: |
             release-dist/*.tar.gz
             release-dist/SHA256SUMS
+            release-dist/*.cdx.json
+            release-dist/*.spdx.json
+            release-dist/*.sig
+            release-dist/*.pem
