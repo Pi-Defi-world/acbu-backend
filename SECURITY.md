@@ -29,6 +29,10 @@ We will acknowledge security reports as soon as practical, investigate privately
 
 Please allow reasonable time for triage and remediation before sharing details publicly.
 
+## Incident Response
+
+Formal incident post-mortems, indicators of compromise, and remediation evidence are documented in [docs/security/INCIDENT_RESPONSE_WAVE11.md](docs/security/INCIDENT_RESPONSE_WAVE11.md). Auditors and partners should refer to that document for the attack timeline, affected commits, purge verification hashes, and permanent guardrails.
+
 ## Key Custody
 
 User wallets are self-custodied. The API never returns private key material and
