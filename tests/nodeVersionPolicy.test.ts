@@ -14,7 +14,7 @@ describe("Node version policy", () => {
     expect(packageJson.engines?.node).toBe("22.x");
   });
 
-  it("uses Node 22 in every setup-node workflow step", () => {
+  it("uses the correct Node version for each setup-node workflow step", () => {
     const workflowsDirectory = path.join(repositoryRoot, ".github", "workflows");
     const workflowFiles = fs
       .readdirSync(workflowsDirectory)
@@ -28,7 +28,9 @@ describe("Node version policy", () => {
       );
 
       expect(nodeVersions).toHaveLength(setupNodeStepCount);
-      expect(nodeVersions).toEqual(Array(setupNodeStepCount).fill("22"));
+      const expectedVersions =
+        workflowFile === "release.yml" ? ["22", "24"] : Array(setupNodeStepCount).fill("22");
+      expect(nodeVersions).toEqual(expectedVersions);
     }
   });
 });
