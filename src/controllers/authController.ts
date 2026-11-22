@@ -72,7 +72,7 @@ function getRequestIp(req: AuthRequest): string {
     }
   ).connection;
 
-  return req.ip || req.socket?.remoteAddress || connection?.remoteAddress || "unknown";
+  return (req.ip) || req.socket?.remoteAddress || connection?.remoteAddress || "unknown";
 }
 
 /**
