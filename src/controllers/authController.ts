@@ -91,7 +91,8 @@ export async function postSignup(
       username: body.username.trim(),
       passcode: body.passcode,
     });
-    res.status(201).json(result);
+   
+   return res.status(201).json(result);
   } catch (e) {
     if (e instanceof z.ZodError) {
       const msg = e.errors.map((x) => x.message).join("; ");
