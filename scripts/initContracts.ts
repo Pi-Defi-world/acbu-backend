@@ -1,8 +1,12 @@
-import {
-  contractClient,
-  ContractClient,
-} from "../src/services/stellar/contractClient";
+import "dotenv/config";
+
+import { contractClient, ContractClient } from "../src/services/stellar/contractClient";
 import { xdr, Address } from "@stellar/stellar-sdk";
+import {
+  ORACLE_MIN_SIGNATURES,
+  meetsOracleQuorum,
+  parseOracleValidatorAddresses,
+} from "../src/config/oracleValidators";
 
 const ADMIN = "GDHO63RZEUNDRVF6WA7HD4D7PLNLUMSK5H74ONW3MEF3VKF4BZJ6GDML";
 const ORACLE = "CCJ6L5CVLRSLYVYWMEFSC3QZ5OHAB2DEVFV6GUWCAMF4NZIO7CYE66OQ";
@@ -25,55 +29,58 @@ async function initializeAll() {
       console.log("Oracle already initialized with admin:", ContractClient.fromScVal(adminResult));
     } catch (readError) {
       console.log("Initializing Oracle...");
-      const currencies = [
-      "NGN",
-      "ZAR",
-      "KES",
-      "EGP",
-      "GHS",
-      "RWF",
-      "XOF",
-      "MAD",
-      "TZS",
-      "UGX",
-    ];
-    const weights = [
-      { key: "EGP", value: 11 },
-      { key: "GHS", value: 9 },
-      { key: "KES", value: 12 },
-      { key: "MAD", value: 7 },
-      { key: "NGN", value: 18 },
-      { key: "RWF", value: 8 },
-      { key: "TZS", value: 6 },
-      { key: "UGX", value: 6 },
-      { key: "XOF", value: 8 },
-      { key: "ZAR", value: 15 },
-    ];
+      const validators = parseOracleValidatorAddresses(process.env.ORACLE_VALIDATOR_ADDRESSES);
+      const currencies = ["NGN", "ZAR", "KES", "EGP", "GHS", "RWF", "XOF", "MAD", "TZS", "UGX"];
+      const weights = [
+        { key: "EGP", value: 11 },
+        { key: "GHS", value: 9 },
+        { key: "KES", value: 12 },
+        { key: "MAD", value: 7 },
+        { key: "NGN", value: 18 },
+        { key: "RWF", value: 8 },
+        { key: "TZS", value: 6 },
+        { key: "UGX", value: 6 },
+        { key: "XOF", value: 8 },
+        { key: "ZAR", value: 15 },
+      ];
 
-    await contractClient.invokeContract({
-      contractId: ORACLE,
-      functionName: "initialize",
-      args: [
-        Address.fromString(ADMIN).toScVal(), // admin
-        xdr.ScVal.scvVec([Address.fromString(ADMIN).toScVal()]), // validators: Vec<Address>
-        xdr.ScVal.scvU32(1), // min_signatures
-        xdr.ScVal.scvVec(currencies.map((c) => xdr.ScVal.scvVec([xdr.ScVal.scvString(c)]))), // currencies: Vec<CurrencyCode>
-        xdr.ScVal.scvMap(
-          weights.map(
-            (w) =>
-              new xdr.ScMapEntry({
-                key: xdr.ScVal.scvVec([xdr.ScVal.scvString(w.key)]), // CurrencyCode
-                val: ContractClient.bigIntToI128(BigInt(w.value)),
-              }),
+      await contractClient.invokeContract({
+        contractId: ORACLE,
+        functionName: "initialize",
+        args: [
+          Address.fromString(ADMIN).toScVal(), // admin
+          xdr.ScVal.scvVec(validators.map((validator) => Address.fromString(validator).toScVal())),
+          xdr.ScVal.scvU32(ORACLE_MIN_SIGNATURES),
+          xdr.ScVal.scvVec(currencies.map((c) => xdr.ScVal.scvVec([xdr.ScVal.scvString(c)]))), // currencies: Vec<CurrencyCode>
+          xdr.ScVal.scvMap(
+            weights.map(
+              (w) =>
+                new xdr.ScMapEntry({
+                  key: xdr.ScVal.scvVec([xdr.ScVal.scvString(w.key)]), // CurrencyCode
+                  val: ContractClient.bigIntToI128(BigInt(w.value)),
+                }),
+            ),
           ),
-        ),
-      ],
-      sourceAccount,
-    });
-    console.log("Oracle initialized.");
+        ],
+        sourceAccount,
+      });
+      console.log("Oracle initialized.");
     }
-  } catch (e: any) {
-    console.log("Oracle init skipped or failed:", e.message);
+
+    const [validatorsResult, minSignaturesResult] = await Promise.all([
+      contractClient.readContract(ORACLE, "get_validators", []),
+      contractClient.readContract(ORACLE, "get_min_signatures", []),
+    ]);
+    const validators = ContractClient.fromScVal(validatorsResult);
+    const minSignatures = Number(ContractClient.fromScVal(minSignaturesResult));
+    if (!Array.isArray(validators) || !meetsOracleQuorum(validators, minSignatures)) {
+      throw new Error(
+        "Oracle contract quorum is below 3-of-5; update validator configuration before continuing",
+      );
+    }
+  } catch (e: unknown) {
+    console.log("Oracle init skipped or failed:", e instanceof Error ? e.message : e);
+    throw e;
   }
 
   // 2. Minting

@@ -1,0 +1,33 @@
+# Git / CI
+.git
+.gitignore
+.github
+
+# Editors / tooling
+.vscode
+.claude
+
+# Dependencies / build output
+node_modules
+.next
+out
+build
+*.tsbuildinfo
+next-env.d.ts
+.pnpm-store
+
+# Tests / reports (not part of the runtime image)
+tests
+e2e
+playwright-report
+test-results
+coverage
+
+# Env / secrets
+.env*
+!.env.example
+
+# Docker context
+Dockerfile*
+.dockerignore
+.docker
