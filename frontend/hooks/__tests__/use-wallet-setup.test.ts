@@ -11,7 +11,7 @@ const mockGetAddress = vi.fn();
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({
     userId: 'user-123',
-    stellarAddress: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7',
+    stellarAddress: 'TEST_PUBLIC_KEY',
     refreshStellarAddress: mockRefreshStellarAddress,
     logout: vi.fn(),
   }),
@@ -33,20 +33,20 @@ vi.mock('@stellar/stellar-sdk', () => ({
       }
       return {
         publicKey: () => secret.startsWith('S_DIFF')
-          ? 'GDIFFERENTADDRESS1234567890123456789012345678901234567890'
-          : 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7',
+          ? 'DIFFERENT_TEST_PUBLIC_KEY'
+          : 'TEST_PUBLIC_KEY',
         secret: () => secret,
       };
     }),
     random: vi.fn(() => ({
-      secret: () => 'SSECRET12345678901234567890123456789012345678901234567890',
-      publicKey: () => 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7',
+      secret: () => 'TEST_SECRET',
+      publicKey: () => 'TEST_PUBLIC_KEY',
     })),
   },
 }));
 
 vi.mock('@/lib/api/user', () => ({
-  putWalletAddress: vi.fn().mockResolvedValue({ ok: true, stellar_address: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7' }),
+  putWalletAddress: vi.fn().mockResolvedValue({ ok: true, stellar_address: 'TEST_PUBLIC_KEY' }),
   postWalletConfirm: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
@@ -67,13 +67,13 @@ describe('useWalletSetup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(passcodeManager.getPasscode).mockReturnValue('123456');
-    vi.mocked(userApi.putWalletAddress).mockResolvedValue({ ok: true, stellar_address: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7' });
+    vi.mocked(userApi.putWalletAddress).mockResolvedValue({ ok: true, stellar_address: 'TEST_PUBLIC_KEY' });
     vi.mocked(userApi.postWalletConfirm).mockResolvedValue({ ok: true });
   });
 
   it('generateWallet creates a new keypair and syncs to backend', async () => {
     const validSecret = 'S_MATCH_SECRET';
-    const expectedPubKey = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7';
+    const expectedPubKey = 'TEST_PUBLIC_KEY';
 
     const { result } = renderHook(() => useWalletSetup());
 
@@ -91,7 +91,7 @@ describe('useWalletSetup', () => {
 
   it('importWallet validates seed and syncs to backend', async () => {
     const secret = 'S_MATCH_SECRET';
-    const pubKey = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7';
+    const pubKey = 'TEST_PUBLIC_KEY';
 
     const { result } = renderHook(() => useWalletSetup());
 
@@ -112,7 +112,7 @@ describe('useWalletSetup', () => {
   });
 
   it('connectExternalWallet opens kit modal and updates wallet address', async () => {
-    const externalPubKey = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7';
+    const externalPubKey = 'TEST_PUBLIC_KEY';
     mockOpenModal.mockImplementationOnce(async ({ onWalletSelected }: { onWalletSelected: (opt: { id: string }) => Promise<void> }) => {
       await onWalletSelected({ id: 'freighter' });
     });
@@ -157,7 +157,7 @@ describe('useWalletSetup', () => {
 
     expect(signer).toEqual({
       userSecret: 'S_MATCH_SECRET',
-      address: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7',
+      address: 'TEST_PUBLIC_KEY',
     });
   });
 

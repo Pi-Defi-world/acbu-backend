@@ -43,17 +43,9 @@ CREATE TABLE IF NOT EXISTS "refresh_tokens" (
     CONSTRAINT "refresh_tokens_pkey" PRIMARY KEY ("id")
 );
 
--- Unique constraint on token_hash for O(1) lookup during refresh
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'refresh_tokens_token_hash_key'
-    ) THEN
-        ALTER TABLE "refresh_tokens"
-            ADD CONSTRAINT "refresh_tokens_token_hash_key" UNIQUE ("token_hash");
-    END IF;
-END$$;
+-- Unique index on token_hash for O(1) lookup during refresh
+CREATE UNIQUE INDEX IF NOT EXISTS "refresh_tokens_token_hash_key"
+    ON "refresh_tokens"("token_hash");
 
 -- Foreign key to users
 DO $$
