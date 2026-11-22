@@ -13,6 +13,7 @@
 *.prisma text eol=lf
 
 # Binary files
+*.wasm binary
 *.png binary
 *.jpg binary
 *.jpeg binary

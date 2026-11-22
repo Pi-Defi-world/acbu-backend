@@ -1,0 +1,60 @@
+{
+  "not_found": {
+    "label": "خطأ 404",
+    "title": "الصفحة غير موجودة",
+    "description": "الصفحة التي تبحث عنها غير موجودة أو ربما تم نقلها.",
+    "cta": "الذهاب إلى لوحة التحكم"
+  },
+  "home": {
+    "acbu": "ACBU",
+    "wallet_balance": "رصيد المحفظة",
+    "fiat": "عملة ورقية",
+    "simulated_usd_equivalent": "محاكاة · ما يعادل بالدولار",
+    "add_demo_funds": "إضافة أموال تجريبية",
+    "recent_activity": "النشاط الأخير",
+    "view_all": "عرض الكل",
+    "no_recent_activity": "لا يوجد نشاط حديث",
+    "send_money": "إرسال أموال",
+    "some_currencies_missing_rate": "بعض العملات لا تحتوي على سعر صرف",
+    "usd": "USD",
+    "approx_usd": "≈ USD",
+    "transaction_count": "{count, plural, zero {# معاملات} one {معاملة واحدة} two {معاملتان} few {# معاملات} many {# معاملة} other {# معاملة}}",
+    "session_count": "{count, plural, zero {# جلسات نشطة} one {جلسة نشطة واحدة} two {جلستان نشطتان} few {# جلسات نشطة} many {# جلسة نشطة} other {# جلسة نشطة}}",
+    "today": "اليوم",
+    "yesterday": "أمس",
+    "tx_type": {
+      "mint": "سك",
+      "burn": "حرق",
+      "transfer": "تحويل"
+    },
+    "status": {
+      "pending": "قيد الانتظار",
+      "completed": "مكتمل",
+      "failed": "فشل"
+    }
+  },
+  "features": {
+    "send": {
+      "title": "إرسال",
+      "description": "تحويل الأموال"
+    },
+    "mint": {
+      "title": "سك",
+      "description": "إنشاء ACBU"
+    },
+    "simulated_bank": {
+      "title": "بنك محاكاة",
+      "description": "عملة ورقية تجريبية"
+    },
+    "rates": {
+      "title": "الأسعار",
+      "description": "أسعار السوق"
+    }
+  },
+  "navigation": {
+    "unsavedChangesTitle": "تغييرات غير محفوظة",
+    "unsavedChangesDescription": "لديك تغييرات غير محفوظة. هل أنت متأكد أنك تريد المغادرة؟",
+    "stay": "البقاء",
+    "leave": "المغادرة"
+  }
+}

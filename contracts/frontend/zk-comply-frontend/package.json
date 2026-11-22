@@ -1,0 +1,31 @@
+{
+  "name": "zk-comply-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@aztec/bb.js": "0.87.0",
+    "@noir-lang/noir_js": "1.0.0-beta.9",
+    "@noir-lang/noir_wasm": "1.0.0-beta.9",
+    "@noir-lang/noirc_abi": "1.0.0-beta.9",
+    "@stellar/stellar-sdk": "^13.0.0",
+    "@tailwindcss/vite": "^4.3.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tailwindcss": "^4.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "typescript": "~5.8.0",
+    "vite": "^6.2.0",
+    "vite-plugin-top-level-await": "^1.4.4",
+    "vite-plugin-wasm": "^3.4.1"
+  }
+}
