@@ -240,6 +240,57 @@ const envSchema = z.object({
   S3_BUCKET: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+  FLUTTERWAVE_PUBLIC_KEY: z.string().optional(),
+  FLUTTERWAVE_SECRET_KEY: z.string().optional(),
+  FLUTTERWAVE_ENCRYPTION_KEY: z.string().optional(),
+  FLUTTERWAVE_WEBHOOK_SECRET: z.string().optional(),
+  FLUTTERWAVE_BASE_URL: z.string().optional(),
+  PAYSTACK_SECRET_KEY: z.string().optional(),
+  PAYSTACK_BASE_URL: z.string().optional(),
+  BILLS_WEBHOOK_SECRET: z.string().optional(),
+  MTN_MOMO_SUBSCRIPTION_KEY: z.string().optional(),
+  MTN_MOMO_API_USER_ID: z.string().optional(),
+  MTN_MOMO_API_KEY: z.string().optional(),
+  MTN_MOMO_BASE_URL: z.string().optional(),
+  MTN_MOMO_TARGET_ENVIRONMENT: z.string().optional(),
+  AWS_REGION: z.string().optional(),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  AWS_SES_REGION: z.string().optional(),
+  S3_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  S3_SCAN_WEBHOOK_SECRET: z.string().optional(),
+  STELLAR_MIN_BALANCE: z.string().optional(),
+  USDC_ASSET_CODE_MAINNET: z.string().optional(),
+  USDC_XLM_SLIPPAGE_BPS: z.coerce.number().int().nonnegative().default(50),
+  CONTRACT_ORACLE: z.string().optional(),
+  CONTRACT_RESERVE_TRACKER: z.string().optional(),
+  CONTRACT_MINTING: z.string().optional(),
+  CONTRACT_BURNING: z.string().optional(),
+  CONTRACT_SAVINGS_VAULT: z.string().optional(),
+  CONTRACT_LENDING_POOL: z.string().optional(),
+  CONTRACT_ESCROW: z.string().optional(),
+  CURRENCY_CENTRAL_BANK_URLS: z.string().optional(),
+  NOTIFICATION_EMAIL_PROVIDER: z.string().default("log"),
+  NOTIFICATION_FROM_EMAIL: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: z.string().default("false"),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_MAX_CONNECTIONS: z.coerce.number().int().positive().default(5),
+  SMTP_MAX_MESSAGES: z.coerce.number().int().positive().default(100),
+  SENDGRID_API_KEY: z.string().optional(),
+  NOTIFICATION_SMS_PROVIDER: z.string().default("log"),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+  AFRICAS_TALKING_API_KEY: z.string().optional(),
+  AFRICAS_TALKING_USERNAME: z.string().optional(),
+  WEBHOOK_URL: z.string().optional(),
+  WEBHOOK_SECRET: z.string().optional(),
+  AUTH_BRUTE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  AUTH_BRUTE_LOCKOUT_MS: z.coerce.number().int().positive().default(900000),
+  CAPTCHA_SECRET: z.string().optional(),
 });
 
 // W10-SEC-014: fail closed on the webhook signature bypass.
@@ -267,6 +318,22 @@ if (!parsed.success) {
 
 const env = parsed.data;
 
+const PLACEHOLDER_KEY_PATTERNS = [
+  /^\s*$/,
+  /change.?me/i,
+  /your[-_].*key/i,
+  /example/i,
+  /placeholder/i,
+  /^[A-Z][a-z]+ [A-Z]?[a-z]+ (key|secret|id)$/i,
+  /^MTN MoMo /i,
+];
+
+export function isPlaceholderKey(value: string | null | undefined): boolean {
+  if (value == null || value.trim() === "") return true;
+  const trimmed = value.trim();
+  return PLACEHOLDER_KEY_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 // W10-SEC-014: fail closed if the bypass is enabled outside an explicit test
 // profile. This check is independent of NODE_ENV and of the runtime production
 // assertion in the webhook controller, so a misconfigured or copied dev env
@@ -293,8 +360,7 @@ const productionSignals = [
   process.env.NODE_ENV,
   process.env.APP_ENV,
   process.env.ENVIRONMENT,
-]
-  .namedType();
+];
 
 for (const signal of productionSignals) {
   if (typeof signal === "string" && signal.trim().toLowerCase() === "production") {
@@ -310,14 +376,268 @@ for (const signal of productionSignals) {
 
 export const config = {
   env: env.NODE_ENV,
+  nodeEnv: env.NODE_ENV,
+  port: env.PORT,
+  apiVersion: env.API_VERSION,
+  databaseUrl: env.DATABASE_URL,
+  databaseUrlReplica: env.DATABASE_URL_REPLICA,
+  prismaAccelerateUrl: env.PRISMA_ACCELERATE_URL,
+  mongodbUri: env.MONGODB_URI,
+  rabbitmqUrl: env.RABBITMQ_URL,
+  jwtSecret: env.JWT_SECRET,
+  challengeTokenSecret: env.CHALLENGE_TOKEN_SECRET || env.JWT_SECRET,
+  jwtExpiresIn: env.JWT_EXPIRES_IN,
+  jwtClockToleranceSeconds: env.JWT_CLOCK_TOLERANCE_SECONDS,
+  apiKeySalt: env.API_KEY_SALT,
+  adminApiKey: env.ADMIN_API_KEY,
+  adminApiKeys: (() => {
+    const keys: Array<{ id: string; key: string }> = [];
+    if (env.ADMIN_API_KEYS) {
+      env.ADMIN_API_KEYS.split(",")
+        .map((key) => key.trim())
+        .filter(Boolean)
+        .forEach((entry, index) => {
+          if (entry.includes(":")) {
+            const [id, key] = entry.split(":", 2);
+            if (key?.trim()) keys.push({ id: id.trim(), key: key.trim() });
+          } else {
+            keys.push({ id: `admin_${index + 1}`, key: entry });
+          }
+        });
+    }
+    if (env.ADMIN_API_KEY?.trim() && !keys.some((item) => item.key === env.ADMIN_API_KEY?.trim())) {
+      keys.push({ id: "default_admin", key: env.ADMIN_API_KEY.trim() });
+    }
+    return keys;
+  })(),
+  rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
+  rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+  authRateLimitWindowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+  authRateLimitMaxRequests: env.AUTH_RATE_LIMIT_MAX_REQUESTS,
+  adminRateLimitWindowMs: env.ADMIN_RATE_LIMIT_WINDOW_MS,
+  adminRateLimitMaxRequests: env.ADMIN_RATE_LIMIT_MAX_REQUESTS,
+  maxSigninAttempts: env.MAX_SIGNIN_ATTEMPTS,
+  signinLockoutDurationMs: env.SIGNIN_LOCKOUT_DURATION_MS,
+  rateLimitFallbackMaxRequests: env.RATE_LIMIT_FALLBACK_MAX_REQUESTS,
+  rateLimitCircuitBreakerThreshold: env.RATE_LIMIT_CIRCUIT_BREAKER_THRESHOLD,
+  rateLimitCircuitBreakerCooldownMs: env.RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN_MS,
   isTest,
   isProduction: profile === "production",
+  redis: {
+    url: env.REDIS_URL?.trim() || undefined,
+    sentinels: (() => {
+      const raw = env.REDIS_SENTINELS || "";
+      if (!raw) return [];
+      return raw
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const [host, port] = entry.split(":");
+          return { host, port: Number.parseInt(port || "26379", 10) };
+        });
+    })(),
+    sentinelName: env.REDIS_SENTINEL_NAME,
+    password: env.REDIS_PASSWORD,
+    maxRetriesPerRequest: env.REDIS_MAX_RETRIES_PER_REQUEST,
+    readonlyRetryAttempts: env.REDIS_READONLY_RETRY_ATTEMPTS,
+    readonlyRetryDelayMs: env.REDIS_READONLY_RETRY_DELAY_MS,
+  },
+  logLevel: env.LOG_LEVEL,
+  logConsoleLevel:
+    env.LOG_LEVEL_CONSOLE ?? (env.NODE_ENV === "production" ? "info" : env.LOG_LEVEL),
+  logFileLevel:
+    env.LOG_LEVEL_FILE ?? (env.NODE_ENV === "production" ? "info" : env.LOG_LEVEL),
+  logFile: env.LOG_FILE,
+  businessTimeZone: env.BUSINESS_TIMEZONE,
+  flutterwave: {
+    publicKey: env.FLUTTERWAVE_PUBLIC_KEY || "",
+    secretKey: env.FLUTTERWAVE_SECRET_KEY || "",
+    encryptionKey: env.FLUTTERWAVE_ENCRYPTION_KEY || "",
+    webhookSecret: env.FLUTTERWAVE_WEBHOOK_SECRET || "",
+    baseUrl: env.FLUTTERWAVE_BASE_URL,
+  },
+  paystack: {
+    secretKey: env.PAYSTACK_SECRET_KEY || "",
+    baseUrl: env.PAYSTACK_BASE_URL,
+  },
+  bills: {
+    webhookSecret: env.BILLS_WEBHOOK_SECRET || "",
+  },
+  mtnMomo: {
+    subscriptionKey: env.MTN_MOMO_SUBSCRIPTION_KEY || "",
+    apiUserId: env.MTN_MOMO_API_USER_ID || "",
+    apiKey: env.MTN_MOMO_API_KEY || "",
+    baseUrl:
+      env.MTN_MOMO_BASE_URL ||
+      (env.MTN_MOMO_TARGET_ENVIRONMENT === "production"
+        ? "https://momodeveloper.mtn.com"
+        : "https://sandbox.momodeveloper.mtn.com"),
+    targetEnvironment: env.MTN_MOMO_TARGET_ENVIRONMENT,
+  },
+  s3: {
+    region: env.AWS_REGION || env.S3_REGION || "us-east-1",
+    bucket: env.S3_BUCKET?.trim() || undefined,
+    endpoint: env.S3_ENDPOINT,
+    accessKeyId: env.AWS_ACCESS_KEY_ID || env.S3_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY || env.S3_SECRET_ACCESS_KEY,
+    uploadUrlTtlSeconds: env.S3_UPLOAD_URL_TTL_SECONDS,
+    downloadUrlTtlSeconds: env.S3_DOWNLOAD_URL_TTL_SECONDS,
+    scanWebhookSecret: env.S3_SCAN_WEBHOOK_SECRET,
+  },
+  stellar: {
+    network: env.STELLAR_NETWORK,
+    horizonUrl: env.STELLAR_HORIZON_URL,
+    treasuryAccountId: env.STELLAR_TREASURY_ACCOUNT_ID,
+    sorobanRpcUrl: env.STELLAR_SOROBAN_RPC_URL ||
+      (env.STELLAR_NETWORK === "mainnet"
+        ? "https://soroban-mainnet.stellar.org"
+        : "https://soroban-testnet.stellar.org"),
+    secretKey: env.STELLAR_SECRET_KEY,
+    networkPassphrase:
+      env.STELLAR_NETWORK === "mainnet"
+        ? "Public Global Stellar Network ; September 2015"
+        : "Test SDF Network ; September 2015",
+    nativeAssetCode: env.STELLAR_NATIVE_ASSET_CODE?.toUpperCase() ||
+      ((env.TESTNET_CUSTODIAL_BOOTSTRAP ?? "xlm").toLowerCase().includes("pi") ? "PI" : "XLM"),
+    activationStrategy: env.WALLET_ACTIVATION_STRATEGY,
+    bootstrapProfile: env.TESTNET_CUSTODIAL_BOOTSTRAP,
+    activationAmount: env.WALLET_ACTIVATION_AMOUNT ||
+      env.WALLET_ACTIVATION_NATIVE ||
+      env.WALLET_ACTIVATION_XLM ||
+      env.STELLAR_MIN_BALANCE ||
+      "1",
+    minBalanceXlm: env.STELLAR_MIN_BALANCE ? Number.parseFloat(env.STELLAR_MIN_BALANCE) : 1,
+    baseFeeStroops: env.STELLAR_BASE_FEE_STROOPS,
+    useDynamicFees: env.STELLAR_USE_DYNAMIC_FEES === "true",
+    sorobanMaxFeeStroops: env.STELLAR_SOROBAN_MAX_FEE_STROOPS,
+    sorobanMinFeeStroops: env.STELLAR_SOROBAN_MIN_FEE_STROOPS,
+    feeSurgeBufferBps: env.STELLAR_FEE_SURGE_BUFFER_BPS,
+    maxPaymentFeeStroops: env.STELLAR_MAX_PAYMENT_FEE_STROOPS,
+    usdcIssuerTestnet: env.USDC_ISSUER_TESTNET,
+    usdcIssuerMainnet: env.USDC_ISSUER_MAINNET,
+    usdcAssetCodeTestnet: env.USDC_ASSET_CODE_TESTNET,
+    usdcAssetCodeMainnet: env.USDC_ASSET_CODE_MAINNET,
+    usdcXlmSlippageBps: env.USDC_XLM_SLIPPAGE_BPS,
+  },
+  bulkTransfer: {
+    chunkSize: env.BULK_TRANSFER_CHUNK_SIZE,
+    maxFileSizeBytes: env.BULK_TRANSFER_MAX_FILE_SIZE_BYTES,
+  },
+  contracts: {
+    oracle: env.CONTRACT_ORACLE || "",
+    reserveTracker: env.CONTRACT_RESERVE_TRACKER || "",
+    minting: env.CONTRACT_MINTING || "",
+    burning: env.CONTRACT_BURNING || "",
+    savingsVault: env.CONTRACT_SAVINGS_VAULT || "",
+    lendingPool: env.CONTRACT_LENDING_POOL || "",
+    escrow: env.CONTRACT_ESCROW || "",
+  },
+  oracle: {
+    updateIntervalHours: env.ORACLE_UPDATE_INTERVAL_HOURS,
+    emergencyThreshold: env.ORACLE_EMERGENCY_THRESHOLD,
+    maxDeviationPerUpdate: env.ORACLE_MAX_DEVIATION_PER_UPDATE,
+    circuitBreakerThreshold: env.ORACLE_CIRCUIT_BREAKER_THRESHOLD,
+    forex: {
+      baseUrl: env.EXCHANGERATE_API_BASE_URL,
+      apiKey: env.EXCHANGERATE_API_KEY,
+    },
+    centralBankUrls: (() => {
+      const raw = env.CURRENCY_CENTRAL_BANK_URLS;
+      if (raw) {
+        try {
+          return JSON.parse(raw) as Record<string, string>;
+        } catch {
+          return {};
+        }
+      }
+      return {};
+    })(),
+  },
+  reserve: {
+    minRatio: env.RESERVE_MIN_RATIO,
+    targetRatio: env.RESERVE_TARGET_RATIO,
+    alertThreshold: env.RESERVE_ALERT_THRESHOLD,
+    driftThresholdPct: env.RESERVE_DRIFT_THRESHOLD_PCT,
+  },
+  notification: {
+    emailProvider: env.NOTIFICATION_EMAIL_PROVIDER,
+    emailFrom: env.NOTIFICATION_FROM_EMAIL,
+    smtp: {
+      host: env.SMTP_HOST,
+      port: env.SMTP_PORT,
+      secure: env.SMTP_SECURE === "true",
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS,
+      maxConnections: env.SMTP_MAX_CONNECTIONS,
+      maxMessages: env.SMTP_MAX_MESSAGES,
+    },
+    sendgridApiKey: env.SENDGRID_API_KEY,
+    sesRegion: env.AWS_REGION || env.AWS_SES_REGION || "us-east-1",
+    sesAccessKeyId: env.AWS_ACCESS_KEY_ID,
+    sesSecretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+    smsProvider: env.NOTIFICATION_SMS_PROVIDER,
+    alertEmail: env.NOTIFICATION_ALERT_EMAIL,
+    twilioAccountSid: env.TWILIO_ACCOUNT_SID,
+    twilioAuthToken: env.TWILIO_AUTH_TOKEN,
+    twilioFromNumber: env.TWILIO_FROM_NUMBER,
+    africasTalkingApiKey: env.AFRICAS_TALKING_API_KEY,
+    africasTalkingUsername: env.AFRICAS_TALKING_USERNAME,
+  },
   webhook: {
+    url: env.WEBHOOK_URL,
+    secret: env.WEBHOOK_SECRET,
     signatureBypass: webhookBypassEnabled,
     timestampToleranceMs: env.WEBHOOK_TIMESTAMP_TOLERANCE_MS,
   },
-  corsOrigins: parseCorsOrigins(env.CORS_ORIGIN),
-  // ... remaining config consumers are unchanged and read from `env` as before
+  auth: {
+    bruteMaxAttempts: env.AUTH_BRUTE_MAX_ATTEMPTS,
+    bruteLockoutMs: env.AUTH_BRUTE_LOCKOUT_MS,
+    captchaSecret: env.CAPTCHA_SECRET,
+  },
+  jurisdiction: {
+    licensedJurisdictions: [],
+  },
+  mint: {
+    confirmationSecret: env.WEBHOOK_SECRET,
+  },
+  travelRule: {
+    thresholdAcbu: 100,
+  },
+  withdrawalSingleCurrencyDailyUsd:
+    Number(process.env.LIMIT_RETAIL_WITHDRAWAL_SINGLE_CURRENCY_DAILY_USD || 10000),
+  withdrawalSingleCurrencyMonthlyUsd:
+    Number(process.env.LIMIT_RETAIL_WITHDRAWAL_SINGLE_CURRENCY_MONTHLY_USD || 80000),
+  openai: {
+    apiKey: env.OPENAI_API_KEY || "",
+    orgMonthlyBudgetUsd: env.OPENAI_ORG_MONTHLY_BUDGET_USD,
+    maxTokensPerRequest: env.OPENAI_MAX_TOKENS_PER_REQUEST,
+    failOpenEnabled: env.OPENAI_FAIL_OPEN_ENABLED === "true",
+    failOpenTimeoutMs: env.OPENAI_FAIL_OPEN_TIMEOUT_MS,
+    failOpenMaxRetries: env.OPENAI_FAIL_OPEN_MAX_RETRIES,
+    failOpenRetryBaseMs: env.OPENAI_FAIL_OPEN_RETRY_BASE_MS,
+  },
+  piiEncryptionKey: env.PII_ENCRYPTION_KEY,
+  database: {
+    connectMaxRetries: env.DB_CONNECT_MAX_RETRIES,
+    connectBaseBackoffMs: env.DB_CONNECT_BASE_BACKOFF_MS,
+    connectMaxBackoffMs: env.DB_CONNECT_MAX_BACKOFF_MS,
+  },
+  walBackup: {
+    configured: env.PG_WAL_BACKUP_CONFIGURED === "true",
+    provider: env.PG_WAL_BACKUP_PROVIDER || "",
+  },
+  prismaMigrationHistory: {
+    replicated: env.PRISMA_MIGRATION_HISTORY_REPLICATED === "true",
+  },
+  corsOrigins: parseCorsOrigins(env.CORS_ORIGIN, env.NODE_ENV),
+  corsOrigin: parseCorsOrigins(env.CORS_ORIGIN, env.NODE_ENV),
+  cdnUrl: env.CDN_URL ?? null,
+  memory: {
+    leakThresholdPct: env.MEMORY_LEAK_THRESHOLD_PCT,
+    checkIntervalMs: env.MEMORY_CHECK_INTERVAL_MS,
+    heapDumpDir: env.HEAP_DUMP_DIR,
+  },
 };
 
 export type EnvType = typeof env;

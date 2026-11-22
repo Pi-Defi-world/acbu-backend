@@ -382,4 +382,56 @@ class SharedRateLimitStore implements Store {
   }
 }
 
-/* … truncated 6814 chars — edit only what you need near the top … */
+export function createMongoRateLimitStore(namespace: string): Store {
+  return new MongoRateLimitStore(namespace);
+}
+
+export function createRateLimiter(
+  windowMs: number,
+  maxRequests: number,
+  context: LimiterContext = "ip",
+) {
+  return rateLimit({
+    windowMs,
+    limit: maxRequests,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      if (context === "api_key") {
+        const apiKey = (req.headers["x-api-key"] as string | undefined)?.trim();
+        if (apiKey) return `api_key:${apiKey}`;
+      }
+      return req.ip || req.socket.remoteAddress || "unknown";
+    },
+  });
+}
+
+export const apiKeyRateLimiter = createRateLimiter(
+  config.rateLimitWindowMs,
+  config.rateLimitMaxRequests,
+  "api_key",
+);
+
+export const standardRateLimiter = createRateLimiter(
+  config.rateLimitWindowMs,
+  config.rateLimitMaxRequests,
+  "ip",
+);
+
+export const authRateLimiter = createRateLimiter(
+  config.authRateLimitWindowMs,
+  config.authRateLimitMaxRequests,
+  "ip",
+);
+
+export const adminRateLimiter = createRateLimiter(
+  config.adminRateLimitWindowMs,
+  config.adminRateLimitMaxRequests,
+  "ip",
+);
+
+export const twoFaRateLimiter = createRateLimiter(
+  15 * 60 * 1000,
+  5,
+  "ip",
+);

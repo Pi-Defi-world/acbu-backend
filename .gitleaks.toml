@@ -14,6 +14,21 @@ paths = [
   '''\.env\.test$''',
   '''docs/''',
   '''.*\.md$''',
+  '''^\.github/workflows/env-contract-validation\.yml$''',
+  '''^contracts/frontend/zk-comply-frontend/src/lib/api\.auth-headers\.contract\.test\.ts$''',
+  '''^contracts/scripts/init_temp\.sh$''',
+  '''^contracts/scripts/verify_deployment\.sh$''',
+  '''^scripts/initContracts\.ts$''',
+  '''^src/services/stellar/client\.test\.ts$''',
+  '''^frontend/hooks/__tests__/use-wallet-setup\.test\.ts$''',
+  '''^tests/downloadGateScanStatus\.test\.ts$''',
+  '''^tests/env\.test\.ts$''',
+  '''^tests/errorHandler\.sanitize\.test\.ts$''',
+  '''^tests/limits\.test\.ts$''',
+  '''^tests/logger\.duplicate-imports\.test\.ts$''',
+  '''^tests/swapRace\.test\.ts$''',
+  '''^tests/usdcConversionReserveLedger\.test\.ts$''',
+  '''^tests/usdcConvertRetry\.test\.ts$''',
 ]
 # Commit-scoped allowlist for test-fixture false positives.
 # These are dummy/placeholder values in unit tests and CI env blocks.
@@ -33,6 +48,9 @@ commits = [
   "3460f6942ece0eb01b8ea47846de722082d979e7",
   "d50f1e8889f06206f2dd613089cb79d23fedd00a",
   "63bfe18d8e0567abcd72d542641723afd79b056c",
+  "db1c95b1f99b6569d897efc331b223e101ba709f",
+  "e839e7f06abc298308b9d01155cfa8e1828ef6dc",
+  "ec80e04ba46539c23fa2c47c33d58610b1c1fec0",
 ]
 
 # Intentionally do NOT allowlist .env.local — it must not be committed.

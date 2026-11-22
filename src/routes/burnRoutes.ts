@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { burnacbu } from "../controllers/burnController";
+import { burnAcbu } from "../controllers/burnController";
 import { validateApiKey } from "../middleware/auth";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";
 
