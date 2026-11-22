@@ -31,4 +31,4 @@ jobs:
           gitleaks version
 
       - name: Run gitleaks
-        run: gitleaks detect --verbose --redact
+        run: gitleaks detect --source . --config .gitleaks.toml --verbose --redact

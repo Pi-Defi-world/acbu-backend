@@ -44,6 +44,36 @@ Both jobs are configured as **required status checks** so PRs are blocked on
 critical findings. Shared workflow templates live in `ci/workflows/` and can be
 reused across the platform's repositories (see `ci/workflows/README.md`).
 
+### Scan scope and rule profiles
+
+Gitleaks scans the repository using `.gitleaks.toml`, extending its default
+rules with Stellar secret-seed, Soroban key-material, frontend public-env,
+API-credential, and JWT checks. Stellar public keys (`G...`) are not treated as
+secrets by Gitleaks. Its allowlist is limited to dependency/build output and
+lockfiles; do not allowlist whole documentation or source/test directories.
+
+Semgrep scans the repository with `.semgrep.yml`, the OWASP Top Ten rules, and
+the security-audit rules. The existing backend rules remain repository-wide.
+Additional rules are scoped to `frontend/` (and the current `acbu-frontend/`
+workspace) for TypeScript/React risks and `contracts/` for Rust/Soroban risks.
+The workflow also runs `p/typescript` and `p/react` only against frontend paths,
+and `p/rust` only against `contracts/`. Dependency directories, Rust targets,
+build output, Next.js output, and generated files are excluded.
+The single registry rule `yaml.github-actions.security.gha-curl-pipe-shell`
+is excluded because its Bash parser cannot parse GitHub Actions expressions;
+other workflow checks, including shell-injection rules, remain enabled.
+
+When adding a rule, keep it under the relevant subtree profile and add a focused
+canary test for the behavior it detects. If a finding is a confirmed false
+positive, prefer a narrow rule-level exception with a comment explaining the
+specific fixture/value; never add a blanket source, test, or documentation
+allowlist. Run the scanners locally with:
+
+```bash
+gitleaks detect --source . --config .gitleaks.toml --verbose --redact
+semgrep scan --config .semgrep.yml --config p/owasp-top-ten --config p/security-audit --error --severity ERROR .
+```
+
 ## Dependency Vulnerability Scanning
 
 This repository gates every PR on dependency vulnerabilities using checks that

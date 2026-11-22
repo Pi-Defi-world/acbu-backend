@@ -59,16 +59,24 @@ jobs:
 
       - name: Resolve Release Tag & Version
         id: version
+        env:
+          RELEASE_TAG_INPUT: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          RAW_TAG="$RELEASE_TAG_INPUT"
+          if [[ ! "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([-.+][A-Za-z0-9.-]+)?$ ]]; then
+            echo "Invalid release tag: expected a semantic version tag." >&2
+            exit 1
+          fi
           # Strip leading 'v' if present for clean semver
           SEMVER="${RAW_TAG#v}"
           echo "tag=${RAW_TAG}" >> "$GITHUB_OUTPUT"
           echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
 
       - name: Package Release Tarball
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
+          TAG="$RELEASE_TAG"
           ARCHIVE_NAME="acbu-backend-${TAG}.tar.gz"
           mkdir -p release-dist
           tar -czf "release-dist/${ARCHIVE_NAME}" \
@@ -103,8 +111,14 @@ jobs:
 
       - name: Resolve Version Strings
         id: meta
+        env:
+          RELEASE_TAG_INPUT: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          RAW_TAG="$RELEASE_TAG_INPUT"
+          if [[ ! "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([-.+][A-Za-z0-9.-]+)?$ ]]; then
+            echo "Invalid release tag: expected a semantic version tag." >&2
+            exit 1
+          fi
           SEMVER="${RAW_TAG#v}"
           MAJOR=$(echo "$SEMVER" | cut -d. -f1)
           MINOR=$(echo "$SEMVER" | cut -d. -f2)
@@ -165,8 +179,15 @@ jobs:
 
       - name: Extract Release Notes from CHANGELOG
         id: notes
+        env:
+          RELEASE_TAG_INPUT: ${{ github.event.inputs.tag || github.ref_name }}
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
         run: |
-          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          RAW_TAG="$RELEASE_TAG_INPUT"
+          if [[ ! "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([-.+][A-Za-z0-9.-]+)?$ ]]; then
+            echo "Invalid release tag: expected a semantic version tag." >&2
+            exit 1
+          fi
           VERSION="${RAW_TAG#v}"
 
           # Extract section from CHANGELOG.md matching version if present
@@ -177,7 +198,7 @@ jobs:
           else
             echo "Release ${RAW_TAG} (${VERSION})" > RELEASE_NOTES.md
             echo "" >> RELEASE_NOTES.md
-            echo "Automated reproducible production release for commit \`${{ github.sha }}\`." >> RELEASE_NOTES.md
+            echo "Automated reproducible production release for commit \`${RELEASE_COMMIT_SHA}\`." >> RELEASE_NOTES.md
           fi
 
       - name: Publish GitHub Release

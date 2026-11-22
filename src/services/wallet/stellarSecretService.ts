@@ -36,7 +36,9 @@ export async function decryptUserStellarSecret(
 
   const salt = WALLET_ENC_SALT_PREFIX + userId;
   const key = crypto.scryptSync(passcode, salt, WALLET_ENC_KEYLEN);
-  const decipher = crypto.createDecipheriv(WALLET_ENC_ALGO, key, iv);
+  const decipher = crypto.createDecipheriv(WALLET_ENC_ALGO, key, iv, {
+    authTagLength: WALLET_ENC_AUTH_TAG_LEN,
+  });
   decipher.setAuthTag(authTag);
 
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
