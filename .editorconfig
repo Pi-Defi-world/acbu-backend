@@ -22,3 +22,7 @@ indent_size = 2
 
 [*.{ts,js,tsx,jsx}]
 indent_size = 2
+
+[*.rs]
+indent_style = space
+indent_size = 4
