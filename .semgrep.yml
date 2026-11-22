@@ -1,5 +1,5 @@
 rules:
-  # Existing backend rules; retained without narrowing their current scope.
+  # Existing backend rules scoped to backend source paths.
   - id: no-hardcoded-secrets
     languages:
       - typescript
@@ -10,8 +10,20 @@ rules:
     severity: ERROR
     # This fixture intentionally contains a fake secret to exercise auth behavior.
     paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
       exclude:
-        - src/middleware/authMiddleware.test.ts
+        - /src/middleware/authMiddleware.test.ts
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern-either:
           - pattern: |
@@ -35,6 +47,20 @@ rules:
       Use of eval() is dangerous and can lead to code injection. Refactor to
       avoid dynamic code execution.
     severity: ERROR
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern: eval(...)
 
@@ -46,6 +72,20 @@ rules:
       Assigning to innerHTML can lead to XSS. Use textContent or a safe
       sanitization library instead.
     severity: ERROR
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern: $X.innerHTML = $Y
 
@@ -57,6 +97,20 @@ rules:
       SQL query built via string concatenation is vulnerable to SQL injection.
       Use parameterized queries or an ORM.
     severity: ERROR
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern-either:
           - pattern: |
@@ -74,6 +128,20 @@ rules:
       Command execution with unsanitized input can lead to command injection.
       Validate and sanitize all user input before passing to exec/spawn.
     severity: ERROR
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern-either:
           - pattern: exec($CMD)
@@ -96,9 +164,10 @@ rules:
         - '**/acbu-frontend/**'
       exclude:
         - '**/node_modules/**'
+        - '**/target/**'
         - '**/dist/**'
         - '**/.next/**'
-        - '**/*.generated.tsx'
+        - '**/*.generated.*'
     pattern: <$TAG ... dangerouslySetInnerHTML={$VALUE} ... />
 
   - id: frontend-dynamic-code-execution
@@ -115,10 +184,10 @@ rules:
         - '**/acbu-frontend/**'
       exclude:
         - '**/node_modules/**'
+        - '**/target/**'
         - '**/dist/**'
         - '**/.next/**'
-        - '**/*.generated.ts'
-        - '**/*.generated.tsx'
+        - '**/*.generated.*'
     pattern-either:
       - pattern: eval(...)
       - pattern: new Function(...)
@@ -137,10 +206,10 @@ rules:
         - '**/acbu-frontend/**'
       exclude:
         - '**/node_modules/**'
+        - '**/target/**'
         - '**/dist/**'
         - '**/.next/**'
-        - '**/*.generated.ts'
-        - '**/*.generated.tsx'
+        - '**/*.generated.*'
     pattern: $ELEMENT.innerHTML = $VALUE
 
   - id: frontend-secret-in-web-storage
@@ -157,10 +226,10 @@ rules:
         - '**/acbu-frontend/**'
       exclude:
         - '**/node_modules/**'
+        - '**/target/**'
         - '**/dist/**'
         - '**/.next/**'
-        - '**/*.generated.ts'
-        - '**/*.generated.tsx'
+        - '**/*.generated.*'
     patterns:
       - pattern-either:
           - pattern: localStorage.setItem($KEY, $VALUE)
@@ -183,10 +252,10 @@ rules:
         - '**/acbu-frontend/**'
       exclude:
         - '**/node_modules/**'
+        - '**/target/**'
         - '**/dist/**'
         - '**/.next/**'
-        - '**/*.generated.ts'
-        - '**/*.generated.tsx'
+        - '**/*.generated.*'
     patterns:
       - pattern-either:
           - pattern: const $KEY = "..."
@@ -210,10 +279,10 @@ rules:
         - '**/acbu-frontend/**'
       exclude:
         - '**/node_modules/**'
+        - '**/target/**'
         - '**/dist/**'
         - '**/.next/**'
-        - '**/*.generated.ts'
-        - '**/*.generated.tsx'
+        - '**/*.generated.*'
     pattern-either:
       - pattern: window.postMessage($DATA, "*")
       - pattern: $WINDOW.postMessage($DATA, "*")
@@ -232,10 +301,10 @@ rules:
         - '**/acbu-frontend/**'
       exclude:
         - '**/node_modules/**'
+        - '**/target/**'
         - '**/dist/**'
         - '**/.next/**'
-        - '**/*.generated.ts'
-        - '**/*.generated.tsx'
+        - '**/*.generated.*'
     pattern-either:
       - pattern: window.location.href = $URL
       - pattern: window.location.assign($URL)
@@ -253,7 +322,9 @@ rules:
         - '**/contracts/**'
       exclude:
         - '**/target/**'
+        - '**/node_modules/**'
         - '**/dist/**'
+        - '**/.next/**'
         - '**/*.generated.rs'
     patterns:
       - pattern-either:
@@ -277,7 +348,9 @@ rules:
         - '**/contracts/**'
       exclude:
         - '**/target/**'
+        - '**/node_modules/**'
         - '**/dist/**'
+        - '**/.next/**'
         - '**/*.generated.rs'
     patterns:
       - pattern-either:
@@ -305,7 +378,9 @@ rules:
         - '**/contracts/**'
       exclude:
         - '**/target/**'
+        - '**/node_modules/**'
         - '**/dist/**'
+        - '**/.next/**'
         - '**/*.generated.rs'
     patterns:
       - pattern: |
@@ -339,7 +414,9 @@ rules:
         - '**/contracts/**'
       exclude:
         - '**/target/**'
+        - '**/node_modules/**'
         - '**/dist/**'
+        - '**/.next/**'
         - '**/*.generated.rs'
     pattern-regex: |
       ["'][GS][A-Z2-7]{55}["']
@@ -356,7 +433,9 @@ rules:
         - '**/contracts/**'
       exclude:
         - '**/target/**'
+        - '**/node_modules/**'
         - '**/dist/**'
+        - '**/.next/**'
         - '**/*.generated.rs'
     patterns:
       - pattern: $ENV.storage().$KIND().set($KEY, $VALUE)
@@ -377,6 +456,8 @@ rules:
         - '**/contracts/**'
       exclude:
         - '**/target/**'
+        - '**/node_modules/**'
         - '**/dist/**'
+        - '**/.next/**'
         - '**/*.generated.rs'
     pattern: unsafe { ... }

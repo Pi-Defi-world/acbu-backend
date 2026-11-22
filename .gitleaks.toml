@@ -43,6 +43,13 @@ secretGroup = 0
 paths = ['''(^|/)contracts/.*''']
 
 [[rules]]
+id = "soroban-hardcoded-keypair"
+description = "Hardcoded secret passed to a Soroban or Stellar keypair constructor"
+regex = '''(?i)(?:Keypair|SecretKey|SigningKey|PrivateKey)::(?:from_secret|from_seed|from_bytes|from_str)\s*\(\s*b?["'][A-Za-z0-9_./+=-]{16,}["']'''
+secretGroup = 0
+paths = ['''(^|/)contracts/.*''']
+
+[[rules]]
 id = "frontend-public-env-private-credential"
 description = "Private credential exposed through a public frontend environment variable"
 regex = '''(?i)\b(?:NEXT_PUBLIC|VITE)_[A-Z0-9_]*(?:PRIVATE(?:_KEY)?|SECRET|TOKEN|API[_-]?KEY|SERVICE[_-]?(?:ROLE|SECRET|KEY)|ACCESS[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*["'][^"'\s]{8,}["']'''

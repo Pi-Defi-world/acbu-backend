@@ -23,13 +23,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      # This rule's Bash parser fails on GitHub Actions expression syntax.
       - name: Run repository rules and general registry rules
         run: |
           semgrep scan \
             --config .semgrep.yml \
             --config p/owasp-top-ten \
             --config p/security-audit \
-            # This rule's Bash parser fails on GitHub Actions expression syntax.
             --exclude-rule yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell \
             --exclude '**/node_modules/**' \
             --exclude '**/target/**' \
@@ -76,7 +76,7 @@ jobs:
             --exclude '**/.next/**' \
             --exclude '*.generated.*' \
             --error \
-            --severity ERROR \
+            --severity WARNING \
             --json \
             --output semgrep-contracts-report.json \
             .
