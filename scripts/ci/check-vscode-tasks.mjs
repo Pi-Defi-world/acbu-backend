@@ -31,7 +31,11 @@ function stripJsonComments(source) {
     } else if (character === "/" && nextCharacter === "/") {
       result += "  ";
       index += 1;
-      while (index + 1 < source.length && source[index + 1] !== "\n") {
+      while (
+        index + 1 < source.length &&
+        source[index + 1] !== "\n" &&
+        source[index + 1] !== "\r"
+      ) {
         result += " ";
         index += 1;
       }

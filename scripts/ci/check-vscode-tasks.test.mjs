@@ -70,6 +70,24 @@ test("parses JSONC comments and trailing commas", (context) => {
   assert.deepEqual(scanFixture("jsonc", context), []);
 });
 
+test("rejects folderOpen after LF, CRLF, and CR line comments", (context) => {
+  const rootDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vscode-tasks-comments-"));
+  context.after(() => fs.rmSync(rootDirectory, { recursive: true, force: true }));
+  const tasksFile = path.join(rootDirectory, ".vscode", "tasks.json");
+  fs.mkdirSync(path.dirname(tasksFile), { recursive: true });
+
+  for (const lineEnding of ["\n", "\r\n", "\r"]) {
+    fs.writeFileSync(
+      tasksFile,
+      `{\n// note${lineEnding}"tasks":[{"label":"Build","runOptions":{"runOn":"folderOpen"}}]\n}`,
+    );
+    const findings = scanVscodeTasks(rootDirectory);
+    assert.equal(findings.length, 1, `line ending ${JSON.stringify(lineEnding)}`);
+    assert.equal(findings[0].taskLabel, "Build");
+    assert.equal(findings[0].runOn, "folderOpen");
+  }
+});
+
 test("fails closed when tasks.json cannot be parsed", (context) => {
   const findings = scanFixture("malformed", context);
   assert.equal(findings.length, 1);

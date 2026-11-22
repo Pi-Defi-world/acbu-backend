@@ -14,19 +14,31 @@ CREATE TABLE IF NOT EXISTS "refresh_tokens" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "refresh_tokens_token_hash_key" ON "refresh_tokens"("token_hash");
+CREATE UNIQUE INDEX IF NOT EXISTS "refresh_tokens_token_hash_key" ON "refresh_tokens"("token_hash");
 
 -- CreateIndex
-CREATE INDEX "idx_refresh_tokens_user_id" ON "refresh_tokens"("user_id");
+CREATE INDEX IF NOT EXISTS "idx_refresh_tokens_user_id" ON "refresh_tokens"("user_id");
 
 -- CreateIndex
-CREATE INDEX "idx_refresh_tokens_token_family_id" ON "refresh_tokens"("token_family_id");
+CREATE INDEX IF NOT EXISTS "idx_refresh_tokens_token_family_id" ON "refresh_tokens"("token_family_id");
 
 -- CreateIndex
-CREATE INDEX "idx_refresh_tokens_token_hash" ON "refresh_tokens"("token_hash");
+CREATE INDEX IF NOT EXISTS "idx_refresh_tokens_token_hash" ON "refresh_tokens"("token_hash");
 
 -- CreateIndex
-CREATE INDEX "idx_refresh_tokens_expires_at" ON "refresh_tokens"("expires_at");
+CREATE INDEX IF NOT EXISTS "idx_refresh_tokens_expires_at" ON "refresh_tokens"("expires_at");
 
 -- AddForeignKey
-ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'refresh_tokens_user_id_fkey'
+          AND conrelid = '"refresh_tokens"'::regclass
+    ) THEN
+        ALTER TABLE "refresh_tokens"
+            ADD CONSTRAINT "refresh_tokens_user_id_fkey"
+            FOREIGN KEY ("user_id") REFERENCES "users"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END$$;
