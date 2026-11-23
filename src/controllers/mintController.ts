@@ -483,15 +483,31 @@ export async function depositFromBasketCurrency(
     // Keep retries stable while separating legitimate same-amount deposits by
     // the client's UUIDv4. The optional partner reference remains part of the
     // key for reconciliation and duplicate partner callbacks.
-    const rawIdempotencyKey = clientRequestId
-      ? [fintech_tx_id ?? "", amountDecimal.toString(), clientRequestId].join(":")
-      : fintech_tx_id ?? undefined;
+    const idempotencyComponents = clientRequestId
+      ? ["client", fintech_tx_id ?? null, amountDecimal.toString(), clientRequestId]
+      : fintech_tx_id
+        ? ["partner", fintech_tx_id]
+        : undefined;
+    const rawIdempotencyKey = idempotencyComponents
+      ? `deposit:v2:${JSON.stringify(idempotencyComponents)}`
+      : undefined;
     const idempotencyKey = rawIdempotencyKey
       ? scopeIdempotencyKey(userId, rawIdempotencyKey)
       : undefined;
-    if (idempotencyKey) {
-      const existingTx = await prisma.transaction.findUnique({
-        where: { idempotencyKey },
+    // Check pre-v2 keys as well so in-flight retries remain idempotent through
+    // deployment. The namespaced JSON tuples keep new keyed/unkeyed formats
+    // distinct and avoid delimiter collisions.
+    const legacyIdempotencyKeys = [clientRequestId, fintech_tx_id]
+      .filter((key): key is string => Boolean(key))
+      .map((key) => scopeIdempotencyKey(userId, key));
+    const idempotencyLookupKeys = [
+      ...new Set(
+        [idempotencyKey, ...legacyIdempotencyKeys].filter((key): key is string => Boolean(key)),
+      ),
+    ];
+    if (idempotencyLookupKeys.length > 0) {
+      const existingTx = await prisma.transaction.findFirst({
+        where: { idempotencyKey: { in: idempotencyLookupKeys } },
       });
 
       if (existingTx) {
@@ -534,8 +550,8 @@ export async function depositFromBasketCurrency(
         createError instanceof Prisma.PrismaClientKnownRequestError &&
         createError.code === "P2002"
       ) {
-        const existingTx = await prisma.transaction.findUnique({
-          where: { idempotencyKey },
+        const existingTx = await prisma.transaction.findFirst({
+          where: { idempotencyKey: { in: idempotencyLookupKeys } },
         });
 
         if (existingTx) {
