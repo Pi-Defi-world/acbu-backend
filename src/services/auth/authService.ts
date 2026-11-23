@@ -151,6 +151,7 @@ const ADMIN_TIER = "enterprise";
 const BREAK_GLASS_DEFAULT_TTL_MINUTES = 15;
 const BREAK_GLASS_MAX_TTL_MINUTES = 60;
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+const REFRESH_TOKEN_GRACE_PERIOD_MS = 10 * 1000;
 
 /**
  * Revoke any previously issued api_key(s) tied to the given refresh-token family
@@ -961,8 +962,8 @@ export async function issueRefreshToken(
 
 /**
  * Validate a refresh token and rotate it (token-family rotation).
- * When a refresh token is used, the entire family should be invalidated
- * to detect token theft. A new token in a new family is issued.
+ * A recently rotated token is accepted briefly to tolerate concurrent refresh
+ * requests; outside this grace period, reuse is rejected.
  */
 export async function refreshAccessToken(
   params: RefreshAccessTokenParams,
@@ -971,43 +972,69 @@ export async function refreshAccessToken(
 
   const tokenHash = await hashRefreshToken(refresh_token);
   const now = new Date();
+  const gracePeriodStart = new Date(now.getTime() - REFRESH_TOKEN_GRACE_PERIOD_MS);
+  const userSelection = {
+    user: {
+      select: {
+        id: true,
+        actorType: true,
+        organizationId: true,
+      },
+    },
+  } as const;
 
-  const existingToken = await prisma.refreshToken.findFirst({
+  let existingToken = await prisma.refreshToken.findFirst({
     where: {
       tokenHash,
       revokedAt: null,
       expiresAt: { gt: now },
     },
-    include: {
-      user: {
-        select: {
-          id: true,
-          actorType: true,
-          organizationId: true,
-        },
-      },
-    },
+    include: userSelection,
   });
+  const shouldRotateFamily = existingToken !== null;
 
   if (!existingToken) {
-    throw new InvalidOrExpiredRefreshTokenError();
+    existingToken = await prisma.refreshToken.findFirst({
+      where: {
+        tokenHash,
+        revokedAt: { gte: gracePeriodStart },
+        replacedByToken: { not: null },
+        expiresAt: { gt: now },
+      },
+      include: userSelection,
+    });
+    if (!existingToken) throw new InvalidOrExpiredRefreshTokenError();
   }
 
   const { user, tokenFamilyId } = existingToken;
 
-  // Token-family rotation: invalidate all tokens in the same family
-  // This detects token theft - if an attacker tries to use an old token,
-  // the family will already be revoked
-  await prisma.refreshToken.updateMany({
-    where: {
-      tokenFamilyId,
-      revokedAt: null,
-    },
-    data: {
-      revokedAt: now,
-      replacedByToken: tokenHash,
-    },
-  });
+  if (shouldRotateFamily) {
+    // The conditional update makes concurrent requests race safely: only the
+    // request that revokes the active family performs the initial rotation.
+    const rotation = await prisma.refreshToken.updateMany({
+      where: {
+        tokenFamilyId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: now,
+        replacedByToken: tokenHash,
+      },
+    });
+
+    if (rotation.count === 0) {
+      existingToken = await prisma.refreshToken.findFirst({
+        where: {
+          tokenHash,
+          revokedAt: { gte: gracePeriodStart },
+          replacedByToken: { not: null },
+          expiresAt: { gt: now },
+        },
+        include: userSelection,
+      });
+      if (!existingToken) throw new InvalidOrExpiredRefreshTokenError();
+    }
+  }
 
   // Issue a new API key
   const api_key = await generateApiKey(user.id, [], { keyType: "USER_KEY" });
