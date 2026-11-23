@@ -1886,7 +1886,7 @@ impl MintingContract {
         // Run migrations — the match will gain new arms as versions are added.
         for v in current_version..new_version {
             match v {
-                0 => shared::migrate_v0_to_v1(&env),
+                0 => migrate_v0_to_v1(&env),
                 _ => {}
             }
         }
@@ -1894,6 +1894,24 @@ impl MintingContract {
         env.storage()
             .instance()
             .set(&SharedDataKey::Version, &new_version);
+    }
+}
+
+/// Upgrade optional v0 minting fields to the v1 schema. Existing values are
+/// preserved so configured caps and pause state survive a WASM upgrade.
+fn migrate_v0_to_v1(env: &Env) {
+    let storage = env.storage().instance();
+    if !storage.has(&DATA_KEY.phase) {
+        storage.set(&DATA_KEY.phase, &ContractPhase::Active);
+    }
+    if !storage.has(&DATA_KEY.max_supply) {
+        storage.set(&DATA_KEY.max_supply, &MAX_TOTAL_SUPPLY);
+    }
+    if !storage.has(&DATA_KEY.max_drip) {
+        storage.set(&DATA_KEY.max_drip, &100_000_000_000_000i128);
+    }
+    if !storage.has(&DATA_KEY.circuit_peers) {
+        storage.set(&DATA_KEY.circuit_peers, &Vec::<Address>::new(env));
     }
 }
 

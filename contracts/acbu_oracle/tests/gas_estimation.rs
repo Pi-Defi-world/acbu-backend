@@ -69,7 +69,6 @@ fn gas_update_rate_median_quorum_sources_stays_under_budget() {
     );
 
     let mut budget: Budget = env.budget();
-    budget.reset_unlimited();
     budget.reset_tracker();
 
     client.update_rate(

@@ -52,6 +52,7 @@ pub enum OracleError {
     /// `EMERGENCY_UPDATE_COOLDOWN_SECONDS` elapsed since the currency's last
     /// update. Emergency consensus lifts the regular interval, not this floor.
     EmergencyCooldownActive = 7027,
+    NotInitialized = 7028,
     Unknown = 7999,
 }
 
@@ -85,6 +86,7 @@ impl Display for OracleError {
             Self::InsufficientEmergencyVotes => "emergency vote cast - waiting for N-of-M validator consensus",
             Self::AdminDeviationTooLarge => "admin rate deviation exceeds emergency threshold",
             Self::EmergencyCooldownActive => "emergency update cooldown has not elapsed",
+            Self::NotInitialized => "oracle storage is not initialized",
             Self::Unknown => "unknown oracle error",
         };
         f.write_str(message)
@@ -337,7 +339,7 @@ impl OracleContract {
             .instance()
             .set(&DATA_KEY.pending_admin_eligible_at, &eligible_at);
 
-        let current_admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let current_admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         env.events().publish(
             (symbol_short!("adm_init"),),
             AdminTransferInitiatedEvent {
@@ -369,7 +371,7 @@ impl OracleContract {
             env.panic_with_error(OracleError::AdminTimelockNotElapsed);
         }
 
-        let old_admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let old_admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
 
         env.storage()
             .instance()
@@ -404,7 +406,7 @@ impl OracleContract {
             .instance()
             .remove(&DATA_KEY.pending_admin_eligible_at);
 
-        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         env.events().publish(
             (symbol_short!("adm_cncl"),),
             (admin, pending_admin, env.ledger().timestamp()),
@@ -413,7 +415,7 @@ impl OracleContract {
 
     /// Return the current admin address.
     pub fn get_admin(env: Env) -> Address {
-        env.storage().instance().get(&DATA_KEY.admin).unwrap()
+        env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized))
     }
 
     /// Return the pending admin, if a transfer is in progress.
@@ -477,7 +479,7 @@ impl OracleContract {
                 Some(set) => set,
                 None => {
                     let validators: Vec<Address> =
-                        env.storage().instance().get(&DATA_KEY.validators).unwrap();
+                        env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
                     let mut set: Map<Address, bool> = Map::new(&env);
                     for v in validators.iter() {
                         set.set(v, true);
@@ -508,7 +510,7 @@ impl OracleContract {
             .storage()
             .instance()
             .get(&DATA_KEY.min_signatures)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
 
         if sources.len() > 0 {
             let required = min_sigs.max(MIN_ORACLE_SOURCE_FEEDS);
@@ -766,7 +768,7 @@ impl OracleContract {
                 Some(set) => set,
                 None => {
                     let validators: Vec<Address> =
-                        env.storage().instance().get(&DATA_KEY.validators).unwrap();
+                        env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
                     let mut set: Map<Address, bool> = Map::new(&env);
                     for v in validators.iter() {
                         set.set(v, true);
@@ -783,7 +785,7 @@ impl OracleContract {
             .storage()
             .instance()
             .get(&DATA_KEY.min_signatures)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
 
         let current_time = env.ledger().timestamp();
 
@@ -912,7 +914,7 @@ impl OracleContract {
             .set(&DATA_KEY.last_update, &current_time);
         Self::extend_instance_ttl(&env);
 
-        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         let event = RateUpdateEvent {
             currency,
             rate,
@@ -1053,7 +1055,7 @@ impl OracleContract {
     pub fn set_min_signatures(env: Env, new_min: u32) {
         Self::check_admin(&env);
         let validators: Vec<Address> =
-            env.storage().instance().get(&DATA_KEY.validators).unwrap();
+            env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         if new_min == 0 || new_min > validators.len() {
             env.panic_with_error(OracleError::InvalidMinSignatures);
         }
@@ -1160,7 +1162,7 @@ impl OracleContract {
             .instance()
             .remove(&DATA_KEY.pending_validator_eligible_at);
 
-        let validators: Vec<Address> = env.storage().instance().get(&DATA_KEY.validators).unwrap();
+        let validators: Vec<Address> = env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         if is_add {
             for v in validators.iter() {
                 if v == validator {
@@ -1181,7 +1183,7 @@ impl OracleContract {
                 .storage()
                 .instance()
                 .get(&DATA_KEY.min_signatures)
-                .unwrap();
+                .unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
             if validators.len() <= min_sigs {
                 env.panic_with_error(OracleError::CannotRemoveValidator);
             }
@@ -1235,7 +1237,7 @@ impl OracleContract {
 
     /// Return the current list of validators.
     pub fn get_validators(env: Env) -> Vec<Address> {
-        env.storage().instance().get(&DATA_KEY.validators).unwrap()
+        env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized))
     }
 
     /// Return the number of validator signatures required to accept a rate update.
@@ -1243,7 +1245,7 @@ impl OracleContract {
         env.storage()
             .instance()
             .get(&DATA_KEY.min_signatures)
-            .unwrap()
+            .unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized))
     }
 
     /// Return the number of decimal places used for all rates (always 7).
@@ -1505,7 +1507,7 @@ impl OracleContract {
     }
 
     fn check_admin(env: &Env) {
-        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         admin.require_auth();
     }
 }
