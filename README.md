@@ -155,6 +155,14 @@ The proposal includes source-document integration steps pending maintainer revie
 Once the server is running, API documentation is available at:
 - Swagger UI: `http://localhost:5000/api-docs` (development only, disabled in production for security)
 
+The OpenAPI schema is generated from `src/openapi/route-definitions.ts` and the
+route Zod schemas. Update `swagger.json` after changing routes or parameters:
+
+```bash
+pnpm openapi:generate
+pnpm openapi:check
+```
+
 **Segment routes** (require API key with segment scope): `/v1/p2p`, `/v1/sme`, `/v1/international`, `/v1/salary`, `/v1/enterprise`, `/v1/savings`, `/v1/lending`, `/v1/gateway`, `/v1/bills`. For a full list of routes and smart contracts, see the repository docs in the `docs/` folder.
 
 ## Signature Encoding Conventions

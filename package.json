@@ -43,6 +43,8 @@
     "compute:basket-weights": "ts-node --transpile-only scripts/compute-basket-weights.ts",
     "event-schema:check": "node scripts/check-event-schema.js",
     "test:event-schema": "node --test scripts/check-event-schema.test.js",
+    "openapi:generate": "ts-node --transpile-only scripts/generate-openapi.ts",
+    "openapi:check": "ts-node --transpile-only scripts/generate-openapi.ts --check",
     "postinstall": "node scripts/prisma-generate-if-needed.js && git config core.hooksPath scripts/hooks || true",
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0",
     "changelog:update": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s",
