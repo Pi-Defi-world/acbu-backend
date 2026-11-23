@@ -4,8 +4,12 @@ import {
   getCachedExchangeRate,
   invalidateExchangeRateCache,
   isRetryableRateApiError,
+  refreshExchangeRate,
   resolveExchangeRateCacheTtlMs,
   setCachedExchangeRate,
+  triggerBackgroundExchangeRateRefresh,
+  MAX_EXCHANGE_RATE_CACHE_TTL_MS,
+  DEFAULT_POSITIVE_TTL_MS,
 } from "./exchangeRateService";
 
 jest.mock("axios");
@@ -48,6 +52,18 @@ describe("resolveExchangeRateCacheTtlMs", () => {
     expect(resolveExchangeRateCacheTtlMs(true)).toBeGreaterThan(
       resolveExchangeRateCacheTtlMs(false),
     );
+  });
+
+  it("defaults positive cache TTL to 180 seconds (180,000 ms)", () => {
+    delete process.env.EXCHANGE_RATE_CACHE_TTL_MS;
+    expect(resolveExchangeRateCacheTtlMs(true)).toBe(DEFAULT_POSITIVE_TTL_MS);
+    expect(resolveExchangeRateCacheTtlMs(true)).toBe(180_000);
+  });
+
+  it("clamps positive cache TTL to MAX_EXCHANGE_RATE_CACHE_TTL_MS (180s) even if configured higher", () => {
+    process.env.EXCHANGE_RATE_CACHE_TTL_MS = "900000"; // 15 minutes
+    expect(resolveExchangeRateCacheTtlMs(true)).toBe(MAX_EXCHANGE_RATE_CACHE_TTL_MS);
+    delete process.env.EXCHANGE_RATE_CACHE_TTL_MS;
   });
 });
 
@@ -131,6 +147,48 @@ describe("fetchExchangeRateUsd", () => {
 
     await expect(fetchExchangeRateUsd("NGN")).resolves.toBeNull();
     expect(getCachedExchangeRate("NGN")).toBeNull();
+  });
+
+  it("bypasses cache when forceRefresh is requested (#1407)", async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: { result: "success", conversion_rate: 0.0007 },
+    });
+
+    await fetchExchangeRateUsd("NGN");
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+
+    mockedAxios.get.mockResolvedValue({
+      data: { result: "success", conversion_rate: 0.0008 },
+    });
+
+    const refreshed = await fetchExchangeRateUsd("NGN", { forceRefresh: true });
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+    expect(refreshed).toBe(0.0008);
+  });
+});
+
+describe("refreshExchangeRate", () => {
+  it("refreshes exchange rate immediately", async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: { result: "success", conversion_rate: 0.0007 },
+    });
+    await fetchExchangeRateUsd("NGN");
+
+    mockedAxios.get.mockResolvedValue({
+      data: { result: "success", conversion_rate: 0.0009 },
+    });
+    const result = await refreshExchangeRate("NGN");
+    expect(result).toBe(0.0009);
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("triggerBackgroundExchangeRateRefresh", () => {
+  it("triggers a background fetch without throwing", () => {
+    mockedAxios.get.mockResolvedValue({
+      data: { result: "success", conversion_rate: 0.0007 },
+    });
+    expect(() => triggerBackgroundExchangeRateRefresh("NGN")).not.toThrow();
   });
 });
 
