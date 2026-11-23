@@ -468,12 +468,45 @@ export async function depositFromBasketCurrency(
     // transaction (status/existence disclosure) and their own deposit would
     // be blocked.
     const clientRequestId = extractIdempotencyKey(req);
-    if (
+    const hasClientUuidV4 = Boolean(
       clientRequestId &&
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        clientRequestId,
-      )
-    ) {
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          clientRequestId,
+        ),
+    );
+    // The persisted key namespace is the available version marker: all v2
+    // keys start with `<userId>:deposit:v2:`. Do not treat one as a legacy
+    // candidate, even if a partner reference happens to have the same value.
+    const v2IdempotencyPrefix = scopeIdempotencyKey(userId, "deposit:v2:");
+    const legacyIdempotencyKeys = hasClientUuidV4
+      ? []
+      : [clientRequestId, fintech_tx_id]
+          .filter((key): key is string => Boolean(key))
+          .map((key) => scopeIdempotencyKey(userId, key))
+          .filter((key) => !key.startsWith(v2IdempotencyPrefix));
+
+    // Old clients may still retry with a non-UUID key. Recover a matching
+    // legacy transaction before enforcing the current UUIDv4 contract.
+    if (clientRequestId && !hasClientUuidV4) {
+      if (legacyIdempotencyKeys.length > 0) {
+        const legacyTx = await prisma.transaction.findFirst({
+          where: { idempotencyKey: { in: legacyIdempotencyKeys } },
+        });
+        if (legacyTx) {
+          res.status(202).json({
+            transaction_id: legacyTx.id,
+            currency: legacyTx.localCurrency ?? currency,
+            amount: legacyTx.localAmount?.toString() ?? amountDecimal.toString(),
+            wallet_address: wallet_address ? "***" : undefined,
+            status: legacyTx.status,
+            message:
+              legacyTx.status === "completed"
+                ? "Deposit already processed."
+                : "Deposit already received and is still being processed.",
+          });
+          return;
+        }
+      }
       throw new AppError(
         "Idempotency-Key header must be a UUIDv4",
         400,
@@ -497,9 +530,6 @@ export async function depositFromBasketCurrency(
     // Check pre-v2 keys as well so in-flight retries remain idempotent through
     // deployment. The namespaced JSON tuples keep new keyed/unkeyed formats
     // distinct and avoid delimiter collisions.
-    const legacyIdempotencyKeys = [clientRequestId, fintech_tx_id]
-      .filter((key): key is string => Boolean(key))
-      .map((key) => scopeIdempotencyKey(userId, key));
     const idempotencyLookupKeys = [
       ...new Set(
         [idempotencyKey, ...legacyIdempotencyKeys].filter((key): key is string => Boolean(key)),
