@@ -9,6 +9,7 @@
  */
 
 import { BarretenbergSync, Fr } from "@aztec/bb.js";
+import { Address, hash } from "@stellar/stellar-sdk";
 
 let bb: BarretenbergSync | null = null;
 
@@ -62,13 +63,29 @@ export async function computeCommitment(cred: {
 }
 
 /**
- * Compute the nullifier for a given commitment + salt.
+ * Compute the same account identifier checked by the verifier contract:
+ * sha256(ScVal(Address) XDR)[0..16], interpreted as little-endian u128.
+ */
+export function computeWalletAddressHash(walletAddress: string): bigint {
+  const addressXdr = Address.fromString(walletAddress).toScVal().toXDR();
+  const digest = hash(addressXdr);
+  let accountId = 0n;
+  for (let index = 15; index >= 0; index -= 1) {
+    accountId = (accountId << 8n) | BigInt(digest[index]);
+  }
+  return accountId;
+}
+
+/**
+ * Compute an account-scoped nullifier from the credential commitment, salt,
+ * and verifier-compatible Stellar account identifier.
  */
 export async function computeNullifier(
   commitment: bigint,
-  salt: bigint
+  salt: bigint,
+  accountId: bigint
 ): Promise<bigint> {
-  return poseidon2Hash2(commitment, salt);
+  return poseidon2Hash4(commitment, salt, accountId, 0n);
 }
 
 /**
