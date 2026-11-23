@@ -239,7 +239,13 @@ const envSchema = z.object({
   S3_REGION: z.string().optional(),
   S3_BUCKET: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
-  S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+  S3_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  // W11-AUD-014: KMS key ARN for server-side encryption of KYC documents.
+  // When set, PutObject requests use aws:kms encryption with this key.
+  // Leave unset for local/MinIO environments (AES256 fallback applies).
+  S3_KMS_KEY_ID: z.string().optional(),
+  S3_SCAN_WEBHOOK_SECRET: z.string().optional(),
 });
 
 // W10-SEC-014: fail closed on the webhook signature bypass.
@@ -310,6 +316,7 @@ for (const signal of productionSignals) {
 
 export const config = {
   env: env.NODE_ENV,
+  nodeEnv: env.NODE_ENV,
   isTest,
   isProduction: profile === "production",
   webhook: {
@@ -317,7 +324,18 @@ export const config = {
     timestampToleranceMs: env.WEBHOOK_TIMESTAMP_TOLERANCE_MS,
   },
   corsOrigins: parseCorsOrigins(env.CORS_ORIGIN),
-  // ... remaining config consumers are unchanged and read from `env` as before
+  s3: {
+    accessKeyId: env.S3_ACCESS_KEY_ID,
+    secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+    region: env.S3_REGION,
+    bucket: env.S3_BUCKET,
+    endpoint: env.S3_ENDPOINT,
+    uploadUrlTtlSeconds: env.S3_UPLOAD_URL_TTL_SECONDS,
+    downloadUrlTtlSeconds: env.S3_DOWNLOAD_URL_TTL_SECONDS,
+    // W11-AUD-014: KMS key for server-side encryption of KYC documents.
+    kmsKeyId: env.S3_KMS_KEY_ID,
+    scanWebhookSecret: env.S3_SCAN_WEBHOOK_SECRET,
+  },
 };
 
 export type EnvType = typeof env;
