@@ -467,7 +467,25 @@ export async function depositFromBasketCurrency(
     // key — the second user would receive a 202 referencing the first user's
     // transaction (status/existence disclosure) and their own deposit would
     // be blocked.
-    const rawIdempotencyKey = extractIdempotencyKey(req) ?? fintech_tx_id ?? undefined;
+    const clientRequestId = extractIdempotencyKey(req);
+    if (
+      clientRequestId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        clientRequestId,
+      )
+    ) {
+      throw new AppError(
+        "Idempotency-Key header must be a UUIDv4",
+        400,
+        ErrorCodes.VALIDATION_ERROR,
+      );
+    }
+    // Keep retries stable while separating legitimate same-amount deposits by
+    // the client's UUIDv4. The optional partner reference remains part of the
+    // key for reconciliation and duplicate partner callbacks.
+    const rawIdempotencyKey = clientRequestId
+      ? [fintech_tx_id ?? "", amountDecimal.toString(), clientRequestId].join(":")
+      : fintech_tx_id ?? undefined;
     const idempotencyKey = rawIdempotencyKey
       ? scopeIdempotencyKey(userId, rawIdempotencyKey)
       : undefined;
