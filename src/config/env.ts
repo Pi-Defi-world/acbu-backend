@@ -240,6 +240,11 @@ const envSchema = z.object({
   S3_BUCKET: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+  // Auth brute-force protection and CAPTCHA (W11-CAR-025)
+  AUTH_BRUTE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  AUTH_BRUTE_LOCKOUT_MS: z.coerce.number().int().positive().default(900000),
+  CAPTCHA_SECRET: z.string().optional(),
+  CAPTCHA_ENFORCEMENT: z.enum(["off", "optional", "strict"]).default("optional"),
 });
 
 // W10-SEC-014: fail closed on the webhook signature bypass.
@@ -317,6 +322,12 @@ export const config = {
     timestampToleranceMs: env.WEBHOOK_TIMESTAMP_TOLERANCE_MS,
   },
   corsOrigins: parseCorsOrigins(env.CORS_ORIGIN),
+  auth: {
+    bruteMaxAttempts: env.AUTH_BRUTE_MAX_ATTEMPTS,
+    bruteLockoutMs: env.AUTH_BRUTE_LOCKOUT_MS,
+    captchaSecret: env.CAPTCHA_SECRET,
+    captchaEnforcement: env.CAPTCHA_ENFORCEMENT,
+  },
   // ... remaining config consumers are unchanged and read from `env` as before
 };
 
