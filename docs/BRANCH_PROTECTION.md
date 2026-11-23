@@ -1,8 +1,8 @@
 # Branch Protection & Required CI Checks
 
-This document defines the required branch protection rules and status checks
-for the `main` (and `develop`) branches of `Pi-Defi-world/acbu-backend`.
-These rules prevent merging broken or unreviewed code.
+This document defines the required CI checks for `main` and `develop`, and
+history-protection rules for the `dev` (default), `main`, and `release/*`
+branches of `Pi-Defi-world/acbu-backend`.
 
 ---
 
@@ -25,6 +25,21 @@ be merged to `main`. Configure them under
 
 > These checks map directly to the steps in `.github/workflows/ci.yml` under
 > the `lint-and-test` job.
+
+---
+
+## Force-Push and Deletion Protection (W11-INC-005)
+
+Create an active repository ruleset targeting:
+
+- `dev` (the default branch)
+- `main`
+- `release/*` (the release branch naming convention)
+
+Enable **Restrict deletions** and **Block force pushes**. Leave the bypass list
+empty so repository administrators cannot bypass these protections. A
+repository administrator must apply this ruleset in GitHub; this document does
+not configure repository settings.
 
 ---
 
