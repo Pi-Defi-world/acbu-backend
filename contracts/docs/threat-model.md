@@ -252,6 +252,13 @@ No auth is required on the read-only oracle call. The chain is safe as long as b
 **Scenario:** A misconfigured or malicious reserve tracker always returns `true` for `is_reserve_sufficient`.  
 **Mitigation:** Reserve tracker address is set at initialization and cannot be changed without an upgrade. The reserve tracker itself calls the oracle for rate data, adding a second layer of validation.
 
+### 4.8 Tornado Privacy Mixer Withdraw Proof & Recipient Binding (W11-CAR-020 / W10-SEC-008 / W10-SEC-007)
+
+**Issue / Audit ID:** W11-CAR-020 (Carried over from SC#983 / W10-SEC-008)  
+**Reference:** `tornado_classic/contracts/src/mixer.rs`, `circuit/src/main.nr` (upstream benchmark/experimental module)  
+**Scenario:** In experimental privacy mixer designs, if a withdraw ZK proof only commits to `[root, nullifier_hash]` as public inputs and omits the destination `recipient` (and relayer fee) and lacks atomic on-chain payout logic, the proof is not bound to any specific recipient. An attacker or front-running relayer could intercept the proof and redirect funds to an arbitrary address.  
+**Resolution & Protocol Status:** In the ACBU protocol architecture, experimental privacy mixing logic is excluded from production contracts (W10-SEC-007). All ZK verifications within the ACBU ecosystem (such as `zk_verifier` AZ-032) strictly enforce caller address hash binding (`wallet_address_hash` in public inputs) and on-chain authorization (`wallet.require_auth()`), and token disbursements in minting/burning/savings vault contracts atomically enforce valid recipient account validation and transfers.
+
 ---
 
 ## 5. Deployment Checklist (Auth-Related)
