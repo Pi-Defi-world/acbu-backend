@@ -50,6 +50,8 @@ export function ApiErrorDisplay({
   return (
     <div
       role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
       className={`flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive animate-in fade-in slide-in-from-top-2 duration-300${className ? ` ${className}` : ""}`}
     >
       <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" aria-hidden="true" />

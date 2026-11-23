@@ -27,6 +27,12 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="bg-background flex min-h-screen">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-foreground focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       {/*
         The navigation guard has to wrap the navigations as well as the page
         content, otherwise the bottom tab bar cannot ask for confirmation
@@ -37,8 +43,10 @@ export function AppLayout({ children }: AppLayoutProps) {
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
           <main
+            id="main-content"
+            tabIndex={-1}
             data-testid="app-main-content"
-            className={`flex-1 ${!isPublic ? "pb-24 md:pb-0" : ""}`}
+            className={`flex-1 focus:outline-none ${!isPublic ? "pb-24 md:pb-0" : ""}`}
           >
             <PageTransition>{children}</PageTransition>
           </main>
