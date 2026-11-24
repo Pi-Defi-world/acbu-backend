@@ -23,17 +23,36 @@ import { ErrorCodes } from "../types/errorCodes";
 import { reconcileBillsWebhook } from "../services/bills";
 import type { FinancialEventStatus } from "../types/logging";
 
-/** Read the bypass flag at call time so tests and deployment guards see the
- * current environment rather than a stale module-load snapshot. */
+/** Determine whether the configured bypass is permitted in the active test profile. */
 export function isWebhookSignatureBypassEnabled(
   rawValue: string | undefined = process.env.WEBHOOK_SIGNATURE_BYPASS,
 ): boolean {
-  return typeof rawValue === "string" && rawValue.trim().toLowerCase() === "true";
+  if (typeof rawValue !== "string" || rawValue.trim().toLowerCase() !== "true") {
+    return false;
+  }
+
+  const profiles = [
+    process.env.NODE_ENV,
+    process.env.APP_PROFILE,
+    process.env.APP_ENV,
+    process.env.ENVIRONMENT,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
+
+  return (
+    profiles.some((profile) => ["test", "testing", "ci"].includes(profile)) &&
+    !profiles.includes("production")
+  );
 }
 
-/** Fail closed unless the bypass is explicitly enabled for tests only. */
+/** Fail closed when the bypass flag is set outside an explicit test profile. */
 export function assertWebhookSignatureBypassSafe(): void {
-  if (!isWebhookSignatureBypassEnabled()) return;
+  const requested =
+    typeof process.env.WEBHOOK_SIGNATURE_BYPASS === "string" &&
+    process.env.WEBHOOK_SIGNATURE_BYPASS.trim().toLowerCase() === "true";
+  if (!requested) return;
+
   const profiles = [
     process.env.NODE_ENV,
     process.env.APP_PROFILE,
@@ -55,21 +74,7 @@ export function assertWebhookSignatureBypassSafe(): void {
 // Evaluate the flag at request time. The startup guard in env.ts separately
 // rejects unsafe deployment configuration before the application listens.
 function isWebhookSignatureBypassAllowed(): boolean {
-  const profiles = [
-    config.nodeEnv,
-    process.env.NODE_ENV,
-    process.env.APP_PROFILE,
-    process.env.APP_ENV,
-    process.env.ENVIRONMENT,
-  ]
-    .filter((value): value is string => typeof value === "string")
-    .map((value) => value.trim().toLowerCase());
-
-  return (
-    isWebhookSignatureBypassEnabled() &&
-    profiles.some((profile) => ["test", "testing", "ci"].includes(profile)) &&
-    !profiles.includes("production")
-  );
+  return isWebhookSignatureBypassEnabled();
 }
 
 /**
