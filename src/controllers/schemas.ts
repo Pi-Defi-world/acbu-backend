@@ -22,7 +22,7 @@ import { listTransactionsQuerySchema } from "./transactionController";
 import { patchMeSchema, addContactSchema, addGuardianSchema } from "./userController";
 
 // Wallet Controller
-import { walletConfirmSchema } from "./walletController";
+import { walletEnrollSchema } from "./walletController";
 
 // Fiat Controller
 import { faucetSchema, onRampSchema, offRampSchema } from "./fiatController";
@@ -74,7 +74,7 @@ export const routeSchemas: Record<string, ZodSchema> = {
   "PATCH /v1/users/me": patchMeSchema,
   "POST /v1/users/me/contacts": addContactSchema,
   "POST /v1/users/me/guardians": addGuardianSchema,
-  "POST /v1/users/me/wallet/confirm": walletConfirmSchema,
+  "POST /v1/users/me/wallet/enroll": walletEnrollSchema,
 
   // Fiat endpoints
   "POST /v1/fiat/faucet": faucetSchema,

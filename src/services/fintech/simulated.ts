@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../../config/database";
 import { logger } from "../../config/logger";
@@ -89,7 +90,6 @@ export class SimulatedFintechProvider implements FintechProvider {
     // and deduct funds, then record it in the ledger.
     // For now, we'll just return a success result.
 
-    const crypto = require("crypto");
     return {
       transactionId: `sim_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
       status: "completed",

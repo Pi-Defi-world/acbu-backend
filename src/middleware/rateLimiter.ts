@@ -266,226 +266,120 @@ class MongoRateLimitStore implements Store {
   }
 }
 
-export const createMongoRateLimitStore = (namespace: string): Store =>
-  new MongoRateLimitStore(namespace);
-
 /**
- * Create rate limiter based on API key or IP
+ * Shared-store rate limiter store backed by Redis, with a Mongo-backed
+ * fallback. Used for security-sensitive limiters (e.g. 2FA verification)
+ * so limits are enforced across all instances rather than per-process.
  */
-export const createRateLimiter = (
-  windowMs: number,
-  maxRequests: number,
-  context: LimiterContext = "ip",
-  namespace: string = context,
-) => {
-  const message =
-    context === "ip"
-      ? "Too many requests from this IP address, please try again later."
-      : "API key rate limit exceeded, please try again later.";
+class SharedRateLimitStore implements Store {
+  public readonly localKeys = false;
+  public readonly prefix: string;
 
-  return rateLimit({
-    windowMs,
-    max: maxRequests,
-    standardHeaders: true,
-    legacyHeaders: false,
-    store: createMongoRateLimitStore(namespace),
-    handler: (_req: Request, res: Response) => {
-      res.status(429).json({
-        error: {
-          code: ErrorCodes.RATE_LIMIT_EXCEEDED,
-          error_code: ErrorCodes.RATE_LIMIT_EXCEEDED,
-          message,
-          limitType: context,
-        },
-      });
-    },
-  });
-};
+  private windowMs = 60_000;
+  private readonly mongoStore: MongoRateLimitStore;
 
-/**
- * Rate limiter for API key-based requests with circuit breaker fallback.
- * Uses atomic MongoDB $inc with a cap to prevent race conditions.
- */
-export const apiKeyRateLimiter = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  if (!req.apiKey) {
-    return next();
+  constructor(namespace: string) {
+    this.prefix = `rate_limit:${namespace}`;
+    this.mongoStore = new MongoRateLimitStore(namespace);
   }
 
-  const maxRequests = req.apiKey.rateLimit || config.rateLimitMaxRequests;
-  const windowMs = config.rateLimitWindowMs;
-  const windowId = Math.floor(Date.now() / windowMs);
-  const cacheKey = `rate_limit:api_key:${sanitizeKey(req.apiKey.id)}:${windowId}`;
-
-  // Check circuit breaker state - if OPEN, use fallback immediately
-  if (!circuitBreaker.canExecute()) {
-    logger.warn("Circuit breaker OPEN, using fallback rate limiter", {
-      apiKeyId: req.apiKey.id,
-      circuitState: circuitBreaker.getState(),
-    });
-    fallbackMetrics.fallbackActivations++;
-    await enforceFallbackLimit(req, res, next, FALLBACK_MAX_REQUESTS_PER_IP);
-    return;
+  init(options: RateLimitOptions): void {
+    this.windowMs = options.windowMs;
+    this.mongoStore.init(options);
   }
 
-  try {
-    // Atomic increment with cap — MongoDB only increments when count < max.
-    // Returns null when the cap is reached, no separate count check needed.
-    const cached = await cacheService.increment<{ count: number }>(cacheKey, "count", 1, {
-      ttl: windowMs / 1000,
-      max: maxRequests,
-    });
+  async increment(key: string): Promise<ClientRateLimitInfo> {
+    try {
+      const redis = getRedisClient();
+      const redisKey = this.buildKey(key);
+      const count = await redis.incr(redisKey);
 
-    // Success - record for circuit breaker
-    circuitBreaker.recordSuccess();
+      if (count === 1) {
+        await redis.expire(redisKey, Math.ceil(this.windowMs / 1000));
+      }
 
-    if (cached === null) {
-      // null means cap was hit — return 429 directly
-      res.status(429).json({
-        error: {
-          code: ErrorCodes.RATE_LIMIT_EXCEEDED,
-          error_code: ErrorCodes.RATE_LIMIT_EXCEEDED,
-          message: "API key rate limit exceeded, please try again later.",
-          limitType: "api_key" as LimiterContext,
-        },
+      const ttlMs = await redis.pttl(redisKey);
+      const resetTime = new Date(Date.now() + (ttlMs > 0 ? ttlMs : this.windowMs));
+
+      return { totalHits: count, resetTime };
+    } catch (error) {
+      logger.warn("SharedRateLimitStore Redis increment failed, using Mongo store", {
+        namespace: this.prefix,
+        error: error instanceof Error ? error.message : String(error),
       });
-      return;
+      return this.mongoStore.increment(key);
     }
-
-    next();
-  } catch (error) {
-    // Cache failure - record for circuit breaker
-    circuitBreaker.recordFailure();
-    fallbackMetrics.failuresTotal++;
-    fallbackMetrics.lastFailureAt = Date.now();
-
-    logger.error("Cache increment failed, activating fallback", {
-      cacheKey,
-      error: error instanceof Error ? error.message : String(error),
-      circuitState: circuitBreaker.getState(),
-    });
-
-    fallbackMetrics.fallbackActivations++;
-    await enforceFallbackLimit(req, res, next, FALLBACK_MAX_REQUESTS_PER_IP);
   }
-};
 
-/**
- * Standard rate limiter for general endpoints
- */
-export const standardRateLimiter = createRateLimiter(
-  config.rateLimitWindowMs,
-  config.rateLimitMaxRequests,
-  "ip",
-  "standard",
-);
-
-/**
- * Stricter rate limiter for auth endpoints (signup, signin, verify-2fa)
- */
-export const authRateLimiter = createRateLimiter(
-  config.authRateLimitWindowMs,
-  config.authRateLimitMaxRequests,
-  "ip",
-  "auth",
-);
-
-/**
- * Rate limiter for admin endpoints
- */
-export const adminRateLimiter = createRateLimiter(
-  config.adminRateLimitWindowMs,
-  config.adminRateLimitMaxRequests,
-  "ip",
-  "admin",
-);
-
-/**
- * Per-user/IP rate limiter for sensitive auth endpoints: 2FA verify, passcode reset.
- * Fixes #269 — brute-force of 2FA tokens and passcodes is possible at line speed
- * when only an IP-based limiter is applied.
- *
- * Strategy: derive a composite key from the request body's identifier/challenge_token
- * combined with the client IP so that:
- *   - A single user cannot be brute-forced from many IPs simultaneously.
- *   - A single IP cannot brute-force many accounts simultaneously.
- *
- * Limits: 5 attempts per 15 minutes per (user-identifier + IP) pair.
- * Falls back to IP-only key when no user identifier is present in the body.
- */
-const TWO_FA_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const TWO_FA_MAX_REQUESTS = 5;
-
-export const twoFaRateLimiter = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  // Extract a user-scoped identifier from the request body.
-  // For /signin: body.identifier (username/email/phone)
-  // For /signin/verify-2fa: body.challenge_token (contains userId in jti prefix)
-  // For /passcode/reset: body.identifier or body.email
-  const body = ((req as any).body ?? {}) as Record<string, unknown>;
-  const userHint =
-    (typeof body.identifier === "string" && body.identifier.slice(0, 32)) ||
-    (typeof body.challenge_token === "string" && body.challenge_token.slice(-16)) ||
-    (typeof body.email === "string" && body.email.slice(0, 32)) ||
-    "anon";
-
-  const ip = (req as any).ip || "unknown";
-  const compositeKey = `2fa:${ip}:${userHint}`;
-
-  const now = Date.now();
-  const windowId = Math.floor(now / TWO_FA_WINDOW_MS);
-  const storeKey = `${compositeKey}:${windowId}`;
-
-  try {
-    const result = await incrementFallback(storeKey, TWO_FA_WINDOW_MS);
-
-    if (result.count > TWO_FA_MAX_REQUESTS) {
-      logger.warn("2FA rate limit exceeded", {
-        ip,
-        userHint,
-        count: result.count,
-        limit: TWO_FA_MAX_REQUESTS,
+  async decrement(key: string): Promise<void> {
+    try {
+      const redis = getRedisClient();
+      await redis.decr(this.buildKey(key));
+    } catch (error) {
+      logger.warn("SharedRateLimitStore Redis decrement failed, using Mongo store", {
+        namespace: this.prefix,
+        error: error instanceof Error ? error.message : String(error),
       });
-      res.status(429).json({
-        error: {
-          code: "RATE_LIMIT_EXCEEDED",
-          message: "Too many authentication attempts. Please wait 15 minutes before trying again.",
-        },
-      });
-      return;
+      await this.mongoStore.decrement(key);
     }
-
-    next();
-  } catch (error) {
-    logger.error("2FA rate limiter failed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    res.status(429).json({
-      error: {
-        code: "RATE_LIMIT_EXCEEDED",
-        message: "Authentication service temporarily unavailable",
-      },
-    });
   }
-};
 
-/**
- * Middleware to inject fallback state into request context for downstream logging
- */
-export const injectFallbackState = (req: AuthRequest, _res: Response, next: NextFunction): void => {
-  (req as any).rateLimiterState = {
-    circuitState: circuitBreaker.getState(),
-    isFallback: !circuitBreaker.canExecute(),
-    fallbackMetrics: { ...fallbackMetrics },
-  };
-  next();
-};
+  async resetKey(key: string): Promise<void> {
+    try {
+      const redis = getRedisClient();
+      await redis.del(this.buildKey(key));
+    } catch (error) {
+      logger.warn("SharedRateLimitStore Redis resetKey failed, using Mongo store", {
+        namespace: this.prefix,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await this.mongoStore.resetKey(key);
+    }
+  }
 
-// Export for testing
-export { circuitBreaker, fallbackMetrics, FALLBACK_MAX_REQUESTS_PER_IP };
+  async resetAll(): Promise<void> {
+    try {
+      const redis = getRedisClient();
+      const keys = await redis.keys(`${this.prefix}:*`);
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
+    } catch (error) {
+      logger.warn("SharedRateLimitStore Redis resetAll failed, using Mongo store", {
+        namespace: this.prefix,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await this.mongoStore.resetAll();
+    }
+  }
+
+  async get(key: string): Promise<ClientRateLimitInfo | undefined> {
+    try {
+      const redis = getRedisClient();
+      const redisKey = this.buildKey(key);
+      const value = await redis.get(redisKey);
+
+      if (value === null) {
+        return undefined;
+      }
+
+      const ttlMs = await redis.pttl(redisKey);
+      return {
+        totalHits: Number(value),
+        resetTime: new Date(Date.now() + (ttlMs > 0 ? ttlMs : this.windowMs)),
+      };
+    } catch (error) {
+      logger.warn("SharedRateLimitStore Redis get failed, using Mongo store", {
+        namespace: this.prefix,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return this.mongoStore.get(key);
+    }
+  }
+
+  private buildKey(key: string): string {
+    return `${this.prefix}:${key}`;
+  }
+}
+
+/* … truncated 6814 chars — edit only what you need near the top … */

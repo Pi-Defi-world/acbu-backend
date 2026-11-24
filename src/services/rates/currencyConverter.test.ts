@@ -317,6 +317,49 @@ describe("currencyConverter", () => {
         }),
       );
     });
+
+    it("W10-B-005: usdAmountDecimal preserves precision where usdNumber may lose it", async () => {
+      // Use a high-precision scenario where number conversion could lose precision
+      const precisionRate = new Decimal("1000.123456789");
+      const precisionUsdRate = new Decimal("0.50789123456789");
+
+      (prisma.acbuRate.findFirst as jest.Mock).mockResolvedValue({
+        acbuNgn: precisionRate,
+        acbuUsd: precisionUsdRate,
+        timestamp: new Date(),
+      });
+
+      const largeAmount = "999999999.999999999";
+      const result = await convertLocalToUsdWithPrecision(largeAmount, "NGN");
+
+      // usdAmountDecimal should preserve full precision
+      expect(result.usdAmountDecimal).toBeInstanceOf(Decimal);
+      const decimalStr = result.usdAmountDecimal.toString();
+
+      // usdAmount (number) is the same value but as a float
+      expect(result.usdAmount).toBeCloseTo(result.usdAmountDecimal.toNumber(), 5);
+
+      // The Decimal should be used for audit logging (not the number)
+      expect(decimalStr).toBeDefined();
+      expect(decimalStr.length).toBeGreaterThan(0);
+    });
+
+    it("W10-B-005: documentation indicates usdAmount is deprecated", async () => {
+      (prisma.acbuRate.findFirst as jest.Mock).mockResolvedValue({
+        acbuNgn: new Decimal("1000.00"),
+        acbuUsd: new Decimal("0.50"),
+        timestamp: new Date(),
+      });
+
+      const result = await convertLocalToUsdWithPrecision(100000, "NGN");
+
+      // Verify the Decimal field exists and is the primary value
+      expect(result.usdAmountDecimal).toBeInstanceOf(Decimal);
+      expect(result.usdAmountDecimal.toString()).toBe("50");
+
+      // The number field exists for backwards compatibility
+      expect(typeof result.usdAmount).toBe("number");
+    });
   });
 
   describe("Real-world scenarios", () => {

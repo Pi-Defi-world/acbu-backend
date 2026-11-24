@@ -200,11 +200,18 @@ export const burnAcbu = async (
           },
         });
 
-        await logAudit("BURN_SUCCESS", {
-          userId: req.apiKey.userId,
-          acbuAmount: acbuAmount.toString(),
-          currency: body.currency,
-          txHash: transactionHash,
+        await logAudit({
+          eventType: "transaction",
+          entityType: "burn_transaction",
+          entityId: burnTx.id,
+          action: "burn_success",
+          newValue: {
+            userId: req.apiKey.userId,
+            acbuAmount: acbuAmount.toString(),
+            currency: body.currency,
+            txHash: transactionHash,
+          },
+          performedBy: req.apiKey.userId,
         });
 
         res.status(200).json({
@@ -223,10 +230,17 @@ export const burnAcbu = async (
           data: { status: "FAILED" },
         });
 
-        await logAudit("BURN_FAILED", {
-          userId: req.apiKey.userId,
-          acbuAmount: acbuAmount.toString(),
-          reason: contractError instanceof Error ? contractError.message : "Unknown error",
+        await logAudit({
+          eventType: "transaction",
+          entityType: "burn_transaction",
+          entityId: burnTx.id,
+          action: "burn_failed",
+          newValue: {
+            userId: req.apiKey.userId,
+            acbuAmount: acbuAmount.toString(),
+            reason: contractError instanceof Error ? contractError.message : "Unknown error",
+          },
+          performedBy: req.apiKey.userId,
         });
 
         throw new AppError("Contract invocation failed. Please try again later.", 500);

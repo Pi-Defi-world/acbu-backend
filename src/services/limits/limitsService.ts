@@ -10,6 +10,7 @@ import {
   getCircuitBreakerReserveWeightThresholdPct,
 } from "../../config/limits";
 import { reserveTracker, ReserveTracker } from "../reserve/ReserveTracker";
+import { Decimal } from "@prisma/client/runtime/library";
 // import { basketService } from '../basket';
 import type { Audience } from "../../middleware/auth";
 import { AppError } from "../../middleware/errorHandler";
@@ -69,9 +70,7 @@ async function sumDepositsUsdSince(
     }),
   ]);
 
-  return new Decimal(usdcAgg._sum.usdcAmount ?? 0).plus(
-    new Decimal(basketAgg._sum.amountUsd ?? 0),
-  );
+  return new Decimal(usdcAgg._sum.usdcAmount ?? 0).plus(new Decimal(basketAgg._sum.amountUsd ?? 0));
 }
 
 /**
@@ -190,10 +189,10 @@ export async function isCurrencyWithdrawalPaused(currency: string): Promise<bool
   const status = await reserveTracker.getReserveStatus(ReserveTracker.SEGMENT_TRANSACTIONS);
   const curr = status.currencies.find((c) => c.currency === currency);
   if (!curr) return false;
-  const targetWeight = curr.targetWeight;
-  const actualWeight = curr.actualWeight;
-  if (targetWeight <= 0) return false;
-  const pctOfTarget = (actualWeight / targetWeight) * 100;
+  const targetWeight = new Decimal(curr.targetWeight);
+  const actualWeight = new Decimal(curr.actualWeight);
+  if (targetWeight.lte(0)) return false;
+  const pctOfTarget = actualWeight.div(targetWeight).mul(100).toNumber();
   return pctOfTarget < (await getCircuitBreakerReserveWeightThresholdPct());
 }
 

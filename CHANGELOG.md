@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Removed
+
+- **Pi Network scope drift resolved (W10-P-007):** Wallet activation is now
+  unambiguously Stellar-only. Removed the dead `bootstrapProfile.includes("pi")`
+  branch from `src/config/env.ts` (the `nativeAssetCode` now defaults to `XLM`,
+  overridable via `STELLAR_NATIVE_ASSET_CODE`), and replaced the `"PI"` /
+  `"pi-testnet"` mock values in `src/services/stellar/activationService.test.ts`
+  with `"XLM"` / `"xlm-testnet"`. Pi Network Mainnet / Open-Mainnet status is
+  out of scope and is not monitored. See `docs/ACTIVATION_SCOPE.md` for the
+  scope decision record. The historical `CHANGELOG.md` entry "Add Pi bridge
+  support for wallet activation" is preserved as a historical record only.
+
 ## [1.0.0] - 2026-09-01
 
 ### Features

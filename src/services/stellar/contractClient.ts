@@ -7,6 +7,35 @@ import { trace, SpanStatusCode } from "@opentelemetry/api";
 
 const sorobanTracer = trace.getTracer("soroban");
 
+/**
+ * Primitive JavaScript values that a Soroban ScVal can be decoded into.
+ * Replaces the previous `any` return type on fromScVal so callers catch
+ * shape mismatches at compile time instead of at runtime.
+ */
+export type ScValPrimitive =
+  | boolean
+  | null
+  | number
+  | string
+  | bigint
+  | Uint8Array
+  | Buffer
+  | xdr.ScVal
+  | ScValPrimitive[];
+
+/**
+ * Accepted JavaScript input types for toScVal.
+ * Replaces the previous `any` parameter type so unsupported shapes are
+ * rejected by the compiler rather than reaching the runtime throw.
+ */
+export type ScValInput =
+  | string
+  | number
+  | bigint
+  | boolean
+  | Uint8Array
+  | ScValInput[];
+
 function isRetryableSorobanNetworkError(message: string): boolean {
   return /ENOTFOUND|ECONNRESET|ETIMEDOUT|ECONNREFUSED|fetch failed|socket hang up/i.test(message);
 }
@@ -173,7 +202,7 @@ export class ContractClient {
 
       // IMPORTANT: Soroban transactions should be submitted to the Soroban RPC,
       // not Horizon `/transactions` (which can 504 on long-running Soroban TXs).
-      let send: any;
+      let send: rpc.Api.SendTransactionResponse | undefined;
       let lastSendError: unknown;
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -203,7 +232,7 @@ export class ContractClient {
       const start = Date.now();
 
       while (true) {
-        let status: any;
+        let status: rpc.Api.GetTransactionResponse;
         try {
           status = await rpcServer.getTransaction(txHash);
         } catch (e) {
@@ -230,15 +259,16 @@ export class ContractClient {
           // value. Prefer `returnValue`; fall back to TransactionResult parsing
           // for non-Soroban paths or older RPC responses.
           let resultScVal: xdr.ScVal;
-          if (status.returnValue) {
-            resultScVal = status.returnValue as xdr.ScVal;
+          const successStatus = status as rpc.Api.GetSuccessfulTransactionResponse;
+          if (successStatus.returnValue) {
+            resultScVal = successStatus.returnValue as xdr.ScVal;
           } else {
-            resultScVal = this.parseTransactionResult(status);
+            resultScVal = this.parseTransactionResult(successStatus);
           }
           return {
             transactionHash: txHash,
             result: resultScVal,
-            ledger: status.ledger ?? 0,
+            ledger: successStatus.ledger ?? 0,
           };
         }
         if (status.status === "FAILED") {
@@ -326,27 +356,28 @@ export class ContractClient {
   }
 
   /**
-   * Parse transaction result
+   * Parse transaction result from the Soroban RPC getTransaction response.
+   * Accepts GetSuccessfulTransactionResponse which carries resultXdr.
+   * Falls back to Horizon-style result_xdr shape for non-Soroban paths.
    */
-  private parseTransactionResult(result: any): xdr.ScVal {
+  private parseTransactionResult(
+    result: rpc.Api.GetSuccessfulTransactionResponse,
+  ): xdr.ScVal {
     try {
-      const rawResultXdr =
-        // Horizon shape
-        result?.result_xdr ??
-        // Soroban RPC `getTransaction` shape
-        result?.resultXdr ??
-        result?.result_xdr;
+      // `resultXdr` is present on GetSuccessfulTransactionResponse.
+      // We normalise it to a base64 string regardless of whether the SDK has
+      // already parsed it into an XDR struct or left it as a raw string.
+      const rawResultXdr: xdr.TransactionResult | string | undefined =
+        result.resultXdr;
 
       if (rawResultXdr) {
-        // Newer stellar-sdk versions may already parse `resultXdr` into an XDR struct.
-        // Normalize into a base64 string for `fromXDR`.
         const resultXdrBase64: string =
           typeof rawResultXdr === "string"
             ? rawResultXdr
-            : typeof rawResultXdr?.toXDR === "function"
-              ? rawResultXdr.toXDR("base64")
+            : typeof (rawResultXdr as xdr.TransactionResult).toXDR === "function"
+              ? (rawResultXdr as xdr.TransactionResult).toXDR("base64")
               : Buffer.isBuffer(rawResultXdr)
-                ? rawResultXdr.toString("base64")
+                ? (rawResultXdr as Buffer).toString("base64")
                 : String(rawResultXdr);
 
         const txResult = xdr.TransactionResult.fromXDR(resultXdrBase64, "base64");
@@ -368,9 +399,11 @@ export class ContractClient {
   }
 
   /**
-   * Convert JavaScript value to ScVal
+   * Convert a JavaScript primitive to a Soroban ScVal.
+   * Accepted input types are defined by ScValInput; unsupported shapes are
+   * rejected at compile time rather than reaching the runtime throw.
    */
-  static toScVal(value: any): xdr.ScVal {
+  static toScVal(value: ScValInput): xdr.ScVal {
     if (typeof value === "string") {
       try {
         // Try to parse as Address if it looks like one
@@ -396,9 +429,11 @@ export class ContractClient {
   }
 
   /**
-   * Convert ScVal to JavaScript value
+   * Convert a Soroban ScVal to a JavaScript primitive.
+   * Returns ScValPrimitive instead of `any` so callers can catch shape
+   * mismatches at compile time.
    */
-  static fromScVal(scVal: xdr.ScVal): any {
+  static fromScVal(scVal: xdr.ScVal): ScValPrimitive {
     switch (scVal.switch()) {
       case xdr.ScValType.scvBool():
         return scVal.b();

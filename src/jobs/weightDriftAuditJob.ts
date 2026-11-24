@@ -20,7 +20,7 @@ import { logger } from "../config/logger";
 import { weightDriftAuditService } from "../services/reserve/WeightDriftAuditService";
 import { sendEmail } from "../services/notification";
 import { config } from "../config/env";
-import { acquireJobLock, releaseJobLock } from "../utils/jobLock";
+import { Decimal } from "@prisma/client/runtime/library";
 
 const DEFAULT_INTERVAL_DAYS = 7; // Run weekly
 const INTERVAL_MS =
@@ -131,7 +131,7 @@ export async function runWeightDriftAuditOnce(): Promise<void> {
     const driftSummary = audit.entries
       .map(
         (e) =>
-          `  ${e.currency}: Policy=${e.policyWeight}% | Actual=${e.actualWeight}% | Drift=${e.driftPercent > 0 ? "+" : ""}${e.driftPercent.toFixed(2)}%${
+          `  ${e.currency}: Policy=${e.policyWeight}% | Actual=${e.actualWeight}% | Drift=${new Decimal(e.driftPercent).gt(0) ? "+" : ""}${new Decimal(e.driftPercent).toFixed(2)}%${
             e.exceedsThreshold ? " ⚠️ EXCEEDS THRESHOLD" : ""
           }`,
       )

@@ -1,5 +1,10 @@
 /**
  * Soroban RPC / host errors often stringify poorly in logs; normalize for API responses.
+ *
+ * Note (W11-CAR-008): the acbu_multisig contract must implement Soroban's custom
+ * account interface `__check_auth(signature_payload: Hash<32>, signatures: Vec<Signature>)
+ * -> Result<(), Error>` so that other contracts calling `require_auth()` against the
+ * multisig address succeed. Errors from that path surface through this normalizer.
  */
 export function sorobanErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {

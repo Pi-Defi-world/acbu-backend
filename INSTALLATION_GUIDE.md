@@ -91,7 +91,7 @@ Expected output:
 PASS  src/services/feePolicy/__tests__/feePolicyService.pbt.test.ts
   Property-Based Tests: getBurnFeeBps
     ✓ PROPERTY: Fee is always within sanity bounds [1, 500] BPS (100 runs)
-    ✓ PROPERTY: Fee is one of exactly three valid values [5, 10, 200] (100 runs)
+    ✓ PROPERTY: Fee is one of exactly three valid values [5, 30, 200] (100 runs)
     ✓ PROPERTY: Monotonicity - fee decreases as reserve weight increases (100 runs)
     ✓ PROPERTY: Boundary consistency - fees at thresholds are deterministic (120 runs)
     ✓ PROPERTY: Fee calculation is deterministic for same inputs (50 runs)

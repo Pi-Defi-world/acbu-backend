@@ -15,6 +15,7 @@ import {
 } from "../controllers/authController";
 import { validateApiKey } from "../middleware/auth";
 import type { AuthRequest } from "../middleware/auth";
+import { requireAdminKeyType } from "../middleware/segmentGuard";
 import { authRateLimiter, apiKeyRateLimiter, twoFaRateLimiter } from "../middleware/rateLimiter";
 
 /**
@@ -118,12 +119,9 @@ import { authRateLimiter, apiKeyRateLimiter, twoFaRateLimiter } from "../middlew
  *                       format: uuid
  *                     stellar_address:
  *                       type: string
- *                     wallet_created:
+ *                     wallet_enrollment_required:
  *                       type: boolean
- *                     passphrase:
- *                       type: string
- *                     encryption_method_required:
- *                       type: boolean
+ *                       description: True when the client must generate and enroll its own keypair
  *                 - type: object
  *                   description: 2FA required
  *                   properties:
@@ -258,11 +256,27 @@ router.post(
 router.post("/signout", validateApiKey, apiKeyRateLimiter, postSignout);
 
 // Privileged key lifecycle requires authenticated user + MFA challenge verification.
+// W10-BE-005: key management (listing/revoking admin material) additionally requires an
+// admin-capable key type, so an admin-tier *account* session alone cannot enumerate or
+// revoke privileged keys. Issuance endpoints keep the tier + MFA path (no key-type guard)
+// because they are how the first admin/break-glass key is bootstrapped from a USER_KEY.
 router.post("/admin/challenge", validateApiKey, apiKeyRateLimiter, postAdminMfaChallenge);
 router.post("/keys/admin", validateApiKey, apiKeyRateLimiter, postIssueAdminKey);
 router.post("/keys/break-glass", validateApiKey, apiKeyRateLimiter, postIssueBreakGlassKey);
-router.get("/keys/privileged", validateApiKey, apiKeyRateLimiter, getPrivilegedKeys);
-router.post("/keys/:id/revoke", validateApiKey, apiKeyRateLimiter, postRevokePrivilegedKey);
+router.get(
+  "/keys/privileged",
+  validateApiKey,
+  requireAdminKeyType(),
+  apiKeyRateLimiter,
+  getPrivilegedKeys,
+);
+router.post(
+  "/keys/:id/revoke",
+  validateApiKey,
+  requireAdminKeyType(),
+  apiKeyRateLimiter,
+  postRevokePrivilegedKey,
+);
 
 // Refresh token endpoints
 router.post("/refresh-token", authRateLimiter, postRefreshAccessToken);
