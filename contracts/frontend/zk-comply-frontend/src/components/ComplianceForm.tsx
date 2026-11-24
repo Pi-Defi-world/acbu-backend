@@ -389,7 +389,7 @@ function ProvingStep({
         });
         if (cancelled) return;
 
-        setStatus("Submitting verify() to Soroban…");
+        setStatus("Submitting verify() and waiting for Soroban confirmation…");
         const submission = await submitProof(
           signerSecret,
           verifierContractId,
