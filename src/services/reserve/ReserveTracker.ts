@@ -12,10 +12,14 @@ import { QUEUES } from "../../config/rabbitmq";
 import { Decimal } from "@prisma/client/runtime/library";
 import { stellarClient } from "../stellar/client";
 import { contractClient, ContractClient } from "../stellar/contractClient";
+import {
+  OraclePriceError,
+  assertPositiveOraclePrice,
+  computeReserveValueUsd,
+} from "../contracts/oraclePrice";
 
 /** Contract uses 7 decimals (10^7) for reserve amount and value_usd */
 const RESERVE_DECIMALS = 1e7;
-const RESERVE_DECIMALS_BIGINT = 10_000_000n;
 
 /** Build the Soroban `CurrencyCode` tuple-struct ScVal: scvVec([scvVec([scvString(code)])]). */
 function currencyCodeToScVal(code: string): xdr.ScVal {
@@ -40,27 +44,28 @@ async function readOnChainCustody(currency: string): Promise<{
     return null;
   }
 
-  const rateRes = await contractClient.readContract(
-    addresses.oracle,
-    "get_rate",
-    [currencyCodeToScVal(currency)],
-  );
-  const rateUsdAtomic = BigInt(ContractClient.fromScVal(rateRes).toString());
+  const rateRes = await contractClient.readContract(addresses.oracle, "get_rate", [
+    currencyCodeToScVal(currency),
+  ]);
+  const rateUsdAtomic = assertPositiveOraclePrice(ContractClient.fromScVal(rateRes), currency);
 
-  const sTokenRes = await contractClient.readContract(
-    addresses.oracle,
-    "get_s_token_address",
-    [currencyCodeToScVal(currency)],
-  );
+  const sTokenRes = await contractClient.readContract(addresses.oracle, "get_s_token_address", [
+    currencyCodeToScVal(currency),
+  ]);
   const sToken = ContractClient.fromScVal(sTokenRes).toString();
 
   const balRes = await contractClient.readContract(sToken, "balance", [
     ContractClient.toScVal(addresses.minting),
   ]);
   const amountAtomic = BigInt(ContractClient.fromScVal(balRes).toString());
+  if (amountAtomic < 0n) {
+    throw new OraclePriceError(`Custody balance for ${currency} is negative: ${amountAtomic}`);
+  }
 
-  const valueUsdAtomic =
-    (amountAtomic * rateUsdAtomic) / RESERVE_DECIMALS_BIGINT;
+  // Checked math: requires a strictly positive oracle price (W11-CAR-030).
+  // A zero/missing price throws instead of producing a 0-USD reserve value
+  // that would flip is_reserve_sufficient to false or panic the contract.
+  const valueUsdAtomic = computeReserveValueUsd(amountAtomic, rateUsdAtomic, currency);
 
   return { amountAtomic, rateUsdAtomic, valueUsdAtomic };
 }
@@ -75,10 +80,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
       return await fn();
     } catch (e) {
       lastError = e;
-      logger.warn(
-        `${label} attempt ${attempt}/${RESERVE_TRACKER_RETRIES} failed`,
-        { error: e },
-      );
+      logger.warn(`${label} attempt ${attempt}/${RESERVE_TRACKER_RETRIES} failed`, { error: e });
       if (attempt < RESERVE_TRACKER_RETRIES) {
         await new Promise((r) => setTimeout(r, RESERVE_TRACKER_RETRY_DELAY_MS));
       }
@@ -118,9 +120,7 @@ export class ReserveTracker {
       const fintechRouter = getFintechRouter();
       const contractAddresses = getContractAddresses();
       const onChainEnabled = Boolean(
-        contractAddresses.reserveTracker &&
-        contractAddresses.oracle &&
-        contractAddresses.minting,
+        contractAddresses.reserveTracker && contractAddresses.oracle && contractAddresses.minting,
       );
 
       for (const currency of currencies) {
@@ -144,8 +144,7 @@ export class ReserveTracker {
                 onChainAmountAtomic = custody.amountAtomic;
                 onChainValueUsdAtomic = custody.valueUsdAtomic;
                 balance = Number(custody.amountAtomic) / RESERVE_DECIMALS;
-                reserveValueUsd =
-                  Number(custody.valueUsdAtomic) / RESERVE_DECIMALS;
+                reserveValueUsd = Number(custody.valueUsdAtomic) / RESERVE_DECIMALS;
               }
             } catch (e) {
               logger.warn(
@@ -158,8 +157,7 @@ export class ReserveTracker {
           if (onChainAmountAtomic === null) {
             // Fallback path (non-custodial deployments with real fintech partners).
             balance = await withRetry(
-              async () =>
-                (await fintechRouter.getProvider(currency)).getBalance(currency),
+              async () => (await fintechRouter.getProvider(currency)).getBalance(currency),
               `getBalance(${currency})`,
             );
             const rate = await withRetry(
@@ -172,9 +170,7 @@ export class ReserveTracker {
           const targetWeight = await basketService.getTargetWeight(currency);
           const totalReserveValue = await this.getTotalReserveValue();
           const actualWeight =
-            totalReserveValue > 0
-              ? (reserveValueUsd / totalReserveValue) * 100
-              : 0;
+            totalReserveValue > 0 ? (reserveValueUsd / totalReserveValue) * 100 : 0;
 
           // Store reserve snapshot (off-chain) for transactions segment
           await prisma.reserve.create({
@@ -192,8 +188,7 @@ export class ReserveTracker {
           // real custody balance (otherwise we'd overwrite genuine on-chain
           // reserves with zeros and break future mints).
           if (onChainEnabled) {
-            const hasRealBalance =
-              onChainAmountAtomic !== null && onChainValueUsdAtomic !== null;
+            const hasRealBalance = onChainAmountAtomic !== null && onChainValueUsdAtomic !== null;
 
             if (!hasRealBalance) {
               logger.warn(
@@ -203,8 +198,7 @@ export class ReserveTracker {
             } else {
               try {
                 const sourceAccount = stellarClient.getKeypair()?.publicKey();
-                if (!sourceAccount)
-                  throw new Error("No source account available");
+                if (!sourceAccount) throw new Error("No source account available");
 
                 const txHash = await acbuReserveTrackerService.updateReserve({
                   updater: sourceAccount,
@@ -214,13 +208,10 @@ export class ReserveTracker {
                 });
                 logger.info("Reserve synced to chain", { currency, txHash });
               } catch (onChainError) {
-                logger.warn(
-                  "On-chain reserve update failed (off-chain data saved)",
-                  {
-                    currency,
-                    error: onChainError,
-                  },
-                );
+                logger.warn("On-chain reserve update failed (off-chain data saved)", {
+                  currency,
+                  error: onChainError,
+                });
               }
             }
           }
@@ -238,10 +229,7 @@ export class ReserveTracker {
             balance,
             reserveValueUsd,
             actualWeight,
-            source:
-              onChainAmountAtomic !== null
-                ? "on-chain-custody"
-                : "fintech-provider",
+            source: onChainAmountAtomic !== null ? "on-chain-custody" : "fintech-provider",
           });
         } catch (error) {
           logger.error("Failed to track reserve for currency", {
@@ -297,8 +285,7 @@ export class ReserveTracker {
           reserveAmount: latestReserve.reserveAmount.toNumber(),
           reserveValueUsd: latestReserve.reserveValueUsd.toNumber(),
           weightDrift:
-            latestReserve.actualWeight.toNumber() -
-            latestReserve.targetWeight.toNumber(),
+            latestReserve.actualWeight.toNumber() - latestReserve.targetWeight.toNumber(),
         });
       }
     }
@@ -427,11 +414,7 @@ export class ReserveTracker {
 
     try {
       const server = stellarClient.getServer();
-      const assets = await server
-        .assets()
-        .forCode(assetCode)
-        .forIssuer(issuer)
-        .call();
+      const assets = await server.assets().forCode(assetCode).forIssuer(issuer).call();
 
       if (assets.records.length === 0) {
         return ledgerSupply;
@@ -442,22 +425,18 @@ export class ReserveTracker {
       const driftThreshold = 0.01;
 
       if (delta > driftThreshold) {
-        logger.warn(
-          "RESERVE DRIFT DETECTED: DB Ledger and On-Chain supply diverge",
-          {
-            ledgerSupply,
-            onChainSupply,
-            delta,
-          },
-        );
+        logger.warn("RESERVE DRIFT DETECTED: DB Ledger and On-Chain supply diverge", {
+          ledgerSupply,
+          onChainSupply,
+          delta,
+        });
       }
 
       return onChainSupply;
     } catch (e) {
-      logger.error(
-        "Failed to query Stellar for ACBU total supply, falling back to ledger",
-        { error: e },
-      );
+      logger.error("Failed to query Stellar for ACBU total supply, falling back to ledger", {
+        error: e,
+      });
       return ledgerSupply;
     }
   }
@@ -487,6 +466,10 @@ export class ReserveTracker {
 
   /**
    * Get currency exchange rate from Oracle
+   *
+   * Validated per W11-CAR-030: the rate must be strictly positive before it
+   * is used to value reserves; a zero rate would zero out reserve value and
+   * break sufficiency assertions downstream.
    */
   private async getCurrencyRate(currency: string): Promise<number> {
     const latestRate = await prisma.oracleRate.findFirst({
@@ -495,7 +478,13 @@ export class ReserveTracker {
     });
 
     if (latestRate) {
-      return latestRate.rateUsd.toNumber();
+      const rate = latestRate.rateUsd.toNumber();
+      if (!(rate > 0)) {
+        throw new Error(
+          `Oracle rate for ${currency} is ${rate}; a positive rate is required to value reserves`,
+        );
+      }
+      return rate;
     }
 
     throw new Error(`Oracle rate not available for ${currency}`);

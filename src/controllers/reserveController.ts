@@ -4,10 +4,7 @@ import { ReserveTrackerService } from "../services/contracts/acbuReserveTracker.
 import { OracleService } from "../services/contracts/acbuOracle.service";
 import { BASKET_CURRENCIES } from "../config/basket";
 import { reserveTracker } from "../services/reserve/ReserveTracker";
-import {
-  contractClient,
-  ContractClient,
-} from "../services/stellar/contractClient";
+import { contractClient, ContractClient } from "../services/stellar/contractClient";
 
 const DRIFT_THRESHOLD_BPS_WARN_ONLY = 100; // 1.00%
 
@@ -57,12 +54,11 @@ export const getReserveStatus = async (
     const minRatio = Number(process.env.RESERVE_MIN_RATIO ?? "1.02");
     const targetRatio = Number(process.env.RESERVE_TARGET_RATIO ?? "1.05");
 
-    const [totalReserveValueUsdStr, acbuUsdRateStr, allReserves] =
-      await Promise.all([
-        reserveSvc.getTotalReserveValue(),
-        oracleSvc.getAcbuUsdRate(),
-        reserveSvc.getAllReserves(),
-      ]);
+    const [totalReserveValueUsdStr, acbuUsdRateStr, allReserves] = await Promise.all([
+      reserveSvc.getTotalReserveValue(),
+      oracleSvc.getAcbuUsdRate(),
+      reserveSvc.getAllReserves(),
+    ]);
 
     const totalSupplyRes = await contractClient.readContract(
       addresses.minting,
@@ -75,9 +71,7 @@ export const getReserveStatus = async (
     const totalSupply = BigInt(totalAcbuSupply || "0");
 
     const effectiveRatio =
-      totalSupply > 0n
-        ? Number(totalReserveValueUsd) / Number(totalSupply)
-        : null;
+      totalSupply > 0n ? Number(totalReserveValueUsd) / Number(totalSupply) : null;
 
     const currencies = await Promise.all(
       BASKET_CURRENCIES.map(async (currency) => {
@@ -87,11 +81,26 @@ export const getReserveStatus = async (
           valueUsd: "0",
           timestamp: 0,
         };
-        const rateUsdStr = await oracleSvc.getRate(currency).catch(() => "0");
+        // W11-CAR-030: never surface a zero/missing oracle price as a real
+        // "0" rate; report it as null so consumers can treat it as invalid.
+        let rateUsdStr: string | null = null;
+        let oracleRateValid = false;
+        try {
+          rateUsdStr = await oracleSvc.getRate(currency);
+          oracleRateValid = true;
+        } catch {
+          rateUsdStr = null;
+        }
 
+        const amount = BigInt(reserve.amount || "0");
         const valueUsd = BigInt(reserve.valueUsd || "0");
+        // A positive custody amount with zero USD value is the signature of a
+        // zero/missing oracle price (W11-CAR-030); flag it instead of letting a
+        // corrupted zero flow into sufficiency/weight math.
+        const valueUsdSuspect = amount > 0n && valueUsd <= 0n;
+
         const actualWeightBps =
-          totalReserveValueUsd > 0n
+          totalReserveValueUsd > 0n && !valueUsdSuspect
             ? Number((valueUsd * 10_000n) / totalReserveValueUsd)
             : 0;
 
@@ -100,9 +109,7 @@ export const getReserveStatus = async (
           "get_basket_weight",
           [ContractClient.toScVal([[currency]])],
         );
-        const targetWeightBps = Number(
-          ContractClient.fromScVal(targetWeightBpsRes),
-        );
+        const targetWeightBps = Number(ContractClient.fromScVal(targetWeightBpsRes));
 
         const driftBps = actualWeightBps - targetWeightBps;
         const driftWarning = Math.abs(driftBps) > DRIFT_THRESHOLD_BPS_WARN_ONLY;
@@ -112,6 +119,8 @@ export const getReserveStatus = async (
           amount: reserve.amount,
           value_usd: reserve.valueUsd,
           rate_usd: rateUsdStr,
+          oracle_rate_valid: oracleRateValid,
+          value_usd_suspect: valueUsdSuspect,
           target_weight_bps: targetWeightBps,
           actual_weight_bps: actualWeightBps,
           drift_bps: driftBps,

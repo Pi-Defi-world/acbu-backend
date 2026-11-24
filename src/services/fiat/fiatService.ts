@@ -2,18 +2,11 @@ import { prisma } from "../../config/database";
 import { BASKET_CURRENCIES, type BasketCurrency } from "../../config/basket";
 import { Decimal } from "@prisma/client/runtime/library";
 import { getLatestAcbuRate } from "../rates/acbuRateCache";
-import {
-  acbuBurningService,
-  acbuMintingService,
-  acbuOracleService,
-} from "../contracts";
+import { acbuBurningService, acbuMintingService, acbuOracleService } from "../contracts";
 import { stellarClient } from "../stellar/client";
 import { getContractAddresses } from "../../config/contracts";
 import { decryptUserStellarSecret } from "../wallet/stellarSecretService";
-import {
-  ensureAcbuTrustline,
-  ensureDemoFiatTrustline,
-} from "../stellar/trustlineService";
+import { ensureAcbuTrustline, ensureDemoFiatTrustline } from "../stellar/trustlineService";
 import { ensureAccountActivated } from "../stellar/activationService";
 
 const DECIMALS_7 = 1e7;
@@ -43,13 +36,10 @@ function divCeil(a: bigint, b: bigint): bigint {
  * Pre-validate demo fiat mint bounds using current on-chain oracle rate so we can
  * return a clean 400 instead of a generic Soroban simulation error.
  */
-async function validateDemoMintAmount(
-  currency: string,
-  fiatAmountI128: string,
-): Promise<void> {
+async function validateDemoMintAmount(currency: string, fiatAmountI128: string): Promise<void> {
   try {
     const rate = BigInt(await acbuOracleService.getRate(currency));
-    if (rate <= 0n) return; // Let on-chain path surface invalid-rate if needed.
+    // getRate throws on zero/missing rates (W11-CAR-030), so rate > 0 here.
 
     const fiat = BigInt(fiatAmountI128);
     const usdGross = (fiat * rate) / DECIMALS_7_BIGINT;
@@ -89,9 +79,7 @@ export type FiatAccountView = {
 /**
  * Soroban custodial demo fiat: no simulated bank. Returns one row per basket currency for UI compatibility.
  */
-export async function getBankAccounts(
-  userId: string,
-): Promise<FiatAccountView[]> {
+export async function getBankAccounts(userId: string): Promise<FiatAccountView[]> {
   const [user, faucetRows, latestRates] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
@@ -120,8 +108,7 @@ export async function getBankAccounts(
     }),
   ]);
 
-  const suffix =
-    user?.username || user?.phoneE164 || user?.id.slice(0, 8) || "user";
+  const suffix = user?.username || user?.phoneE164 || user?.id.slice(0, 8) || "user";
 
   const balances = new Map<string, number>();
   for (const c of BASKET_CURRENCIES) balances.set(c, 0);
@@ -225,11 +212,7 @@ export async function requestFaucet(
     }));
   } catch (e) {
     // If the user has no trustline yet, try to add it (if passcode available) and retry once.
-    if (
-      passcode &&
-      e instanceof Error &&
-      e.message.includes("trustline entry is missing")
-    ) {
+    if (passcode && e instanceof Error && e.message.includes("trustline entry is missing")) {
       const secret = await decryptUserStellarSecret(userId, passcode);
       if (!secret) throw e;
       await ensureDemoFiatTrustline({ userSecret: secret, currency });
@@ -358,11 +341,7 @@ export async function simulateOnRamp(
     };
   } catch (err: unknown) {
     // Retry once after auto-adding ACBU trustline (same resilience pattern as faucet).
-    if (
-      passcode &&
-      err instanceof Error &&
-      err.message.includes("trustline entry is missing")
-    ) {
+    if (passcode && err instanceof Error && err.message.includes("trustline entry is missing")) {
       const secret = await decryptUserStellarSecret(userId, passcode);
       if (secret) {
         await ensureAcbuTrustline({ userSecret: secret });
@@ -432,11 +411,7 @@ export async function simulateOffRamp(
     `acbu${currency.charAt(0).toUpperCase() + currency.slice(1).toLowerCase()}` as keyof typeof acbuRateRecord;
   const acbuPerLocal = acbuRateRecord[rateKey];
 
-  if (
-    !acbuPerLocal ||
-    typeof acbuPerLocal !== "object" ||
-    !("toNumber" in acbuPerLocal)
-  ) {
+  if (!acbuPerLocal || typeof acbuPerLocal !== "object" || !("toNumber" in acbuPerLocal)) {
     throw new Error(`Rate not found for currency ${currency}`);
   }
 

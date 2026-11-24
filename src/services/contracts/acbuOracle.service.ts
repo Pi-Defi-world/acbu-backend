@@ -1,6 +1,7 @@
 import { contractClient, ContractClient } from "../stellar/contractClient";
 import { stellarClient } from "../stellar/client";
 import { logger } from "../../config/logger";
+import { assertPositiveOraclePrice } from "./oraclePrice";
 
 export interface UpdateRateParams {
   validator: string; // The validator address
@@ -21,6 +22,9 @@ export class OracleService {
 
   /**
    * Update exchange rate for a currency (validator function)
+   *
+   * Guarded per W11-CAR-030: a zero or negative rate is never written
+   * on-chain, since it would poison every downstream reserve valuation.
    */
   async updateRate(params: UpdateRateParams): Promise<string> {
     try {
@@ -30,6 +34,9 @@ export class OracleService {
       if (!sourceAccount) {
         throw new Error("No source account available");
       }
+
+      // Reject zero/negative/invalid rates before they reach the chain.
+      assertPositiveOraclePrice(params.rate, params.currency);
 
       // Custodial MVP: use admin override to reliably write rates on-chain.
       // This avoids validator-path failures while still populating the same on-chain `rates`
@@ -59,19 +66,25 @@ export class OracleService {
 
   /**
    * Get current rate for a currency
+   *
+   * Validated per W11-CAR-030: a zero or missing oracle price must never be
+   * returned to callers doing reserve math. Callers receive a positive atomic
+   * price or an error.
    */
   async getRate(currency: string): Promise<string> {
     try {
-      const result = await this.contractClient.readContract(
-        this.contractId,
-        "get_rate",
-        [ContractClient.toScVal([[currency]])],
-      );
+      const result = await this.contractClient.readContract(this.contractId, "get_rate", [
+        ContractClient.toScVal([[currency]]),
+      ]);
 
-      const rate = ContractClient.fromScVal(result);
+      const rawRate = ContractClient.fromScVal(result);
+      const rate = assertPositiveOraclePrice(rawRate, currency);
       return rate.toString();
     } catch (error) {
-      logger.error("Failed to get rate", { currency, error });
+      logger.error("Failed to get a valid (positive) oracle rate for reserve math", {
+        currency,
+        error,
+      });
       throw error;
     }
   }
@@ -100,11 +113,7 @@ export class OracleService {
    */
   async getValidators(): Promise<string[]> {
     try {
-      const result = await this.contractClient.readContract(
-        this.contractId,
-        "get_validators",
-        [],
-      );
+      const result = await this.contractClient.readContract(this.contractId, "get_validators", []);
 
       const validators = ContractClient.fromScVal(result) as any[];
       return validators.map((v) => v.toString());
