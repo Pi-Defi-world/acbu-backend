@@ -10,15 +10,27 @@ import { config } from "../../config/env";
 import { logger } from "../../config/logger";
 import { CircuitBreaker } from "../../utils/circuitBreaker";
 import { validateOperationsForTreasuryAccount } from "./operationSecurity";
+import { HorizonPool } from "./horizonPool";
 
 const Server = Horizon.Server;
+
+export interface StellarTransactionSigner {
+  /** Public key (G...) of the signing account, HSM key, or multi-sig coordinator. */
+  publicKey: string;
+  /** Sign a Stellar transaction via an external HSM, KMS, or multi-sig custodial service. */
+  sign(transaction: Transaction): Promise<Transaction> | Transaction;
+}
 
 export interface StellarNetworkConfig {
   network: "testnet" | "mainnet";
   horizonUrl: string;
+  /** Optional additional Horizon endpoints used for failover. */
+  horizonFallbackUrls?: string[];
   networkPassphrase: string;
   secretKey?: string;
   treasuryAccountId?: string;
+  /** Optional external signer (HSM / multi-sig custody) used instead of a raw secretKey. */
+  signer?: StellarTransactionSigner;
 }
 
 export type StellarServer = InstanceType<typeof Server>;
@@ -31,22 +43,19 @@ export interface FeeBumpOptions {
 }
 
 export class StellarClient {
-  private server: StellarServer;
+  private horizonPool: HorizonPool;
   private network: "testnet" | "mainnet";
   private networkPassphrase: string;
   private keypair: Keypair | null = null;
+  private signer?: StellarTransactionSigner;
   /** Public key of the configured treasury account, when a secret key is provided. */
   private treasuryAccountId?: string;
-  readonly horizonBreaker = new CircuitBreaker({
-    failureThreshold: 3,
-    cooldownMs: 30_000,
-    successThreshold: 2,
-    serviceName: "stellar_horizon",
-  });
+  readonly horizonBreaker: CircuitBreaker;
 
   constructor(cfg?: Partial<StellarNetworkConfig>) {
     const network = (cfg?.network ?? config.stellar.network) as "testnet" | "mainnet";
     const horizonUrl = cfg?.horizonUrl ?? config.stellar.horizonUrl;
+    const fallbackUrls = cfg?.horizonFallbackUrls ?? config.stellar.horizonFallbackUrls ?? [];
     const networkPassphrase =
       cfg?.networkPassphrase ??
       config.stellar.networkPassphrase ??
@@ -56,8 +65,19 @@ export class StellarClient {
 
     this.network = network;
     this.networkPassphrase = networkPassphrase;
-    this.server = new Server(horizonUrl);
+    this.horizonPool = new HorizonPool([horizonUrl, ...fallbackUrls]);
+    this.horizonBreaker = this.horizonPool.getPrimaryBreaker();
     this.treasuryAccountId = cfg?.treasuryAccountId ?? config.stellar.treasuryAccountId;
+    this.signer = cfg?.signer;
+
+    if (this.signer) {
+      this.treasuryAccountId ??= this.signer.publicKey;
+      logger.info("External Stellar transaction signer configured", {
+        publicKey: this.signer.publicKey,
+        network,
+      });
+      return;
+    }
 
     // Initialize keypair if secret key is provided
     const secretKey = cfg?.secretKey ?? config.stellar.secretKey;
@@ -76,10 +96,15 @@ export class StellarClient {
   }
 
   /**
-   * Get the Stellar server instance
+   * Get the Stellar server instance (preferred healthy endpoint)
    */
   getServer(): InstanceType<typeof Server> {
-    return this.server;
+    return this.horizonPool.getServer();
+  }
+
+  /** Run an operation against the Horizon pool with failover. */
+  withHorizon<T>(label: string, op: (server: StellarServer) => Promise<T>): Promise<T> {
+    return this.horizonPool.execute(label, op);
   }
 
   /**
@@ -106,6 +131,11 @@ export class StellarClient {
     return config.stellar.horizonUrl;
   }
 
+  /** All configured Horizon endpoints in preference order. */
+  getHorizonUrls(): string[] {
+    return this.horizonPool.getUrls();
+  }
+
   /**
    * Get the keypair (if initialized)
    */
@@ -114,19 +144,16 @@ export class StellarClient {
   }
 
   /**
-   * Get account information with retries
+   * Get account information with retries and Horizon endpoint failover
    */
   async getAccount(accountId: string, retries = 3) {
     for (let i = 0; i < retries; i++) {
       try {
-        if (!this.horizonBreaker.canExecute()) {
-          throw new Error("Horizon circuit breaker is OPEN — skipping request");
-        }
-        const account = await this.server.loadAccount(accountId);
-        this.horizonBreaker.recordSuccess();
+        const account = await this.withHorizon("loadAccount", (server) =>
+          server.loadAccount(accountId),
+        );
         return account;
       } catch (error: any) {
-        this.horizonBreaker.recordFailure();
         if (i === retries - 1) {
           logger.error("Failed to load account after retries", {
             accountId,
@@ -166,12 +193,8 @@ export class StellarClient {
       if (!fee) {
         if (config.stellar.useDynamicFees) {
           try {
-            if (this.horizonBreaker.canExecute()) {
-              fee = String(await this.server.fetchBaseFee());
-              this.horizonBreaker.recordSuccess();
-            }
+            fee = String(await this.withHorizon("fetchBaseFee", (server) => server.fetchBaseFee()));
           } catch (err) {
-            this.horizonBreaker.recordFailure();
             logger.warn(
               "Failed to fetch dynamic Stellar base fee; falling back to configured value",
               { err, fallback: config.stellar.baseFeeStroops },
@@ -192,7 +215,11 @@ export class StellarClient {
 
       const transaction = builder.build();
 
-      // Sign if keypair is available
+      // Sign via external HSM/multi-sig signer when configured, or fall back to local keypair.
+      if (this.signer) {
+        return await this.signer.sign(transaction);
+      }
+
       if (this.keypair) {
         transaction.sign(this.keypair);
       }
@@ -205,22 +232,19 @@ export class StellarClient {
   }
 
   /**
-   * Submit a transaction
+   * Submit a transaction (with Horizon endpoint failover)
    */
   async submitTransaction(transaction: Transaction | FeeBumpTransaction) {
     try {
-      if (!this.horizonBreaker.canExecute()) {
-        throw new Error("Horizon circuit breaker is OPEN — cannot submit transaction");
-      }
-      const result = await this.server.submitTransaction(transaction);
-      this.horizonBreaker.recordSuccess();
+      const result = await this.withHorizon("submitTransaction", (server) =>
+        server.submitTransaction(transaction),
+      );
       logger.info("Transaction submitted", {
         hash: result.hash,
         ledger: result.ledger,
       });
       return result;
     } catch (error: any) {
-      this.horizonBreaker.recordFailure();
       logger.error("Failed to submit transaction", {
         error: error.message,
         extras: error.response?.data?.extras,
@@ -342,7 +366,9 @@ export class StellarClient {
    */
   async getTransaction(transactionHash: string) {
     try {
-      const transaction = await this.server.transactions().transaction(transactionHash).call();
+      const transaction = await this.withHorizon("getTransaction", (server) =>
+        server.transactions().transaction(transactionHash).call(),
+      );
       return transaction;
     } catch (error) {
       logger.error("Failed to get transaction", { transactionHash, error });
@@ -392,6 +418,7 @@ export class StellarClient {
 export const stellarClient = new StellarClient({
   network: config.stellar.network as "testnet" | "mainnet",
   horizonUrl: config.stellar.horizonUrl,
+  horizonFallbackUrls: config.stellar.horizonFallbackUrls,
   secretKey: config.stellar.secretKey,
   networkPassphrase: config.stellar.networkPassphrase,
 });

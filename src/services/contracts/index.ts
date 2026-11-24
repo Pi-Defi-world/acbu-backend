@@ -6,6 +6,7 @@ import { ReserveTrackerService } from "./acbuReserveTracker.service";
 import { SavingsVaultService } from "./acbuSavingsVault.service";
 import { LendingPoolService } from "./acbuLendingPool.service";
 import { EscrowService } from "./acbuEscrow.service";
+import { ZkVerifierService } from "./acbuZkVerifier.service";
 
 /**
  * Initialize contract services with deployed contract addresses (acbu_* naming)
@@ -22,6 +23,7 @@ export const acbuSavingsVaultService = new SavingsVaultService(
 );
 export const acbuLendingPoolService = new LendingPoolService(contractAddresses.lendingPool || "");
 export const acbuEscrowService = new EscrowService(contractAddresses.escrow || "");
+export const acbuZkVerifierService = new ZkVerifierService(contractAddresses.zkVerifier || "");
 
 export * from "./acbuMinting.service";
 export * from "./acbuBurning.service";
@@ -34,5 +36,7 @@ export {
   type WithdrawParams as LendingPoolWithdrawParams,
   type BorrowParams as LendingPoolBorrowParams,
   type RepayParams as LendingPoolRepayParams,
+  type LiquidateParams as LendingPoolLiquidateParams,
 } from "./acbuLendingPool.service";
 export * from "./acbuEscrow.service";
+export * from "./acbuZkVerifier.service";

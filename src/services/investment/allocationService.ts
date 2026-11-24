@@ -85,9 +85,7 @@ function parseFiniteAmountUsd(amountUsd: string, label: string): Decimal {
  * Get total reserve value for the investment_savings segment (from ReserveTracker).
  */
 export async function getInvestmentSavingsReserveValueUsd(): Promise<Decimal> {
-  const status = await reserveTracker.getReserveStatus(
-    ReserveTracker.SEGMENT_INVESTMENT_SAVINGS,
-  );
+  const status = await reserveTracker.getReserveStatus(ReserveTracker.SEGMENT_INVESTMENT_SAVINGS);
   return status.totalReserveValueUsd;
 }
 
@@ -151,9 +149,7 @@ export async function getStrategyAllocation(strategyId: string): Promise<Strateg
   }
 
   if (strategy.status !== "active") {
-    throw new PolicyViolationError(
-      `Strategy ${strategy.name} is ${strategy.status}, not active`,
-    );
+    throw new PolicyViolationError(`Strategy ${strategy.name} is ${strategy.status}, not active`);
   }
 
   const policyLimit = strategy.policyLimitUsd;

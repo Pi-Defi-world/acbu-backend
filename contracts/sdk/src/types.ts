@@ -12,13 +12,15 @@ export interface ComplianceInput {
   credential: Credential;
   requiredKyc: number;
   allowedCountry: number;
+  /** Stellar public key whose proof is being generated. */
+  walletAddress: string;
 }
 
 export interface ProofArtifacts {
   proof: Uint8Array;
   publicInputs: Uint8Array;
   vk: Uint8Array;
-  /** 32-byte Poseidon2 nullifier (public input). */
+  /** 32-byte Poseidon2 nullifier bound to the wallet address (public input). */
   nullifier: Uint8Array;
   /** 32-byte Poseidon2 credential commitment (public input). */
   commitment: Uint8Array;
