@@ -31,12 +31,7 @@ jest.mock("ws", () => {
     static instances: FakeWebSocketServer[] = [];
     clients = new Set<FakeSocket>();
     handleUpgrade = jest.fn(
-      (
-        _req: unknown,
-        _socket: unknown,
-        _head: unknown,
-        cb: (ws: FakeSocket) => void,
-      ) => {
+      (_req: unknown, _socket: unknown, _head: unknown, cb: (ws: FakeSocket) => void) => {
         const ws = new FakeSocket();
         this.clients.add(ws);
         cb(ws);
@@ -57,10 +52,7 @@ jest.mock("ws", () => {
 });
 
 import { WebSocketServer } from "ws";
-import {
-  createBalanceWebSocketServer,
-  getBalanceWebSocketServer,
-} from "./server";
+import { createBalanceWebSocketServer, getBalanceWebSocketServer } from "./server";
 
 interface FakeSocketLike extends EventEmitter {
   readyState: number;
@@ -105,9 +97,7 @@ describe("createBalanceWebSocketServer", () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
     mockAuthenticate.mockResolvedValue(AUTH_RESULT);
-    const instances = (
-      WebSocketServer as unknown as { instances: FakeWssLike[] }
-    ).instances;
+    const instances = (WebSocketServer as unknown as { instances: FakeWssLike[] }).instances;
     instances.length = 0;
     httpServer = new EventEmitter();
     server = createBalanceWebSocketServer(httpServer as unknown as Server, {
@@ -146,9 +136,7 @@ describe("createBalanceWebSocketServer", () => {
     const socket = upgrade();
     await flush();
 
-    expect(socket.write).toHaveBeenCalledWith(
-      "HTTP/1.1 401 Unauthorized\r\n\r\n",
-    );
+    expect(socket.write).toHaveBeenCalledWith("HTTP/1.1 401 Unauthorized\r\n\r\n");
     expect(socket.destroy).toHaveBeenCalledTimes(1);
     expect(wss.handleUpgrade).not.toHaveBeenCalled();
     expect(wss.clients.size).toBe(0);
@@ -273,6 +261,17 @@ describe("createBalanceWebSocketServer", () => {
 
     expect(socket.destroy).toHaveBeenCalledTimes(1);
     expect(wss.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("destroys upgrades that arrive after close() without authenticating", async () => {
+    server.close();
+    const socket = upgrade();
+    await flush();
+
+    expect(mockAuthenticate).not.toHaveBeenCalled();
+    expect(socket.destroy).toHaveBeenCalledTimes(1);
+    expect(wss.handleUpgrade).not.toHaveBeenCalled();
+    expect(wss.clients.size).toBe(0);
   });
 
   it("getBalanceWebSocketServer() returns the instance until close()", () => {

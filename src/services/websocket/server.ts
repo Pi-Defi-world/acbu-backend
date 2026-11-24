@@ -57,14 +57,17 @@ export function createBalanceWebSocketServer(
   httpServer: HttpServer,
   options: { heartbeatIntervalMs?: number } = {},
 ): BalanceWebSocketServer {
-  const heartbeatIntervalMs =
-    options.heartbeatIntervalMs ?? WS_HEARTBEAT_INTERVAL_MS;
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? WS_HEARTBEAT_INTERVAL_MS;
   const wss = new WebSocketServer({ noServer: true });
 
   // Sockets that asked for an upgrade but are still awaiting
   // authentication. They are not in wss.clients yet, so close() must
   // destroy them explicitly or shutdown can wait on them forever.
   const pendingUpgrades = new Set<Socket>();
+
+  // Set by close(). An upgrade that arrives after shutdown started must
+  // be refused at once, or shutdown waits on its authentication.
+  let closed = false;
 
   // Reap sockets that stop answering pings. A socket that misses one
   // pong is terminated on the next tick.
@@ -82,15 +85,15 @@ export function createBalanceWebSocketServer(
   }, heartbeatIntervalMs);
 
   httpServer.on("upgrade", (req, socket, head) => {
+    if (closed) {
+      socket.destroy();
+      return;
+    }
     pendingUpgrades.add(socket);
     void handleUpgrade(req, socket, head);
   });
 
-  async function handleUpgrade(
-    req: IncomingMessage,
-    socket: Socket,
-    head: Buffer,
-  ): Promise<void> {
+  async function handleUpgrade(req: IncomingMessage, socket: Socket, head: Buffer): Promise<void> {
     // Node removes its HTTP error listener before emitting upgrade, and
     // ws only installs one once handleUpgrade runs, so a reset while
     // authentication waits would otherwise crash the process.
@@ -118,6 +121,13 @@ export function createBalanceWebSocketServer(
         auth = await authenticateWsUpgrade(req);
       } catch {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      // Shutdown started while authentication was in flight. Do not
+      // hand the socket to the server; destroy it instead.
+      if (closed) {
         socket.destroy();
         return;
       }
@@ -174,6 +184,7 @@ export function createBalanceWebSocketServer(
   }
 
   function close(): void {
+    closed = true;
     clearInterval(heartbeat);
     pendingUpgrades.forEach((socket) => {
       socket.destroy();
