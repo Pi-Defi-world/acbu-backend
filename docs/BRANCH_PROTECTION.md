@@ -62,6 +62,8 @@ not configure repository settings.
    - **Require status checks to pass before merging**
      - Enable "Require branches to be up to date before merging"
      - Add each check name from the list below
+   - **Require signed commits** (W11-INC-008) — enforcement detail is in
+     [Commit Signature Enforcement](#commit-signature-enforcement-w11-inc-008)
    - **Require conversation resolution before merging**
    - **Do not allow bypassing the above settings** (applies to admins too)
    - **Restrict who can push to matching branches** — limit to release
@@ -85,6 +87,67 @@ CI / CI Gate
 > `<job> / <step>`. The workflow is named `CI` and the job names above come
 > from the `name:` fields in `.github/workflows/ci.yml`. If the workflow or a
 > job is renamed, update both the workflow and this document.
+
+---
+
+## Commit Signature Enforcement (W11-INC-008)
+
+The incident report showed commits carrying an arbitrary author header
+(`N-thnI <Niheanyi404@gmail.com>`) with no cryptographic proof of origin. GitHub
+author headers are self-asserted; only a verified commit signature ties a commit
+to a key that GitHub has on file for a trusted user.
+
+### Required GitHub setting
+
+A repository file cannot flip this setting: an organisation owner or repository
+admin must enable it in the GitHub UI or with a token that has
+`Administration: read` permission.
+
+1. Open **Settings → Branches → Branch protection rules**.
+2. Edit the rule for `main` and enable **Require signed commits**.
+3. Keep **Do not allow bypassing the above settings** enabled so admins cannot
+   merge unsigned work.
+4. Repeat for `dev` and `develop`.
+
+The setting blocks unsigned commits at push/merge time. It is the authoritative
+control; everything below is repo-side verification and documentation.
+
+Verify the live setting after making the change:
+
+```bash
+GH_TOKEN=<admin token with Administration:read> \
+  node scripts/ci/check-branch-protection-signing.js \
+  --repository Pi-Defi-world/acbu-backend
+```
+
+The command exits non-zero if any protected branch does not require signatures.
+Keep the token out of the repository and rotate it after the audit.
+
+### Advisory CI report
+
+`.github/workflows/signed-commits.yml` runs
+`scripts/ci/check-signed-commits.js` on every PR and prints the GitHub
+verification result for each commit. The step is `continue-on-error: true` while
+legacy contributors migrate to signing keys, so it reports rather than blocks.
+To promote it to a required check after keys are registered:
+
+1. Remove `continue-on-error: true` from the workflow step.
+2. Add `Signed Commits / Verify signed commits` to the required status checks in
+   the branch protection rule.
+
+The same script can be run locally against any PR:
+
+```bash
+GITHUB_TOKEN=<token> node scripts/ci/check-signed-commits.js \
+  --repository Pi-Defi-world/acbu-backend --pull-request 1465
+```
+
+### Maintainer key setup
+
+Every maintainer who pushes, merges or administers these branches must sign
+commits with GPG or SSH. See [CONTRIBUTING.md](../CONTRIBUTING.md#commit-signing-required)
+for key generation and Git configuration. GitHub must show **Verified** on the
+commit; a signature that uses an unknown or revoked key is not sufficient.
 
 ---
 
