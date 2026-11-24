@@ -1,0 +1,75 @@
+# Dependabot configuration for acbu-frontend
+# Automatically opens PRs for dependency updates and security patches.
+#
+# Ecosystem coverage:
+#   npm          — Next.js app dependencies (pnpm workspace)
+#   github-actions — workflow action versions (pin SHA for security hardening)
+#
+# PRs are grouped to reduce noise:
+#   - Production deps grouped separately from devDeps
+#   - Minor + patch bumps grouped together; majors are individual PRs
+#
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+
+updates:
+  # ─── npm (pnpm workspace) ───────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "Pi-Defi-world/frontend-maintainers"
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Group minor + patch updates to reduce PR volume
+    groups:
+      production-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      dev-minor-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    # Major version bumps remain individual PRs (intentionally not grouped)
+    ignore:
+      # Pin React/Next.js major versions — controlled migrations only
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+
+  # ─── GitHub Actions ─────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch

@@ -1,0 +1,47 @@
+name: Lighthouse CI
+
+on:
+  pull_request:
+    branches: [ dev ]
+  push:
+    branches: [ dev ]
+
+jobs:
+  lhci:
+    name: Run Lighthouse CI
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build project
+        run: pnpm build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          NEXT_PUBLIC_API_URL: https://api.acbu.io
+          NEXT_PUBLIC_BILLS_ENABLED: false
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run LHCI
+        env:
+          CHROME_PATH: /ms-playwright/chromium-*/chrome-linux/chrome
+          NEXT_TELEMETRY_DISABLED: 1
+          NEXT_PUBLIC_API_URL: https://api.acbu.io
+          NEXT_PUBLIC_BILLS_ENABLED: false
+        run: npx @lhci/cli@0.13.0 autorun --config=.lighthouseci/config.cjs

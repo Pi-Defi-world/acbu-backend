@@ -74,6 +74,9 @@ jobs:
       - name: Check Prettier formatting
         run: pnpm format:check
 
+      - name: Test release tag resolution
+        run: pnpm test:release
+
   test:
     name: Test
     runs-on: ubuntu-latest

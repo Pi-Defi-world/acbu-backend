@@ -14,3 +14,9 @@
 /src/services/** @Pi-Defi-world/security-team
 /src/controllers/** @Pi-Defi-world/security-team
 /src/routes/** @Pi-Defi-world/security-team
+
+# Monorepo-owned frontend and contract boundaries. The frontend is a submodule,
+# so its nested .github/CODEOWNERS is not read by GitHub for this repository.
+/acbu-frontend/** @Pi-Defi-world/frontend-team
+/frontend/** @Pi-Defi-world/frontend-team
+/contracts/** @Pi-Defi-world/contracts-team
