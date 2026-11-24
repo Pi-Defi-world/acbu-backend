@@ -74,7 +74,7 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''} https://*.sentry.io`,
+      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''} https://*.sentry.io https://crs.aztec.network`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -83,6 +83,9 @@ const nextConfig = {
       // blob: covers browsers that wrap module workers in a blob URL.
       "worker-src 'self' blob:",
       // Allow WASM binary fetches for Barretenberg / noir_wasm.
+      // script-src-elem and worker-src do not cover fetch() calls, so the
+      // CRS download that @aztec/bb.js makes from https://crs.aztec.network
+      // must be explicitly allowed in connect-src (CR-3, PR #1494).
       "script-src-elem 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
       'report-uri /api/csp-report',
     ];
