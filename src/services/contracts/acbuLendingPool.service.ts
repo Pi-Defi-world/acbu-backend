@@ -13,15 +13,22 @@ export interface WithdrawParams {
 
 export interface BorrowParams {
   borrower: string;
+  lender: string;
   amount: string;
   collateralAmount: string;
-  loanId: number;
+  loanId: bigint;
 }
 
 export interface RepayParams {
   borrower: string;
   amount: string;
-  loanId: number;
+  loanId: bigint;
+}
+
+export interface LiquidateParams {
+  liquidator: string;
+  borrower: string;
+  loanId: bigint;
 }
 
 export class LendingPoolService {
@@ -85,6 +92,7 @@ export class LendingPoolService {
 
     const args = [
       ContractClient.toScVal(params.borrower),
+      ContractClient.toScVal(params.lender),
       ContractClient.toScVal(BigInt(params.amount)),
       ContractClient.toScVal(BigInt(params.collateralAmount)),
       ContractClient.toScVal(params.loanId),
@@ -114,6 +122,34 @@ export class LendingPoolService {
       sourceAccount,
     });
     return result.transactionHash;
+  }
+
+  async liquidate(params: LiquidateParams): Promise<string> {
+    const sourceAccount = stellarClient.getKeypair()?.publicKey();
+    if (!sourceAccount) throw new Error("No source account available");
+
+    const args = [
+      ContractClient.toScVal(params.liquidator),
+      ContractClient.toScVal(params.borrower),
+      ContractClient.toScVal(params.loanId),
+    ];
+    const result = await this.contractClient.invokeContract({
+      contractId: this.contractId,
+      functionName: "liquidate",
+      args,
+      sourceAccount,
+    });
+    return result.transactionHash;
+  }
+
+  async getCollateralRatio(): Promise<string> {
+    const result = await this.contractClient.readContract(this.contractId, "get_collateral_ratio", []);
+    return ContractClient.fromScVal(result).toString();
+  }
+
+  async getLiquidationBonus(): Promise<string> {
+    const result = await this.contractClient.readContract(this.contractId, "get_liquidation_bonus", []);
+    return ContractClient.fromScVal(result).toString();
   }
 
   async isPaused(): Promise<boolean> {

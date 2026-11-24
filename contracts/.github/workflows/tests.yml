@@ -1,0 +1,124 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop, dev]
+  pull_request:
+    branches: [main, develop, dev]
+
+jobs:
+  test:
+    name: Run Contract Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify error-code docs are generated
+        run: python scripts/generate_error_codes.py --check
+
+      - name: Install Rust
+        uses: ./.github/actions/rust-toolchain
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+
+      - name: Fetch token WASM artifact
+        run: bash scripts/fetch_token_wasm.sh
+
+      # W2-Z-016: Pin Node 20 LTS; Node 18 is EOL (AZ-031).
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Run Clippy
+        # AX-011: --locked pins cargo to the committed Cargo.lock.
+        run: cargo clippy --locked --workspace
+
+      - name: Determine changed packages
+        id: changed
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          changed_files="$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)"
+
+          packages=()
+          add_package() {
+            local package="$1"
+            for existing in "${packages[@]}"; do
+              if [[ "$existing" == "$package" ]]; then
+                return
+              fi
+            done
+            packages+=("$package")
+          }
+
+          while IFS= read -r file; do
+            case "$file" in
+              shared/*)
+                echo "shared crate changed; running full workspace"
+                echo "workspace=true" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              acbu_burning/*) add_package acbu_burning ;;
+              acbu_escrow/*) add_package acbu_escrow ;;
+              acbu_lending_pool/*) add_package acbu_lending_pool ;;
+              acbu_minting/*) add_package acbu_minting ;;
+              acbu_multisig/*) add_package acbu_multisig ;;
+              acbu_oracle/*) add_package acbu_oracle ;;
+              acbu_reserve_tracker/*) add_package acbu_reserve_tracker ;;
+              acbu_savings_vault/*) add_package acbu_savings_vault ;;
+              verifier/*) add_package verifier ;;
+              Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|.github/workflows/tests.yml)
+                echo "workspace-level file changed; running full workspace"
+                echo "workspace=true" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              tests/*)
+                echo "integration tests changed; running full workspace"
+                echo "workspace=true" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          if [[ ${#packages[@]} -eq 0 ]]; then
+            echo "workspace=false" >> "$GITHUB_OUTPUT"
+            echo "packages=" >> "$GITHUB_OUTPUT"
+          elif [[ ${#packages[@]} -ge 2 ]]; then
+            echo "Multiple crates changed (${#packages[@]}); running full workspace"
+            echo "workspace=true" >> "$GITHUB_OUTPUT"
+          else
+            printf -v package_args ' -p %s' "${packages[@]}"
+            echo "workspace=false" >> "$GITHUB_OUTPUT"
+            echo "packages=${package_args# }" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run changed contract tests
+        if: github.event_name == 'pull_request' && steps.changed.outputs.workspace != 'true' && steps.changed.outputs.packages != ''
+        # AX-011: --locked pins resolution to the committed Cargo.lock.
+        run: cargo test --locked ${{ steps.changed.outputs.packages }} -- --nocapture
+
+      - name: Skip tests for docs-only PR
+        if: github.event_name == 'pull_request' && steps.changed.outputs.workspace != 'true' && steps.changed.outputs.packages == ''
+        run: echo "No Rust package changes detected."
+
+      - name: Run all tests
+        if: github.event_name != 'pull_request' || steps.changed.outputs.workspace == 'true'
+        # AX-011: --locked pins resolution to the committed Cargo.lock.
+        run: cargo test --locked --workspace -- --nocapture

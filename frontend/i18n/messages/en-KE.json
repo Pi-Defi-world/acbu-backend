@@ -1,0 +1,379 @@
+{
+  "not_found": {
+    "label": "Error 404",
+    "title": "Page not found",
+    "description": "The page you're looking for doesn't exist or may have been moved.",
+    "cta": "Go to dashboard"
+  },
+  "home": {
+    "acbu": "ACBU",
+    "wallet_balance": "Wallet balance",
+    "fiat": "Fiat",
+    "simulated_usd_equivalent": "Simulated · USD equivalent",
+    "add_demo_funds": "Add demo funds",
+    "recent_activity": "Recent Activity",
+    "view_all": "View all",
+    "no_recent_activity": "No recent activity",
+    "send_money": "Send money",
+    "some_currencies_missing_rate": "Some currencies missing a rate",
+    "usd": "USD",
+    "transaction_count": "{count, plural, one {# transaction} other {# transactions}}",
+    "session_count": "{count, plural, one {# active session} other {# active sessions}}",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "tx_type": {
+      "mint": "Mint",
+      "burn": "Burn",
+      "transfer": "Transfer"
+    },
+    "status": {
+      "pending": "Pending",
+      "completed": "Completed",
+      "failed": "Failed"
+    }
+  },
+  "features": {
+    "send": {
+      "title": "Send",
+      "description": "Transfer money"
+    },
+    "mint": {
+      "title": "Mint",
+      "description": "Create ACBU"
+    },
+    "simulated_bank": {
+      "title": "Simulated Bank",
+      "description": "Demo Fiat"
+    },
+    "rates": {
+      "title": "Rates",
+      "description": "Market rates"
+    }
+  },
+  "auth_signin": {
+    "title": "Sign in",
+    "description": "Sign in to your ACBU account",
+    "email_label": "Email",
+    "email_placeholder": "you@example.com",
+    "password_label": "Password",
+    "password_placeholder": "Enter your password",
+    "submit": "Sign in",
+    "submitting": "Signing in...",
+    "no_account": "Don't have an account?",
+    "signup_link": "Sign up",
+    "forgot_password": "Forgot password?",
+    "errors": {
+      "invalid_credentials": "Invalid email or password",
+      "email_required": "Email is required",
+      "password_required": "Password is required",
+      "login_failed": "Sign in failed. Please try again."
+    }
+  },
+  "auth_signup": {
+    "title": "Create account",
+    "description": "Sign up to get started with ACBU",
+    "name_label": "Full name",
+    "name_placeholder": "Jane Doe",
+    "email_label": "Email",
+    "email_placeholder": "you@example.com",
+    "password_label": "Password",
+    "password_placeholder": "Create a password",
+    "confirm_password_label": "Confirm password",
+    "confirm_password_placeholder": "Repeat your password",
+    "submit": "Create account",
+    "submitting": "Creating account...",
+    "have_account": "Already have an account?",
+    "signin_link": "Sign in",
+    "terms_notice": "By signing up, you agree to our Terms of Service and Privacy Policy.",
+    "errors": {
+      "name_required": "Full name is required",
+      "email_required": "Email is required",
+      "email_invalid": "Please enter a valid email address",
+      "password_required": "Password is required",
+      "password_too_short": "Password must be at least 8 characters",
+      "password_mismatch": "Passwords do not match",
+      "signup_failed": "Sign up failed. Please try again."
+    }
+  },
+  "auth_2fa": {
+    "loading": "Loading...",
+    "title": "Two-Factor Authentication",
+    "description": "Enter the 6-digit code from your authenticator app",
+    "code_label": "Authentication Code",
+    "verify": "Verify",
+    "verifying": "Verifying...",
+    "missing_challenge_token": "Missing challenge token.",
+    "sign_in_again": "Sign in again",
+    "no_authenticator_summary": "Don't have access to your authenticator?",
+    "no_authenticator_body": "Contact support or use your backup codes if you saved them.",
+    "errors": {
+      "invalid_code": "Please enter a valid 6-digit code",
+      "missing_challenge": "Missing challenge. Please sign in again.",
+      "session_expired": "Session expired. Please sign in again.",
+      "verification_failed": "Verification failed"
+    }
+  },
+  "auth_wallet_setup": {
+    "title": "Set Up Your Wallet",
+    "description": "ACBU uses the Stellar network. How would you like to set up your wallet?",
+    "back": "Back",
+    "generate": {
+      "title": "Generate New Wallet",
+      "description": "Create a new secure wallet locally",
+      "new_wallet": "Your New Wallet",
+      "save_key_notice": "Please save this secret key somewhere safe. It is required to recover your wallet if you switch devices.",
+      "saving": "Saving...",
+      "saved": "I have saved my key"
+    },
+    "import": {
+      "title": "Import Existing Seed",
+      "description": "Use an existing Stellar secret key",
+      "heading": "Import Seed",
+      "seed_help": "Enter your Stellar secret key (starts with 'S'). It will be stored encrypted on this device.",
+      "importing": "Importing...",
+      "submit": "Import Wallet"
+    },
+    "connect": {
+      "title": "Connect External Wallet",
+      "connecting": "Connecting...",
+      "description": "Connect Freighter, Lobstr, or others"
+    },
+    "errors": {
+      "not_logged_in": "Not logged in",
+      "address_rejected": "Backend did not accept the wallet address. Please retry.",
+      "seed_required": "Seed is required.",
+      "kit_initializing": "Wallet Kit is still initializing...",
+      "save_failed": "Failed to save wallet",
+      "import_failed": "Invalid seed or failed to import.",
+      "connect_failed": "Failed to connect wallet",
+      "passcode_unavailable": "Passcode not available. Please log in again to set up your wallet."
+    },
+    "success": {
+      "created": "New wallet created successfully!",
+      "imported": "Wallet imported successfully!",
+      "connected": "External wallet connected successfully!"
+    },
+    "modal": {
+      "title": "Set Up Your Wallet",
+      "description": "ACBU uses the Stellar network. How would you like to set up your wallet?",
+      "back": "Back"
+    }
+  },
+  "navigation": {
+    "unsavedChangesTitle": "Unsaved changes",
+    "unsavedChangesDescription": "You have unsaved changes. Are you sure you want to leave?",
+    "stay": "Stay",
+    "leave": "Leave"
+  },
+  "errors": {
+    "boundary": {
+      "title": "Something went wrong",
+      "description": "An unexpected error occurred",
+      "retry": "Try again"
+    }
+  },
+  "wallet": {
+    "title": "Wallet Management",
+    "subtitle": "Manage your Stellar wallet",
+    "current_address": "Current Wallet Address",
+    "setup_title": "Change or Setup Wallet",
+    "back": "← Back",
+    "security_notice": "Your key is generated in your browser and encrypted in this device's IndexedDB. ACBU receives only your public address. This protects data at rest, not against active XSS or a compromised device.",
+    "generate": {
+      "title": "Generate New Wallet",
+      "description": "Create a new secure wallet locally",
+      "new_wallet": "Your New Wallet",
+      "save_key_notice": "Please save this secret key somewhere safe. It is required to recover your wallet if you switch devices.",
+      "saving": "Saving...",
+      "saved": "I have saved my key"
+    },
+    "import": {
+      "title": "Import Existing Seed",
+      "description": "Use an existing Stellar secret key",
+      "heading": "Import Seed",
+      "seed_help": "Enter your Stellar secret key (starts with 'S'). It will be stored encrypted on this device.",
+      "seed_label": "Stellar secret key",
+      "importing": "Importing...",
+      "submit": "Import Wallet"
+    },
+    "connect": {
+      "title": "Connect External Wallet",
+      "connecting": "Connecting...",
+      "description": "Connect Freighter, Lobstr, or others"
+    },
+    "errors": {
+      "not_logged_in": "Not logged in",
+      "address_rejected": "Backend did not accept the wallet address. Please retry.",
+      "seed_required": "Seed is required.",
+      "kit_initializing": "Wallet Kit is still initializing...",
+      "save_failed": "Failed to save wallet",
+      "import_failed": "Invalid seed or failed to import.",
+      "connect_failed": "Failed to connect wallet",
+      "passcode_unavailable": "Passcode not available. Please log in again to set up your wallet."
+    },
+    "success": {
+      "created": "New wallet created successfully!",
+      "imported": "Wallet imported successfully!",
+      "connected": "External wallet connected successfully!"
+    },
+    "modal": {
+      "title": "Set Up Your Wallet",
+      "description": "ACBU uses the Stellar network. How would you like to set up your wallet?",
+      "back": "Back"
+    }
+  },
+  "lending": {
+    "title": "Lending",
+    "subtitle": "Apply for a loan",
+    "go_back": "Go back",
+    "backoffice": "Backoffice",
+    "position": "Lending position",
+    "sign_in_to_view": "Sign in to view",
+    "lender": "Lender: {user}",
+    "lender_unavailable": "Lender identity unavailable",
+    "choose_product": "Choose a product",
+    "apr": "{rate}% APR",
+    "term_months": "{min}–{max} months",
+    "application_details": "Application details",
+    "amount": "Amount (ACBU)",
+    "term": "Term (months)",
+    "purpose": "Purpose (optional)",
+    "purpose_placeholder": "How will you use the funds?",
+    "submitting": "Submitting…",
+    "submit": "Submit application",
+    "your_applications": "Your applications",
+    "view_all": "View all",
+    "no_applications": "No applications yet. Submit one above to see it here.",
+    "application_summary": "ACBU {amount} · {term} months",
+    "reference": "Ref: {id}",
+    "products": {
+      "personal": {
+        "name": "Personal loan",
+        "description": "Unsecured credit for general use"
+      },
+      "business": {
+        "name": "Business loan",
+        "description": "Working capital for SMEs"
+      },
+      "emergency": {
+        "name": "Emergency loan",
+        "description": "Fast short-term liquidity"
+      }
+    },
+    "errors": {
+      "amount_range": "Amount must be between ACBU {min} and ACBU {max}.",
+      "term_range": "Term must be between {min} and {max} months.",
+      "backend_sync": "Backend sync failed"
+    },
+    "messages": {
+      "submitted": "Application submitted. Reference: {id}",
+      "saved": "Application saved (ref {id}).",
+      "pending": "Pending backend sync — backoffice stub captured the submission.",
+      "pending_with_error": "Pending backend sync — backoffice stub captured the submission. ({error})"
+    },
+    "status": {
+      "submitted": "Submitted",
+      "pending": "Pending"
+    }
+  },
+  "savings": {
+    "title": "Savings",
+    "subtitle": "Grow your wealth",
+    "go_back": "Go back",
+    "api_section_title": "On-chain Savings (API)",
+    "api_balance_note": "This reflects balances reported by the backend API only.",
+    "deposit": "Deposit",
+    "withdraw": "Withdraw",
+    "total_title": "Total Savings (API + Goals)",
+    "goals_total_note": "Includes allocated amounts in savings goals: ACBU {amount}",
+    "apy_note": "Earning 8% APY interest",
+    "monthly_gain": "+ACBU {amount} this month",
+    "goals_title": "Savings Goals",
+    "new_goal": "New Goal",
+    "goal_target": "Target: ACBU {amount}",
+    "create_goal_title": "Create New Goal",
+    "create_goal_description": "Set a savings target to work towards",
+    "goal_name_label": "Goal Name",
+    "goal_name_placeholder": "e.g. Emergency Fund",
+    "goal_target_label": "Target Amount (ACBU)",
+    "goal_deadline_label": "Deadline",
+    "cancel": "Cancel",
+    "create": "Create Goal",
+    "demo_goals": {
+      "emergency_fund": "Emergency Fund",
+      "business_startup": "Business Startup"
+    },
+    "errors": {
+      "load_user_info": "Failed to load user info",
+      "load_balance": "Failed to load savings balance"
+    }
+  },
+  "mint": {
+    "title": "Mint & Burn",
+    "subtitle": "Create and redeem ACBU",
+    "go_back": "Go back",
+    "balance": "ACBU Balance",
+    "stellar_balance": "ACBU balance from Stellar Horizon.",
+    "link_wallet": "Link a wallet to see your on-chain ACBU balance.",
+    "tabs": {
+      "mint": "Mint",
+      "burn": "Burn",
+      "rates": "Rates"
+    },
+    "loading_currencies": "Loading currencies…",
+    "network_fee": "Network Fee",
+    "processing_fee": "Processing Fee",
+    "estimated_at_confirmation": "Estimated at confirmation",
+    "available": "Available: ACBU {amount}",
+    "rate": "Rate",
+    "mint": {
+      "description": "Mint ACBU via custodial on-ramp (demo basket fiat held on the minting contract).",
+      "currency": "Basket currency (demo fiat path)",
+      "amount": "Amount to Exchange",
+      "estimated": "Estimated ACBU (from latest rates)",
+      "submit": "Mint ACBU"
+    },
+    "burn": {
+      "description": "Burn ACBU on-chain for the selected basket slice (no simulated bank credit).",
+      "currency": "Basket currency (burn slice)",
+      "amount": "Amount to Burn",
+      "receive": "You'll receive",
+      "current_rate": "~ {currency} (based on current rate)",
+      "submit": "Burn & Redeem"
+    },
+    "rates": {
+      "empty": "No rates available. Use the API to load rates.",
+      "how_it_works": "How it works",
+      "mint_explanation": "Mint converts local fiat to native ACBU",
+      "burn_explanation": "Burn redeems ACBU for fiat",
+      "source": "Rates from backend"
+    },
+    "confirm": {
+      "mint_title": "Confirm Mint",
+      "burn_title": "Confirm Burn",
+      "mint_description": "Mint ACBU by exchanging {currency} {amount}{estimate}",
+      "estimate": " (  {amount} ACBU at current rates)",
+      "burn_description": "Burn ACBU {amount} and withdraw to bank account",
+      "amount": "Amount:",
+      "cancel": "Cancel",
+      "processing": "Processing...",
+      "submit": "Confirm"
+    },
+    "success": {
+      "title": "Operation Complete",
+      "description": "Your {operation} operation has been submitted successfully.",
+      "transaction_id": "Transaction ID: {id}",
+      "credited": "ACBU credited (app ledger): {amount} ACBU",
+      "ledger_notice": "If the Stellar mint contract errors, tokens are still recorded in the app; your balance may show \"app ledger\" until on-chain mint works.",
+      "done": "Done"
+    },
+    "errors": {
+      "not_signed_in": "Not signed in — refresh and try again.",
+      "wallet_unavailable": "Your wallet secret isn't available on this device and the wallet connector isn't ready yet. Please wait a moment and retry.",
+      "trustline_pending": "ACBU trustline was submitted but hasn't appeared on Horizon yet. Please retry the mint in a few seconds.",
+      "mint_failed": "Mint failed",
+      "no_wallet_address": "No linked Stellar wallet address.",
+      "burn_failed": "Burn failed"
+    }
+  }
+}

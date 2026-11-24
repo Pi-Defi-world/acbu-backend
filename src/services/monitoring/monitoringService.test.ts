@@ -38,10 +38,7 @@ describe("monitoringService (W10-I-013)", () => {
   describe("Queue metrics", () => {
     it("records queue depth", () => {
       recordQueueDepth("test_queue", 100);
-      expect(rabbitmqQueueDepthGauge.set).toHaveBeenCalledWith(
-        { queue_name: "test_queue" },
-        100,
-      );
+      expect(rabbitmqQueueDepthGauge.set).toHaveBeenCalledWith({ queue_name: "test_queue" }, 100);
     });
 
     it("records queue publish", () => {

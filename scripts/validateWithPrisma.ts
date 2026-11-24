@@ -4,23 +4,9 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import { isValidStellarAddress } from "../src/utils/stellar";
+import { isPlaceholderStellarAddress, isValidStellarAddress } from "../src/utils/stellar";
 
 const prisma = new PrismaClient();
-
-const PLACEHOLDER_PATTERNS = [
-  /^G[A]{55}$/,
-  /^G[B]{55}$/,
-  /^G[0]{55}$/,
-  /^GTEST/,
-  /^GDUMMY/,
-  /^GPLACEHOLDER/,
-  /^GXXXXXXXX/,
-];
-
-function isPlaceholder(address: string): boolean {
-  return PLACEHOLDER_PATTERNS.some((p) => p.test(address));
-}
 
 async function main() {
   console.log("🔍 B-013: Validating Stellar Addresses\n");
@@ -47,7 +33,7 @@ async function main() {
       if (addr.length !== 56) issues.push(`Wrong length: ${addr.length}`);
       if (!addr.startsWith("G")) issues.push("Doesn't start with G");
       if (!isValidStellarAddress(addr)) issues.push("Invalid StrKey checksum");
-      if (isPlaceholder(addr)) issues.push("Placeholder pattern");
+      if (isPlaceholderStellarAddress(addr)) issues.push("Placeholder pattern");
 
       if (issues.length > 0) {
         invalid.push({ ...user, issues });

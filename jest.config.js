@@ -6,6 +6,11 @@ module.exports = {
   setupFilesAfterEnv: ["<rootDir>/tests/jest.setup.ts"],
   roots: ["<rootDir>/src", "<rootDir>/tests"],
   testMatch: ["**/__tests__/**/*.ts", "**/?(*.)+(spec|test).ts"],
+  // W11-MIG-008: the monorepo also carries frontend (Next.js/vitest) and
+  // contracts (Rust) trees. Their tests are not part of the backend run and
+  // would crash the root suite if Jest ever scans them via a widened root or
+  // an explicit path argument, so exclude them defensively.
+  testPathIgnorePatterns: ["/node_modules/", "/frontend/", "/contracts/"],
   transform: {
     "^.+\\.ts$": ["ts-jest", { diagnostics: false }],
   },

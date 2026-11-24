@@ -16,8 +16,7 @@ export async function optionalApiKey(
   next: NextFunction,
 ): Promise<void> {
   const credential =
-    req.headers["x-api-key"] ||
-    req.headers["authorization"]?.replace("Bearer ", "");
+    req.headers["x-api-key"] || req.headers["authorization"]?.replace("Bearer ", "");
 
   if (!credential) {
     // No credential supplied — continue without setting req.apiKey
