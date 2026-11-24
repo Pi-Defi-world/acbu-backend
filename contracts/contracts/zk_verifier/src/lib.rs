@@ -32,7 +32,7 @@
 //! satisfy both circuit constraints and get a "valid" proof with zero real KYC.
 //!
 //! This implementation adds an admin-controlled `PolicyParams` value stored in
-//! contract instance storage.  During `verify()` the contract independently
+//! contract instance storage.  During `verify_proof()` the contract independently
 //! reads its own stored policy and enforces:
 //!
 //! * `public_inputs[0]` (min_tier)     **≥** `policy.min_tier`
@@ -40,7 +40,7 @@
 //!
 //! A prover cannot satisfy these checks by supplying their own values: the
 //! policy is immutable from the prover's perspective and may only be changed
-//! by the admin via `set_policy`.  Until a policy is set `verify()` rejects
+//! by the admin via `set_policy`.  Until a policy is set `verify_proof()` rejects
 //! all proofs.
 
 use shared::ContractError;
@@ -200,7 +200,7 @@ impl ZkVerifier {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
-        // Policy starts unconfigured — `verify()` rejects all proofs until
+        // Policy starts unconfigured — `verify_proof()` rejects all proofs until
         // the admin calls `set_policy`.  This prevents the zero-KYC bypass
         // window that would otherwise exist between deployment and policy setup.
         Self::extend_instance_ttl(&env);
@@ -220,7 +220,7 @@ impl ZkVerifier {
     /// exactly 0 in that case.
     ///
     /// AZ-001: these values are stored on-chain and enforced server-side in
-    /// `verify()`, so the prover cannot choose weaker values.
+    /// `verify_proof()`, so the prover cannot choose weaker values.
     pub fn set_policy(env: Env, min_tier: u128, allowed_country: u128, max_risk_score: u128) {
         Self::check_admin(&env);
         let policy = PolicyParams {
@@ -272,7 +272,7 @@ impl ZkVerifier {
     /// `poseidon2(kyc_level, country_code, salt)` — derived from the
     /// authority's **own** verified records, never from user-claimed values.
     ///
-    /// Only attested commitments are accepted by `verify`, so an unverified
+    /// Only attested commitments are accepted by `verify_proof`, so an unverified
     /// user can no longer claim an arbitrary `kyc_level` and produce a valid
     /// proof about a self-asserted credential.
     pub fn register_commitment(env: Env, commitment: BytesN<32>) {
@@ -344,7 +344,7 @@ impl ZkVerifier {
     ///
     /// `public_inputs[5]` must equal the first 16 bytes of `sha256(wallet_xdr)`
     /// interpreted as a little-endian `u128`.
-    pub fn verify(
+    pub fn verify_proof(
         env: Env,
         wallet: Address,
         nullifier: BytesN<32>,
@@ -479,6 +479,17 @@ impl ZkVerifier {
         );
 
         Self::extend_instance_ttl(&env);
+    }
+
+    /// Backwards-compatible alias for `verify_proof`.
+    pub fn verify(
+        env: Env,
+        wallet: Address,
+        nullifier: BytesN<32>,
+        commitment: BytesN<32>,
+        public_inputs: Vec<u128>,
+    ) {
+        Self::verify_proof(env, wallet, nullifier, commitment, public_inputs);
     }
 
     // ── Read helpers ────────────────────────────────────────────────────────

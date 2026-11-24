@@ -4,7 +4,7 @@ Browser UI that:
 
 1. Loads the Noir KYC-compliance circuit
 2. Generates a real UltraHonk ZK proof via `generateProof`
-3. Submits `zk_verifier.verify(wallet, nullifier, commitment)` via `submitProof`
+3. Submits the proof to `zk_verifier.verify_proof` via `submitProof`
 
 ## Dev
 

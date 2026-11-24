@@ -154,7 +154,7 @@ fn test_verify_happy_path() {
     assert!(!client.used(&nullifier));
     assert!(!client.is_nullifier_spent(&commitment, &nullifier));
 
-    client.verify(&wallet, &nullifier, &commitment, &public_inputs);
+    client.verify_proof(&wallet, &nullifier, &commitment, &public_inputs);
 
     assert!(client.is_verified(&wallet));
     assert!(client.is_v(&wallet));

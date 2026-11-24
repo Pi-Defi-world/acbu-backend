@@ -309,7 +309,7 @@ function ConfigureStep({
             type="password"
             value={signerSecret}
             onChange={(e) => setSignerSecret(e.target.value.trim())}
-            placeholder="Used only in-browser to submit verify()"
+            placeholder="Used only in-browser to submit verify_proof()"
             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-xs"
           />
           <p className="text-xs text-muted-foreground">
@@ -389,7 +389,7 @@ function ProvingStep({
         });
         if (cancelled) return;
 
-        setStatus("Submitting verify() to Soroban…");
+        setStatus("Submitting verify_proof() to Soroban…");
         const submission = await submitProof(
           signerSecret,
           verifierContractId,
@@ -399,7 +399,7 @@ function ProvingStep({
 
         if (!submission.success) {
           throw new Error(
-            submission.error || "On-chain verify() submission failed"
+            submission.error || "On-chain verify_proof() submission failed"
           );
         }
 
@@ -476,7 +476,7 @@ function ResultCard({
             </h3>
             <p className="text-sm text-muted-foreground">
               {result.submitted
-                ? "Nullifier recorded via zk_verifier.verify()"
+                ? "Nullifier recorded via zk_verifier.verify_proof()"
                 : "Ready for on-chain verification"}
             </p>
           </div>
