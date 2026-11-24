@@ -22,6 +22,7 @@ jest.mock("../../config/database", () => ({
     transaction: {
       create: jest.fn(),
       update: jest.fn(),
+      aggregate: jest.fn(),
     },
     userContact: {
       findFirst: jest.fn(),
@@ -210,6 +211,7 @@ beforeEach(() => {
   });
   (mockTx.create as jest.Mock).mockResolvedValue({ id: "tx-fee-1" });
   (mockTx.update as jest.Mock).mockResolvedValue({});
+  (mockTx.aggregate as jest.Mock).mockResolvedValue({ _sum: { acbuAmount: null } });
   (fetchWalletBalance as jest.Mock).mockResolvedValue({
     snapshot: { balance: "1000000" },
     walletVersion: 1,
@@ -530,5 +532,49 @@ describe("Stellar payment fee re-validation (AB-052)", () => {
     expect(submitTransaction).toHaveBeenCalledTimes(1);
     expect(failureLog()?.error).toBeInstanceOf(Error);
     expect(failureLog()?.error).not.toBeInstanceOf(StellarFeeSurgeError);
+  });
+});
+
+describe("transfer available-balance preflight", () => {
+  it("subtracts pending and processing transfer holds before accepting a new transfer", async () => {
+    (fetchWalletBalance as jest.Mock).mockResolvedValue({
+      snapshot: { balance: "100" },
+      walletVersion: 1,
+    });
+    (mockTx.aggregate as jest.Mock).mockResolvedValue({
+      _sum: { acbuAmount: "75" },
+    });
+
+    await expect(
+      createTransfer({ senderUserId: SENDER_ID, to: recipientAddress, amountAcbu: "30" }),
+    ).rejects.toThrow("Insufficient available balance");
+
+    expect(mockTx.create).not.toHaveBeenCalled();
+    expect(mockTx.aggregate).toHaveBeenCalledWith({
+      where: {
+        userId: SENDER_ID,
+        type: "transfer",
+        status: { in: ["pending", "processing"] },
+      },
+      _sum: { acbuAmount: true },
+    });
+  });
+
+  it("does not treat completed transfers as outstanding holds", async () => {
+    (fetchWalletBalance as jest.Mock).mockResolvedValue({
+      snapshot: { balance: "100" },
+      walletVersion: 1,
+    });
+    (mockTx.aggregate as jest.Mock).mockResolvedValue({
+      _sum: { acbuAmount: "75" },
+    });
+    // The query explicitly limits the hold calculation to pending/processing;
+    // completed rows are never included by Prisma.
+    await expect(
+      createTransfer({ senderUserId: SENDER_ID, to: recipientAddress, amountAcbu: "20" }),
+    ).resolves.toMatchObject({ status: "pending" });
+    expect(mockTx.aggregate.mock.calls[0][0].where.status).toEqual({
+      in: ["pending", "processing"],
+    });
   });
 });

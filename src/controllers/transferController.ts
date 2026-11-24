@@ -68,6 +68,9 @@ export async function postTransfers(
     ) {
       return next(new AppError(e.message, 404));
     }
+    if (e instanceof Error && e.message === "Insufficient available balance") {
+      return next(new AppError(e.message, 422, "INSUFFICIENT_BALANCE"));
+    }
     if (e instanceof Error && e.message === "Cannot transfer to yourself") {
       return next(new AppError(e.message, 400));
     }
