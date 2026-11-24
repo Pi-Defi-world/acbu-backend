@@ -48,6 +48,21 @@ This file documents the environment variables required by the ACBU backend and t
   - Defaults to `false`.
   - In production, set to `true` only after verifying `_prisma_migrations` is replicated to failover targets.
   - The app refuses to run startup migrations in production until this is explicitly acknowledged.
+- `DB_CONNECTION_LIMIT`
+  - Defaults to `50`.
+  - Maximum number of database connections Prisma opens against the direct PostgreSQL URL.
+  - Only applied on the direct (`postgresql://`) path; ignored when `PRISMA_ACCELERATE_URL` is set
+    because Accelerate manages its own connection pool.
+  - During concurrent webhook ingestion, the former implicit default of 10 was exhausted while
+    connections were held awaiting external partner responses, starving all other API routes (W11-AUD-012).
+  - **Production guidance:** deploy PgBouncer in transaction-pooling mode between the app and
+    PostgreSQL. Set `DATABASE_URL` to point at PgBouncer and size PgBouncer's `pool_size` to stay
+    within PostgreSQL's `max_connections` ceiling. With PgBouncer active, `DB_CONNECTION_LIMIT` can
+    be set to match PgBouncer's `pool_size`.
+- `DB_STATEMENT_TIMEOUT_MS`
+  - Defaults to `9000` (9 s).
+  - Injected as `options=--statement_timeout=<ms>` into the direct PostgreSQL URL so the server
+    cancels long-running statements before Prisma Accelerate's 10 s proxy timeout fires.
 
 ## Optional and configurable variables
 
