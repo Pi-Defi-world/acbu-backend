@@ -121,18 +121,18 @@ export async function getBurnFeeBps(currency: string): Promise<number> {
   if (!curr) {
     throw new Error(`Currency ${currency} not found in reserve status. Cannot calculate burn fee.`);
   }
-  
+
   const targetWeight = new Decimal(curr.targetWeight);
   const actualWeight = new Decimal(curr.actualWeight);
-  
+
   if (targetWeight.lte(0)) {
     throw new Error(
       `Invalid target weight for ${currency}: ${targetWeight}. Cannot calculate burn fee.`,
     );
   }
-  
+
   const pctOfTarget = actualWeight.div(targetWeight).mul(100).toNumber();
-  
+
   let feeBps: number;
   if (pctOfTarget < LOW_RESERVE_THRESHOLD_PCT - RESERVE_THRESHOLD_EPSILON) {
     // Low reserves: discourage burns with high fee

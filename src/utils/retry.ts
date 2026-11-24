@@ -4,6 +4,7 @@ export interface RetryOptions {
   maxDelayMs?: number;
   backoffMultiplier?: number;
   onRetry?: (error: unknown, attempt: number, delayMs: number) => void;
+  shouldRetry?: (error: unknown) => boolean;
 }
 
 export async function retryWithBackoff<T>(
@@ -14,6 +15,7 @@ export async function retryWithBackoff<T>(
   const initialDelayMs = options.initialDelayMs ?? 250;
   const maxDelayMs = options.maxDelayMs ?? 4000;
   const backoffMultiplier = options.backoffMultiplier ?? 2;
+  const shouldRetry = options.shouldRetry ?? (() => true);
 
   let lastError: unknown;
 
@@ -23,7 +25,7 @@ export async function retryWithBackoff<T>(
     } catch (error) {
       lastError = error;
 
-      if (attempt >= attempts) {
+      if (attempt >= attempts || !shouldRetry(error)) {
         throw error;
       }
 

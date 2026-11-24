@@ -52,7 +52,10 @@ export function getRetryPolicyForUrl(url: string): WebhookRetryPolicy {
 }
 
 export type WebhookEventType =
-  "transaction.completed" | "transaction.failed" | "mint.completed" | "burn.completed";
+  | "transaction.completed"
+  | "transaction.failed"
+  | "mint.completed"
+  | "burn.completed";
 
 export interface WebhookPayload {
   event: WebhookEventType;

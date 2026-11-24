@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 /**
  * Webhook controller tests.
@@ -245,6 +246,7 @@ function loadControllerWithEnv(
         },
       };
     });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- synchronous reload inside jest.isolateModules
     mod = require("./webhookController");
   });
   jest.dontMock("../config/env");
@@ -291,17 +293,13 @@ describe("webhookController", () => {
     it("assertWebhookSignatureBypassSafe() throws when bypass is set in production", () => {
       process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
       process.env.NODE_ENV = "production";
-      expect(() => assertWebhookSignatureBypassSafe()).toThrow(
-        /WEBHOOK_SIGNATURE_BYPASS/,
-      );
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(/WEBHOOK_SIGNATURE_BYPASS/);
     });
 
     it("assertWebhookSignatureBypassSafe() throws when bypass is set outside test profile", () => {
       process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
       process.env.NODE_ENV = "development";
-      expect(() => assertWebhookSignatureBypassSafe()).toThrow(
-        /WEBHOOK_SIGNATURE_BYPASS/,
-      );
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(/WEBHOOK_SIGNATURE_BYPASS/);
     });
 
     it("assertWebhookSignatureBypassSafe() does not throw when bypass is unset", () => {
@@ -325,9 +323,7 @@ describe("webhookController", () => {
     it("assertWebhookSignatureBypassSafe() throws when bypass is set and NODE_ENV is unset", () => {
       process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
       delete process.env.NODE_ENV;
-      expect(() => assertWebhookSignatureBypassSafe()).toThrow(
-        /WEBHOOK_SIGNATURE_BYPASS/,
-      );
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(/WEBHOOK_SIGNATURE_BYPASS/);
     });
 
     it("signature verifiers reject forged payloads when bypass is not enabled", () => {

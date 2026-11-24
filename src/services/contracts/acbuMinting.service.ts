@@ -4,6 +4,7 @@ import { contractClient, ContractClient } from "../stellar/contractClient";
 import { stellarClient } from "../stellar/client";
 import { logger } from "../../config/logger";
 import type { TransactionStatus } from "../../utils/transactionStateMachine";
+import { assertValidRecipientAccount } from "../../utils/stellar";
 
 /**
  * Status written to `transactions.status` when an on-chain mint fails and the
@@ -130,6 +131,7 @@ export class MintingService {
   }> {
     try {
       logger.info("Minting ACBU from USDC", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
@@ -179,6 +181,7 @@ export class MintingService {
   }> {
     try {
       logger.info("Minting ACBU from basket", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
@@ -228,6 +231,7 @@ export class MintingService {
   }> {
     try {
       logger.info("Minting ACBU from single S-token", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
@@ -279,6 +283,7 @@ export class MintingService {
   }> {
     try {
       logger.info("Minting ACBU from custodial demo fiat", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
@@ -325,6 +330,7 @@ export class MintingService {
   }> {
     try {
       logger.info("admin_drip_demo_fiat", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {

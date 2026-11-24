@@ -56,14 +56,10 @@ function validatePermissions(permissions: unknown): PermissionScope[] {
   if (!Array.isArray(permissions)) {
     if (permissions != null) {
       // Non-null, non-array value means the record is malformed — fail closed.
-      logger.error(
-        "Malformed permissions in API key record (not an array) — key rejected",
-        { raw: permissions },
-      );
-      throw new AppError(
-        "API key has malformed permissions and cannot be used",
-        403,
-      );
+      logger.error("Malformed permissions in API key record (not an array) — key rejected", {
+        raw: permissions,
+      });
+      throw new AppError("API key has malformed permissions and cannot be used", 403);
     }
     // null / undefined means the column was never set — treat as empty array.
     return [];

@@ -1,0 +1,113 @@
+# Semgrep security scans for backend, frontend, and Soroban contract code.
+name: "Semgrep"
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: returntocorp/semgrep
+    env:
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      # Compare findings against the PR target (or previous push) so legacy
+      # findings do not block unrelated changes; new findings still fail CI.
+      SEMGREP_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Validate baseline commit
+        shell: bash
+        run: |
+          if [[ -z "$SEMGREP_BASE_SHA" || "$SEMGREP_BASE_SHA" =~ ^0+$ ]]; then
+            echo "::error::Unable to determine the Semgrep baseline commit."
+            exit 1
+          fi
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git cat-file -e "${SEMGREP_BASE_SHA}^{commit}"
+
+      # This rule's Bash parser fails on GitHub Actions expression syntax.
+      - name: Run repository rules and general registry rules
+        run: |
+          semgrep scan \
+            --config .semgrep.yml \
+            --config p/owasp-top-ten \
+            --config p/security-audit \
+            --baseline-commit "$SEMGREP_BASE_SHA" \
+            --exclude-rule yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell \
+            --exclude '**/node_modules/**' \
+            --exclude '**/target/**' \
+            --exclude '**/dist/**' \
+            --exclude '**/.next/**' \
+            --exclude '*.generated.*' \
+            --error \
+            --severity ERROR \
+            --json \
+            --output semgrep-report.json \
+            .
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Run frontend registry rules
+        run: |
+          semgrep scan \
+            --config p/typescript \
+            --config p/react \
+            --config p/security-audit \
+            --baseline-commit "$SEMGREP_BASE_SHA" \
+            --include '**/frontend/**' \
+            --include '**/acbu-frontend/**' \
+            --exclude '**/node_modules/**' \
+            --exclude '**/target/**' \
+            --exclude '**/dist/**' \
+            --exclude '**/.next/**' \
+            --exclude '*.generated.*' \
+            --error \
+            --severity ERROR \
+            --json \
+            --output semgrep-frontend-report.json \
+            .
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Run contracts registry rules
+        run: |
+          semgrep scan \
+            --config p/rust \
+            --baseline-commit "$SEMGREP_BASE_SHA" \
+            --include '**/contracts/**' \
+            --exclude '**/node_modules/**' \
+            --exclude '**/target/**' \
+            --exclude '**/dist/**' \
+            --exclude '**/.next/**' \
+            --exclude '*.generated.*' \
+            --error \
+            --severity WARNING \
+            --json \
+            --output semgrep-contracts-report.json \
+            .
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Upload Semgrep reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-reports
+          path: semgrep*.json
+          if-no-files-found: warn
+          retention-days: 30

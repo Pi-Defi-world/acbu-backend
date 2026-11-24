@@ -205,7 +205,7 @@ impl CurrencyCode {
         CurrencyCode(SorobanString::from_str(env, code))
     }
 
-    /// Borrow the underlying currency code string (e.g. `"NGN"`).
+    /// Borrow the underlying currency code string (e.g. "NGN").
     pub fn code(&self) -> &SorobanString {
         &self.0
     }
@@ -450,6 +450,10 @@ pub enum ContractError {
     /// before redemption.
     VaultAllowanceInsufficient = 24,
 
+    /// The prover risk score encoded in public_inputs exceeds the maximum
+    /// risk threshold configured in the on-chain compliance policy (AZ-001 / #1358).
+    RiskScoreTooHigh = 25,
+
     Unknown = 9999,
 }
 
@@ -473,6 +477,7 @@ impl core::fmt::Display for ContractError {
             ContractError::VaultAllowanceInsufficient => {
                 write!(f, "vault allowance insufficient")
             }
+            ContractError::RiskScoreTooHigh => write!(f, "risk score exceeds maximum allowed policy threshold (#1358)"),
             ContractError::InvalidCircuitPeer => write!(f, "invalid circuit-breaker peer"),
             ContractError::CommitmentAlreadyAttested => write!(f, "commitment already attested"),
             ContractError::CommitmentNotAttested => write!(f, "commitment not attested"),

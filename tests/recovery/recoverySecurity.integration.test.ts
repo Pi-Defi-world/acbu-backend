@@ -169,10 +169,10 @@ import {
   getAuditExports,
   getTransactionsForTreasuryReport,
   getLatestReserves,
-} from "../../../src/services/reports/reportService";
-import { prismaReplica } from "../../../src/config/database";
+} from "../../src/services/reports/reportService";
+import { prismaReplica } from "../../src/config/database";
 
-jest.mock("../../../src/config/database", () => ({
+jest.mock("../../src/config/database", () => ({
   prisma: {
     $disconnect: jest.fn().mockResolvedValue(undefined),
   },

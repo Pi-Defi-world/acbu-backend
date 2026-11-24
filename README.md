@@ -23,7 +23,15 @@ Backend API server for the ACBU (African Currency Basket Unit) platform.
 
 ### 1. Clone and Install
 
+This repository is the single home for the whole platform (see [MONOREPO.md](MONOREPO.md)):
+the backend lives at the repository root, the web frontend in [`frontend/`](frontend/)
+and the Soroban smart contracts in [`contracts/`](contracts/). Clone this one repository only;
+the former `acbu-frontend` and `acbu-smart-contract` repositories are being archived and should
+not be cloned or pushed to.
+
 ```bash
+git clone https://github.com/Pi-Defi-world/acbu-backend.git
+cd acbu-backend
 pnpm install
 ```
 
@@ -141,6 +149,8 @@ backend/
 │   └── types/           # TypeScript type definitions
 ├── tests/               # Test files
 ├── prisma/              # Prisma schema and migrations
+├── frontend/            # Web frontend (formerly the acbu-frontend repo)
+├── contracts/           # Soroban smart contracts (formerly the acbu-smart-contract repo)
 ├── scripts/             # Utility scripts
 ├── docker-compose.yml   # Docker services configuration
 └── package.json
@@ -227,11 +237,39 @@ pnpm test:coverage
 
 With **Prisma Accelerate** and **MongoDB Atlas**, the app does not use local PostgreSQL or MongoDB. Only RabbitMQ is required from Docker (or use a managed RabbitMQ). The compose file also defines optional `postgres` and `mongodb` services for migrations or local development.
 
+### Complete stack with compose profiles
+
+The compose file also defines the `backend` API service (built from the root `Dockerfile`, on `http://localhost:5000`, started together with the infrastructure), plus two **optional services** behind [compose profiles](https://docs.docker.com/compose/how-tos/profiles/) that a plain `docker compose up` never attempts to build:
+
+| Profile | Service | Description |
+|---------|---------|-------------|
+| `frontend` | `frontend` | Next.js frontend built from `acbu-frontend/` via `docker/frontend.Dockerfile`, on `http://localhost:3000` |
+| `stellar` | `stellar-sandbox` | Ephemeral local Stellar/Soroban network (`stellar/quickstart`), Horizon + Soroban RPC on `http://localhost:8000` |
+| `full` | both optional services | Spins up the complete ACBU stack alongside the default services |
+
+```bash
+# Infrastructure + backend (default; CI starts infra services by name)
+docker compose up -d --wait
+
+# Complete stack: backend + frontend + Stellar sandbox + infrastructure
+docker compose --profile full up -d --build --wait
+```
+
+The frontend image requires a frontend checkout at `acbu-frontend/` with `output: "standalone"` in its Next.js config. When using the Stellar sandbox, point the backend at it in `.env`:
+
+```bash
+STELLAR_SOROBAN_RPC_URL=http://stellar-sandbox:8000/rpc
+STELLAR_HORIZON_URL=http://stellar-sandbox:8000
+```
+
+See [docker/README.md](./docker/README.md) for details. Note: Redis is intentionally not part of the compose file — it is reserved for future use (see `.env.example`).
+
 ### Accessing Services
 
 - **RabbitMQ Management UI:** `http://localhost:15672` (username: acbu, password: acbu_password)
 - **Optional local Postgres:** `localhost:5432` (if running `docker-compose up -d postgres`)
 - **Optional local MongoDB:** `localhost:27017` (if running `docker-compose up -d mongodb`)
+- **Optional Stellar sandbox:** `http://localhost:8000` (Horizon, Soroban RPC at `/rpc`, friendbot faucet — if running `docker compose --profile stellar up -d`)
 
 ### Stopping Services
 

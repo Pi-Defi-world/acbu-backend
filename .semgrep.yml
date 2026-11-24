@@ -1,4 +1,5 @@
 rules:
+  # Existing backend rules scoped to backend source paths.
   - id: no-hardcoded-secrets
     languages:
       - typescript
@@ -7,6 +8,22 @@ rules:
       Hardcoded secrets detected. Use environment variables or a secrets
       manager instead of embedding credentials in source code.
     severity: ERROR
+    # This fixture intentionally contains a fake secret to exercise auth behavior.
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - /src/middleware/authMiddleware.test.ts
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern-either:
           - pattern: |
@@ -19,6 +36,8 @@ rules:
           metavariable: $KEY
           regex: (?i)(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|auth[_-]?token)
       - pattern-not-regex: process\.env\.[A-Z_]+
+      # The backend uses this non-secret discriminator to parse API key formats.
+      - pattern-not: const API_KEY_PREFIX = "..."
 
   - id: no-eval
     languages:
@@ -28,6 +47,20 @@ rules:
       Use of eval() is dangerous and can lead to code injection. Refactor to
       avoid dynamic code execution.
     severity: ERROR
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern: eval(...)
 
@@ -39,6 +72,20 @@ rules:
       Assigning to innerHTML can lead to XSS. Use textContent or a safe
       sanitization library instead.
     severity: ERROR
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern: $X.innerHTML = $Y
 
@@ -50,6 +97,20 @@ rules:
       SQL query built via string concatenation is vulnerable to SQL injection.
       Use parameterized queries or an ORM.
     severity: ERROR
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern-either:
           - pattern: |
@@ -67,6 +128,20 @@ rules:
       Command execution with unsanitized input can lead to command injection.
       Validate and sanitize all user input before passing to exec/spawn.
     severity: ERROR
+    paths:
+      include:
+        - /src/**
+        - /tests/**
+        - /scripts/**
+        - /shared/**
+        - /*.js
+        - /*.ts
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
     patterns:
       - pattern-either:
           - pattern: exec($CMD)
@@ -75,3 +150,314 @@ rules:
       - metavariable-regex:
           metavariable: $CMD
           regex: .*\+.*
+
+  - id: frontend-dangerously-set-inner-html
+    languages:
+      - typescript
+    message: >-
+      dangerouslySetInnerHTML can introduce cross-site scripting. Avoid it or
+      sanitize content with a trusted sanitizer.
+    severity: ERROR
+    paths:
+      include:
+        - '**/frontend/**'
+        - '**/acbu-frontend/**'
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
+    pattern: <$TAG ... dangerouslySetInnerHTML={$VALUE} ... />
+
+  - id: frontend-dynamic-code-execution
+    languages:
+      - typescript
+      - javascript
+    message: >-
+      eval() and new Function() execute dynamic code and can enable code
+      injection.
+    severity: ERROR
+    paths:
+      include:
+        - '**/frontend/**'
+        - '**/acbu-frontend/**'
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+
+  - id: frontend-innerhtml-assignment
+    languages:
+      - typescript
+      - javascript
+    message: >-
+      Assigning to innerHTML can lead to XSS. Use textContent or sanitize the
+      value before insertion.
+    severity: ERROR
+    paths:
+      include:
+        - '**/frontend/**'
+        - '**/acbu-frontend/**'
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
+    pattern: $ELEMENT.innerHTML = $VALUE
+
+  - id: frontend-secret-in-web-storage
+    languages:
+      - typescript
+      - javascript
+    message: >-
+      Do not persist secrets or authentication tokens in browser storage;
+      prefer a secure, HttpOnly cookie or an approved credential flow.
+    severity: ERROR
+    paths:
+      include:
+        - '**/frontend/**'
+        - '**/acbu-frontend/**'
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
+    patterns:
+      - pattern-either:
+          - pattern: localStorage.setItem($KEY, $VALUE)
+          - pattern: sessionStorage.setItem($KEY, $VALUE)
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i).*(token|secret|password|api[_-]?key|private[_-]?key|credential).*
+
+  - id: frontend-hardcoded-credential
+    languages:
+      - typescript
+      - javascript
+    message: >-
+      Hardcoded credentials must be kept out of frontend code, which is
+      delivered to every browser.
+    severity: ERROR
+    paths:
+      include:
+        - '**/frontend/**'
+        - '**/acbu-frontend/**'
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
+    patterns:
+      - pattern-either:
+          - pattern: const $KEY = "..."
+          - pattern: let $KEY = "..."
+          - pattern: var $KEY = "..."
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i).*(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|auth[_-]?token|service[_-]?key).*
+
+  - id: frontend-wildcard-postmessage-origin
+    languages:
+      - typescript
+      - javascript
+    message: >-
+      Specify and validate an exact target origin for postMessage instead of
+      using a wildcard origin.
+    severity: ERROR
+    paths:
+      include:
+        - '**/frontend/**'
+        - '**/acbu-frontend/**'
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
+    pattern-either:
+      - pattern: window.postMessage($DATA, "*")
+      - pattern: $WINDOW.postMessage($DATA, "*")
+
+  - id: frontend-unvalidated-redirect-url
+    languages:
+      - typescript
+      - javascript
+    message: >-
+      Validate redirect destinations against an explicit allowlist to prevent
+      open redirects.
+    severity: ERROR
+    paths:
+      include:
+        - '**/frontend/**'
+        - '**/acbu-frontend/**'
+      exclude:
+        - '**/node_modules/**'
+        - '**/target/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.*'
+    pattern-either:
+      - pattern: window.location.href = $URL
+      - pattern: window.location.assign($URL)
+      - pattern: window.location.replace($URL)
+
+  - id: soroban-unchecked-token-arithmetic
+    languages:
+      - rust
+    message: >-
+      Use checked arithmetic for token amounts and balances to prevent
+      overflow, underflow, or precision errors.
+    severity: ERROR
+    paths:
+      include:
+        - '**/contracts/**'
+      exclude:
+        - '**/target/**'
+        - '**/node_modules/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.rs'
+    patterns:
+      - pattern-either:
+          - pattern: $AMOUNT + $OTHER
+          - pattern: $AMOUNT - $OTHER
+          - pattern: $AMOUNT * $OTHER
+          - pattern: $AMOUNT / $OTHER
+      - metavariable-regex:
+          metavariable: $AMOUNT
+          regex: (?i).*(amount|balance|supply|fee|deposit|withdraw|token|total).*
+
+  - id: soroban-unwrap-in-contract-entrypoint
+    languages:
+      - rust
+    message: >-
+      Avoid unwrap() and expect() in Soroban contract entrypoints; propagate
+      errors so a panic cannot abort contract execution.
+    severity: ERROR
+    paths:
+      include:
+        - '**/contracts/**'
+      exclude:
+        - '**/target/**'
+        - '**/node_modules/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.rs'
+    patterns:
+      - pattern-either:
+          - pattern: $VALUE.unwrap()
+          - pattern: $VALUE.expect(...)
+      - pattern-inside: |
+          #[contractimpl]
+          impl $CONTRACT {
+            ...
+            pub fn $FUNCTION(...) {
+              ...
+            }
+            ...
+          }
+
+  - id: soroban-state-change-without-require-auth
+    languages:
+      - rust
+    message: >-
+      State-changing Soroban entrypoints should authenticate the relevant
+      address with require_auth() before updating contract state.
+    severity: ERROR
+    paths:
+      include:
+        - '**/contracts/**'
+      exclude:
+        - '**/target/**'
+        - '**/node_modules/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.rs'
+    patterns:
+      - pattern: |
+          pub fn $FUNCTION($ENV: &Env, ...) {
+            ...
+          }
+      - pattern-inside: |
+          #[contractimpl]
+          impl $CONTRACT {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: $FUNCTION
+          regex: (?i).*(deposit|withdraw|transfer|mint|burn|approve|borrow|repay|claim|update|set|remove|create|close).*
+      - pattern-not-inside: |
+          pub fn $FUNCTION(...) {
+            ...
+            $ADDRESS.require_auth();
+            ...
+          }
+
+  - id: soroban-hardcoded-stellar-address-or-key
+    languages:
+      - rust
+    message: >-
+      Avoid hardcoding Stellar addresses or key material in Soroban contracts;
+      inject addresses through validated configuration or contract arguments.
+    severity: ERROR
+    paths:
+      include:
+        - '**/contracts/**'
+      exclude:
+        - '**/target/**'
+        - '**/node_modules/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.rs'
+    pattern-regex: |
+      ["'][GS][A-Z2-7]{55}["']
+
+  - id: soroban-storage-write-in-loop
+    languages:
+      - rust
+    message: >-
+      Storage writes in unbounded loops can cause unbounded Soroban storage
+      growth and resource exhaustion. Bound the iteration or redesign storage.
+    severity: ERROR
+    paths:
+      include:
+        - '**/contracts/**'
+      exclude:
+        - '**/target/**'
+        - '**/node_modules/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.rs'
+    patterns:
+      - pattern: $ENV.storage().$KIND().set($KEY, $VALUE)
+      - pattern-inside: |
+          for $ITEM in $ITERATOR {
+            ...
+          }
+
+  - id: soroban-unsafe-block
+    languages:
+      - rust
+    message: >-
+      Avoid unsafe blocks in Soroban contracts unless they are essential and
+      locally justified.
+    severity: ERROR
+    paths:
+      include:
+        - '**/contracts/**'
+      exclude:
+        - '**/target/**'
+        - '**/node_modules/**'
+        - '**/dist/**'
+        - '**/.next/**'
+        - '**/*.generated.rs'
+    pattern: unsafe { ... }

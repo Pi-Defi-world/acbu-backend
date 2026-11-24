@@ -74,6 +74,52 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  # ── Optional application services (compose profiles) ─────────────────
+  # The remaining pieces of the complete ACBU stack are behind profiles so
+  # a plain `docker compose up` is unaffected (CI starts services by name):
+  #
+  #   --profile frontend   Next.js frontend container (built from
+  #                        ./acbu-frontend via docker/frontend.Dockerfile)
+  #   --profile stellar    local Soroban sandbox (stellar/quickstart)
+  #   --profile full       frontend + stellar sandbox alongside the always-on
+  #                        infra + backend — the complete ACBU stack:
+  #                          docker compose --profile full up -d --wait
+
+  frontend:
+    build:
+      context: ./acbu-frontend
+      dockerfile: ../docker/frontend.Dockerfile
+    container_name: acbu-frontend
+    restart: unless-stopped
+    profiles: [frontend, full]
+    environment:
+      NODE_ENV: production
+      # The Next.js app runs in the browser, so this URL must be reachable
+      # from the host, not from inside the compose network.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
+    ports:
+      - "3000:3000"
+
+  stellar-sandbox:
+    image: stellar/quickstart:latest
+    container_name: acbu-stellar-sandbox
+    restart: unless-stopped
+    profiles: [stellar, full]
+    # Ephemeral local Stellar network: stellar-core + Horizon + Soroban RPC.
+    # Horizon:      http://localhost:8000
+    # Soroban RPC:  http://localhost:8000/rpc
+    # Friendbot:    http://localhost:8000/friendbot
+    # Lab:          http://localhost:8000/lab
+    command: --local
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "supervisorctl", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
 volumes:
   postgres_data:
   mongodb_data:

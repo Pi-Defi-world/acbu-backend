@@ -119,11 +119,18 @@ export async function postOffRamp(
     if (!userId) return next(new AppError("User not found in API key", 401));
 
     const body = offRampSchema.parse(req.body);
+    const idempotencyHeader = req.headers["idempotency-key"];
+    const idempotencyKey = Array.isArray(idempotencyHeader)
+      ? idempotencyHeader[0]
+      : typeof idempotencyHeader === "string"
+        ? idempotencyHeader
+        : undefined;
     const result = await simulateOffRamp(
       userId,
       body.currency.toUpperCase(),
       body.amount,
       body.blockchain_tx_hash,
+      idempotencyKey,
     );
 
     res.status(200).json(result);

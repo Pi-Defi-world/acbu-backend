@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history so gitleaks can scan the PR range / recent commits
+          # Required to inspect the exact PR/push commit range.
           fetch-depth: 0
 
       - name: Install Gitleaks
@@ -31,4 +31,12 @@ jobs:
           gitleaks version
 
       - name: Run gitleaks
-        run: gitleaks detect --verbose --redact
+        run: |
+          # A depth-0 checkout fetches every branch, so an unscoped scan also
+          # reports findings from unrelated branch history. On pull requests,
+          # scan only the commits the PR would add.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gitleaks detect --verbose --redact --log-opts="origin/${{ github.base_ref }}..HEAD"
+          else
+            gitleaks detect --verbose --redact
+          fi

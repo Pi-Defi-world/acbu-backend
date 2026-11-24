@@ -205,12 +205,12 @@ This file documents the environment variables required by the ACBU backend and t
 - `CORS_ORIGIN`
   - Comma-separated list of allowed origins.
 
-### Frontend (`acbu-frontend` submodule)
+### Frontend (`frontend/`)
 
 The root `.env.example` is the canonical local setup template for both the
-backend and the checked-out frontend. Copy it to `.env`, then expose the
+backend and the frontend in `frontend/`. Copy it to `.env`, then expose the
 frontend values to the frontend process as `.env.local` when running the
-submodule independently. Do not commit either runtime file.
+frontend (`frontend/`) independently. Do not commit either runtime file.
 
 - `NEXT_PUBLIC_API_BASE_URL` - browser API base URL, normally `http://localhost:5000/api/v1` locally.
 - `NEXT_PUBLIC_API_URL` - legacy frontend alias used only when the base URL is unset.

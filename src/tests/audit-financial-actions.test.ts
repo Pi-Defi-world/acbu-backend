@@ -41,6 +41,7 @@ jest.mock("../config/database", () => ({
   },
 }));
 
+// Mock wallet state service
 // Mock logger
 jest.mock("../config/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -56,6 +57,13 @@ jest.mock("../services/contracts", () => ({
   acbuBurningService: {
     redeemSingle: jest.fn(),
   },
+}));
+
+jest.mock("../config/contracts", () => ({
+  getContractAddresses: jest.fn(() => ({
+    minting: "minting-contract-id",
+    burning: "burning-contract-id",
+  })),
 }));
 
 // Mock stellar client
@@ -82,7 +90,7 @@ jest.mock("../services/limits/limitsService", () => ({
 
 // Mock rates
 jest.mock("../services/rates", () => {
-  const { Decimal } = require("@prisma/client/runtime/library");
+  const { Decimal } = jest.requireActual("@prisma/client/runtime/library");
   return {
     convertLocalToUsd: jest.fn().mockResolvedValue(new Decimal("100")),
     convertLocalToUsdWithPrecision: jest.fn().mockResolvedValue({
@@ -121,7 +129,7 @@ jest.mock("../services/stellar/feeManager", () => ({
 }));
 
 // Mock recipient resolver
-jest.mock("../recipient/recipientResolver", () => ({
+jest.mock("../services/recipient/recipientResolver", () => ({
   normalizeRecipientQuery: jest.fn((to: string) => {
     if (to.startsWith("G") && to.length === 56) {
       return { kind: "address" as const, value: to };
@@ -193,6 +201,9 @@ describe("W10-OBS-006: Audit logging on every money movement", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedLogAudit.mockResolvedValue(undefined);
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+      stellarAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    });
   });
 
   // ── Mint (deposit) ────────────────────────────────────────────────────────

@@ -1,10 +1,10 @@
+// W11-AUD-023: Import only the core primitives statically; Horizon and rpc are
+// loaded dynamically to enable Next.js code-splitting for these heavy modules.
 import {
   Address,
-  Horizon,
   Operation,
   TransactionBuilder,
   xdr,
-  rpc,
   Transaction,
   FeeBumpTransaction,
 } from "@stellar/stellar-sdk";
@@ -19,6 +19,7 @@ const TESTNET_RPC_URL =
   process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ??
   "https://soroban-testnet.stellar.org";
 const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
+export const TRANSACTION_TIMEOUT_SECONDS = 60;
 
 function i128ScVal(value: bigint): xdr.ScVal {
   const lo = value & BigInt("0xFFFFFFFFFFFFFFFF");
@@ -75,8 +76,19 @@ async function resolveNetworkConfig(): Promise<{
   };
 }
 
+// Minimal interface for the rpc.Server methods we use, so we don't need a
+// static import of the full rpc namespace for the helper signature.
+interface RpcServerLike {
+  sendTransaction(tx: Transaction | FeeBumpTransaction): Promise<{
+    status: string;
+    errorResult?: unknown;
+    hash: string;
+  }>;
+  getTransaction(hash: string): Promise<{ status: string; resultXdr?: unknown }>;
+}
+
 async function submitAndWaitSuccess(params: {
-  rpcServer: rpc.Server;
+  rpcServer: RpcServerLike;
   tx: Transaction | FeeBumpTransaction;
   timeoutMs?: number;
 }): Promise<{ txHash: string }> {
@@ -88,7 +100,7 @@ async function submitAndWaitSuccess(params: {
     throw new Error(formatSorobanError(errXdr));
   }
   const txHash = sendRes.hash;
-  const timeoutMs = params.timeoutMs ?? 120000;
+  const timeoutMs = params.timeoutMs ?? 60000;
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const status = await params.rpcServer.getTransaction(txHash);
@@ -124,6 +136,9 @@ export async function submitBurnRedeemSingleClient(params: {
     throw new Error("Invalid burn amount.");
   }
 
+  // W11-AUD-023: dynamic import for Horizon and rpc to enable code-splitting
+  const { Horizon, rpc } = await import("@stellar/stellar-sdk");
+
   const server = new Horizon.Server(horizonUrl);
   const sourceAccount = await server.loadAccount(sourceAddress);
   const invokeOp = Operation.invokeHostFunction({
@@ -150,14 +165,14 @@ export async function submitBurnRedeemSingleClient(params: {
     networkPassphrase,
   })
     .addOperation(invokeOp)
-    .setTimeout(0)
+    .setTimeout(TRANSACTION_TIMEOUT_SECONDS)
     .build();
 
   const simulation = await rpcServer.simulateTransaction(tx);
   if (rpc.Api.isSimulationError(simulation)) {
     throw new Error(`Burn simulation failed: ${simulation.error}`);
   }
-  const assembled = rpc.assembleTransaction(tx, simulation).setTimeout(0).build();
+  const assembled = rpc.assembleTransaction(tx, simulation).setTimeout(TRANSACTION_TIMEOUT_SECONDS).build();
 
   let signedTx: Transaction | FeeBumpTransaction = assembled;
   if (params.external?.kit) {
