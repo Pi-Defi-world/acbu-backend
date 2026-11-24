@@ -181,9 +181,7 @@
       "proxy-addr": ">=2.0.8",
       "compression": ">=1.8.2",
       "systeminformation": ">=5.33.16",
-      "effect": ">=3.22.1 <4",
-      "glob": ">=14.0.2",
-      "minimatch": ">=11.0.1"
+      "effect": ">=3.22.1 <4"
     }
   }
 }
