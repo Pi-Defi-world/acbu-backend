@@ -19,16 +19,14 @@ export function assertWebhookSignatureConfigSafe(): void {
     process.env.APP_PROFILE,
     process.env.APP_ENV,
     process.env.ENVIRONMENT,
-  ].filter((value): value is string => typeof value === "string")
+  ]
+    .filter((value): value is string => typeof value === "string")
     .map((value) => value.trim().toLowerCase());
 
-  if (!profiles.some((profile) => TEST_PROFILES.has(profile))) {
-    throw new Error(
-      "WEBHOOK_SIGNATURE_BYPASS must only be enabled in an explicit test profile.",
-    );
-  }
-
-  if (profiles.includes("production")) {
-    throw new Error("WEBHOOK_SIGNATURE_BYPASS must never be enabled in production.");
+  if (
+    !profiles.some((profile) => TEST_PROFILES.has(profile)) ||
+    profiles.includes("production")
+  ) {
+    throw new Error("WEBHOOK_SIGNATURE_BYPASS must only be enabled in an explicit test profile.");
   }
 }
