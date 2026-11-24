@@ -169,14 +169,22 @@ Validation runs **before** the build/deploy phase and rejects:
 
 | Variable | Default |
 |----------|---------|
-| `ORACLE_CURRENCIES` | `["NGN","KES","RWF","GHS","UGX","TZS","ZAR","EGP"]` |
-| `ORACLE_BASKET_WEIGHTS` | `{"NGN":1800,"KES":1200,"RWF":800,"GHS":900,"UGX":700,"TZS":600,"ZAR":1500,"EGP":1500}` |
+| `ORACLE_CURRENCIES` | `["NGN","ZAR","KES","EGP","GHS","RWF","XOF","MAD","TZS","UGX"]` |
+| `ORACLE_BASKET_WEIGHTS` | `{"NGN":4615,"ZAR":0,"KES":3077,"EGP":0,"GHS":2308,"RWF":0,"XOF":0,"MAD":0,"TZS":0,"UGX":0}` |
 | `MIN_RESERVE_RATIO_BPS` | `10200` |
 | `MINT_FEE_RATE_BPS` / `MINT_FEE_SINGLE_BPS` | `30` / `50` |
 | `BURN_FEE_RATE_BPS` / `BURN_FEE_SINGLE_REDEEM_BPS` | `30` / `100` |
 | `SAVINGS_FEE_RATE_BPS` / `SAVINGS_YIELD_RATE_BPS` | `0` / `500` |
 | `LENDING_FEE_RATE_BPS` | `300` |
 | `SKIP_INIT` | unset — set to `1` to deploy without initialising |
+
+The default launch basket activates Nigeria (NGN), Kenya (KES), and Ghana
+(GHS). The other seven currencies are registered as zero-weight expansion
+slots and do not need price feeds at launch. Active weights must total no more
+than 10,000 basis points; update them and activate additional slots through
+the oracle's admin-only `set_basket_config` method when their feeds and reserve
+support are ready. Each positive-weight currency must have a fresh oracle rate
+before the basket rate can be used.
 
 ### CI / GitHub Environment setup
 
