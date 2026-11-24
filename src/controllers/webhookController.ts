@@ -52,12 +52,25 @@ export function assertWebhookSignatureBypassSafe(): void {
 }
 
 // ── Dev/stage mock bypass ────────────────────────────────────────────────────
-// The bypass is deliberately limited to local/test environments. env.ts also
-// rejects this setting during startup for staging-facing deployments.
-const bypassRequested = isWebhookSignatureBypassEnabled();
-assertWebhookSignatureBypassSafe();
-const isExplicitTestProfile = config.nodeEnv === "test" || process.env.APP_PROFILE === "test";
-const bypassEnabled = bypassRequested && isExplicitTestProfile;
+// Evaluate the flag at request time. The startup guard in env.ts separately
+// rejects unsafe deployment configuration before the application listens.
+function isWebhookSignatureBypassAllowed(): boolean {
+  const profiles = [
+    config.nodeEnv,
+    process.env.NODE_ENV,
+    process.env.APP_PROFILE,
+    process.env.APP_ENV,
+    process.env.ENVIRONMENT,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
+
+  return (
+    isWebhookSignatureBypassEnabled() &&
+    profiles.some((profile) => ["test", "testing", "ci"].includes(profile)) &&
+    !profiles.includes("production")
+  );
+}
 
 /**
  * Runtime production assertion, independent of NODE_ENV.
@@ -65,7 +78,7 @@ const bypassEnabled = bypassRequested && isExplicitTestProfile;
  * deployment that mislabels its environment. Called on every webhook request.
  */
 function assertBypassNotInProduction(): void {
-  if (!bypassEnabled) return;
+  if (!isWebhookSignatureBypassAllowed()) return;
   const looksLikeProduction =
     process.env.NODE_ENV === "production" ||
     process.env.APP_ENV === "production" ||
@@ -114,7 +127,7 @@ function isContentTypeJson(req: Request): boolean {
   return contentType.startsWith("application/json");
 }
 
-if (bypassEnabled) {
+if (isWebhookSignatureBypassAllowed()) {
   logger.warn(
     "WEBHOOK_SIGNATURE_BYPASS is enabled — webhook signature verification " +
       "is DISABLED for development/test only. Do not use this setting in a staging-facing deployment.",
