@@ -47,6 +47,20 @@ heapdumps/
 *.heapsnapshot
 # Sensitive architecture and security docs
 
+# W11-MIG-011: monorepo build outputs for the imported contracts and frontend
+# trees. Cargo targets alone can reach hundreds of megabytes, and Next.js /
+# Playwright caches are regenerated locally, so none of them belong in git.
+contracts/target/
+frontend/.next/
+frontend/out/
+frontend/playwright-report/
+frontend/test-results/
+target/
+*.wasm
+.next/
+playwright-report/
+test-results/
+
 # Audit artifacts
 audit/reports/*.tmp
 audit/reports/*.log

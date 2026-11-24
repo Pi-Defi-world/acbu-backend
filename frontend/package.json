@@ -1,0 +1,187 @@
+{
+  "name": "acbu-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "node api.js && next build",
+    "dev": "node api.js && next dev",
+    "lint": "eslint .",
+    "start": "node api.js && next start",
+    "test:a11y": "playwright test accessibility.spec.ts",
+    "test:a11y:ci": "playwright test accessibility.spec.ts --reporter=github",
+    "test:a11y:report": "playwright show-report",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "check:scripts": "node scripts/check-cross-platform-scripts.mjs",
+    "generate:icons": "node scripts/generate-pwa-icons.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint:staged": "lint-staged",
+    "deadcode": "knip",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@creit.tech/stellar-wallets-kit": "^1.2.1",
+    "@hookform/resolvers": "^3.10.0",
+    "@radix-ui/react-accordion": "1.2.20",
+    "@radix-ui/react-alert-dialog": "1.1.23",
+    "@radix-ui/react-aspect-ratio": "1.1.15",
+    "@radix-ui/react-avatar": "1.2.6",
+    "@radix-ui/react-checkbox": "1.3.11",
+    "@radix-ui/react-collapsible": "1.1.20",
+    "@radix-ui/react-context-menu": "2.3.7",
+    "@radix-ui/react-dialog": "1.1.23",
+    "@radix-ui/react-dropdown-menu": "2.1.24",
+    "@radix-ui/react-hover-card": "1.1.23",
+    "@radix-ui/react-label": "2.1.15",
+    "@radix-ui/react-menubar": "1.1.24",
+    "@radix-ui/react-navigation-menu": "1.2.22",
+    "@radix-ui/react-popover": "1.1.23",
+    "@radix-ui/react-progress": "1.1.16",
+    "@radix-ui/react-radio-group": "1.4.7",
+    "@radix-ui/react-scroll-area": "1.2.18",
+    "@radix-ui/react-select": "2.3.7",
+    "@radix-ui/react-separator": "1.1.15",
+    "@radix-ui/react-slider": "1.4.7",
+    "@radix-ui/react-slot": "1.3.3",
+    "@radix-ui/react-switch": "1.3.7",
+    "@radix-ui/react-tabs": "1.1.21",
+    "@radix-ui/react-toast": "1.2.23",
+    "@radix-ui/react-toggle": "1.1.18",
+    "@radix-ui/react-toggle-group": "1.1.19",
+    "@radix-ui/react-tooltip": "1.2.16",
+    "@stellar/stellar-sdk": "^15.0.1",
+    "@tanstack/react-virtual": "^3.14.13",
+    "@vercel/analytics": "1.3.1",
+    "autoprefixer": "^10.6.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "1.1.1",
+    "date-fns": "4.4.0",
+    "dompurify": "^3.4.15",
+    "embla-carousel-react": "8.6.0",
+    "input-otp": "1.5.0",
+    "localforage": "^1.10.0",
+    "lucide-react": "^0.454.0",
+    "next": "16.3.5",
+    "next-intl": "^4.14.5",
+    "next-themes": "^0.4.6",
+    "react": "19.3.0",
+    "react-day-picker": "9.8.0",
+    "react-dom": "19.3.0",
+    "react-hook-form": "^7.88.0",
+    "react-resizable-panels": "^2.1.7",
+    "recharts": "2.15.4",
+    "sharp": "^0.35.4",
+    "sonner": "^1.7.4",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss-animate": "^1.0.7",
+    "vaul": "^1.1.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.11.2",
+    "@next/bundle-analyzer": "^16.3.5",
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/postcss": "^4.1.9",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/dompurify": "^3.2.0",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^17.12.0",
+    "husky": "^9.1.7",
+    "jsdom": "^30.1.0",
+    "knip": "^5.66.0",
+    "lint-staged": "^16.2.7",
+    "playwright": "^1.63.0",
+    "postcss": "^8.5",
+    "postcss-preset-env": "^11.5.3",
+    "prettier": "^3.9.8",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "sharp": "^0.35.4",
+    "tailwindcss": "^4.1.9",
+    "tw-animate-css": "1.4.0",
+    "typescript": "^5",
+    "typescript-eslint": "^8.70.0",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.5"
+  },
+  "packageManager": "pnpm@10.15.0+sha512.486ebc259d3e999a4e8691ce03b5cac4a71cbeca39372a9b762cb500cfdf0873e2cb16abe3d951b1ee2cf012503f027b98b6584e4df22524e0c7450d9ec7aa7b",
+  "overrides": {
+    "@stellar/stellar-sdk": "^15.0.1"
+  },
+  "peerDependencyRules": {
+    "allowedVersions": {
+      "eslint-plugin-react>eslint": "^10",
+      "@trezor/connect-plugin-stellar>@stellar/stellar-sdk": "^15.0.1",
+      "@creit.tech/stellar-wallets-kit>@stellar/stellar-sdk": "^15.0.1"
+    }
+  },
+  "pnpm": {
+    "overrides": {
+      "@stellar/stellar-sdk": "^15.0.1"
+    },
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "eslint-plugin-react>eslint": "^10",
+        "@trezor/connect-plugin-stellar>@stellar/stellar-sdk": "^15.0.1",
+        "@creit.tech/stellar-wallets-kit>@stellar/stellar-sdk": "^15.0.1"
+      }
+    }
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,css,md}": [
+      "prettier --write"
+    ]
+  },
+  "knip": {
+    "entry": [
+      "app/**/{page,layout,template,loading,error,not-found,route,default,global-error}.{js,jsx,ts,tsx}",
+      "middleware.{js,ts}",
+      "next.config.{js,mjs,ts}",
+      "scripts/**/*.{js,mjs,ts}",
+      "**/*.{test,spec}.{js,jsx,ts,tsx}",
+      "**/*.config.{js,mjs,cjs,ts}"
+    ],
+    "project": [
+      "**/*.{js,jsx,ts,tsx}",
+      "!**/node_modules/**",
+      "!.next/**",
+      "!coverage/**",
+      "!playwright-report/**",
+      "!test-results/**"
+    ],
+    "ignore": [
+      "**/*.d.ts",
+      "public/**",
+      "scripts/generate-pwa-icons.mjs"
+    ],
+    "ignoreDependencies": [
+      "tailwindcss-animate",
+      "tw-animate-css",
+      "postcss-preset-env",
+      "autoprefixer",
+      "sharp",
+      "@next/bundle-analyzer"
+    ]
+  }
+}

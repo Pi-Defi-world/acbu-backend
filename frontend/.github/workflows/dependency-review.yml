@@ -1,0 +1,60 @@
+# Dependency Review — blocks PRs that introduce vulnerable or license-violating deps.
+#
+# Runs on every pull_request and checks the diff for:
+#   - Known CVEs (GHSA advisories) at severity >= high
+#   - Denied SPDX license identifiers
+#
+# Required: GitHub Advanced Security must be enabled on the repo, OR the repo must
+# be public (dependency-review-action works for both).
+#
+# See: https://github.com/actions/dependency-review-action
+
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: ["main", "dev"]
+    # Trigger on any file change — deps can come from any commit
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "public/**"
+
+permissions:
+  contents: read
+  # Needed to post PR check status
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run Dependency Review
+        uses: actions/dependency-review-action@v5
+        with:
+          # Block the PR if any introduced dep has a CVE at high or critical severity
+          fail-on-severity: high
+
+          # Deny copyleft licenses that are incompatible with this project's MIT licence.
+          # Adjust this list to match your legal requirements.
+          deny-licenses: >-
+            GPL-2.0,
+            GPL-3.0,
+            AGPL-3.0,
+            LGPL-2.0,
+            LGPL-2.1,
+            LGPL-3.0,
+            CPAL-1.0,
+            EUPL-1.1,
+            EUPL-1.2,
+            OSL-3.0
+
+          # Comment a summary of the review findings on the PR
+          comment-summary-in-pr: always
+
+          # Warn (don't fail) on moderate severity — keeps noise low while still visible
+          warn-on-openssf-scorecard-level: true

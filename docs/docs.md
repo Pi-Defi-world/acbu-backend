@@ -86,6 +86,7 @@ The ACBU platform consists of:
 - **Minting:** User deposits local currency → system mints equivalent ACBU at current basket rate minus mint fee
 - **Burning:** User submits ACBU → system redeems at current basket rate minus burn fee
 - **Fee Model:** Dynamic, reserve-health-adjusted (see §12.3 and `docs/fees.md`)
+- **Oracle rates:** On-chain rate changes require at least 3 distinct validator submissions from a 5-validator set; one operator key cannot commit a rate.
 
 ---
 
