@@ -39,7 +39,10 @@ const nextConfig = {
   crossOrigin: 'anonymous',
   // Improve tree-shaking for large packages and local UI exports
   experimental: {
-    optimizePackageImports: ['lucide-react', '@/components/ui'],
+    // W11-AUD-023: include @stellar/stellar-sdk so Next.js tree-shakes and
+    // code-splits the package; combined with dynamic imports for Horizon/rpc
+    // this reduces the initial client bundle by the heaviest sub-modules.
+    optimizePackageImports: ['lucide-react', '@/components/ui', '@stellar/stellar-sdk'],
   },
   // Don't advertise the framework to reduce attack surface
   poweredByHeader: false,
