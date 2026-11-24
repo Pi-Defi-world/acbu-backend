@@ -1,6 +1,10 @@
-import { xdr, Address } from "@stellar/stellar-sdk";
+import "dotenv/config";
 
-const ADMIN = "GDHO63RZEUNDRVF6WA7HD4D7PLNLUMSK5H74ONW3MEF3VKF4BZJ6GDML";
+import { xdr, Address } from "@stellar/stellar-sdk";
+import {
+  ORACLE_MIN_SIGNATURES,
+  parseOracleValidatorAddresses,
+} from "../src/config/oracleValidators";
 
 function toI128(value: bigint): xdr.ScVal {
   const b = BigInt(value);
@@ -28,13 +32,25 @@ const weights = [
   { key: "UGX", value: 6 },
 ];
 
-const validators = xdr.ScVal.scvVec([Address.fromString(ADMIN).toScVal()]);
-const currenciesVec = xdr.ScVal.scvVec(currencies.map(c => xdr.ScVal.scvVec([xdr.ScVal.scvString(c)]))); // Tuple structs are represented as 1-element vectors
-const basketWeightsMap = xdr.ScVal.scvMap(weights.map(w => new xdr.ScMapEntry({
-  key: xdr.ScVal.scvVec([xdr.ScVal.scvString(w.key)]),
-  val: toI128(BigInt(w.value))
-})));
+const validators = xdr.ScVal.scvVec(
+  parseOracleValidatorAddresses(process.env.ORACLE_VALIDATOR_ADDRESSES).map((validator) =>
+    Address.fromString(validator).toScVal(),
+  ),
+);
+const currenciesVec = xdr.ScVal.scvVec(
+  currencies.map((c) => xdr.ScVal.scvVec([xdr.ScVal.scvString(c)])),
+); // Tuple structs are represented as 1-element vectors
+const basketWeightsMap = xdr.ScVal.scvMap(
+  weights.map(
+    (w) =>
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvVec([xdr.ScVal.scvString(w.key)]),
+        val: toI128(BigInt(w.value)),
+      }),
+  ),
+);
 
 console.log("Validators XDR:", validators.toXDR("base64"));
+console.log("Minimum signatures:", ORACLE_MIN_SIGNATURES);
 console.log("Currencies XDR:", currenciesVec.toXDR("base64"));
 console.log("Weights XDR:", basketWeightsMap.toXDR("base64"));

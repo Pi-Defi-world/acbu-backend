@@ -46,19 +46,18 @@ export async function updateReserveMetrics(): Promise<void> {
     // Update gauges
     for (const [, reserve] of latestByCurrencySegment) {
       const ratio = reserve.actualWeight.toNumber();
-      reserveRatioGauge.set(
-        { currency: reserve.currency, segment: reserve.segment },
-        ratio,
-      );
+      reserveRatioGauge.set({ currency: reserve.currency, segment: reserve.segment }, ratio);
 
       // Check against thresholds and record breaches
       const minRatio = parseFloat(process.env.RESERVE_MIN_RATIO || "1.02");
       const alertThreshold = parseFloat(process.env.RESERVE_ALERT_THRESHOLD || "1.02");
 
       if (ratio < minRatio) {
-        reserveRatioBreachCounter.inc(
-          { currency: reserve.currency, segment: reserve.segment, threshold: "min" },
-        );
+        reserveRatioBreachCounter.inc({
+          currency: reserve.currency,
+          segment: reserve.segment,
+          threshold: "min",
+        });
         logger.warn("Reserve ratio below minimum threshold", {
           currency: reserve.currency,
           segment: reserve.segment,
@@ -68,9 +67,11 @@ export async function updateReserveMetrics(): Promise<void> {
       }
 
       if (ratio < alertThreshold) {
-        reserveRatioBreachCounter.inc(
-          { currency: reserve.currency, segment: reserve.segment, threshold: "alert" },
-        );
+        reserveRatioBreachCounter.inc({
+          currency: reserve.currency,
+          segment: reserve.segment,
+          threshold: "alert",
+        });
       }
     }
 
@@ -115,27 +116,18 @@ export function recordQueueError(queueName: string, errorType: string): void {
  * Instrument a Stellar RPC call with metrics.
  * Wraps the operation with timing and error tracking.
  */
-export async function instrumentStellarRpc<T>(
-  operation: string,
-  fn: () => Promise<T>,
-): Promise<T> {
+export async function instrumentStellarRpc<T>(operation: string, fn: () => Promise<T>): Promise<T> {
   const start = Date.now();
   const network = config.stellar.network;
 
   try {
     const result = await fn();
     const durationMs = (Date.now() - start) / 1000;
-    stellarRpcDurationHistogram.observe(
-      { operation, network },
-      durationMs,
-    );
+    stellarRpcDurationHistogram.observe({ operation, network }, durationMs);
     return result;
   } catch (error: any) {
     const durationMs = (Date.now() - start) / 1000;
-    stellarRpcDurationHistogram.observe(
-      { operation, network },
-      durationMs,
-    );
+    stellarRpcDurationHistogram.observe({ operation, network }, durationMs);
     stellarRpcErrorCounter.inc({
       operation,
       network,
@@ -154,8 +146,5 @@ export function recordCircuitBreakerState(
   state: "closed" | "open" | "half-open",
 ): void {
   const stateValue = state === "closed" ? 0 : state === "open" ? 1 : 2;
-  stellarCircuitBreakerStateGauge.set(
-    { service, network: config.stellar.network },
-    stateValue,
-  );
+  stellarCircuitBreakerStateGauge.set({ service, network: config.stellar.network }, stateValue);
 }

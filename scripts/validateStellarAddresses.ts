@@ -1,28 +1,13 @@
 /**
  * B-013: Validate existing stellar addresses in the database
  * Run this script BEFORE applying the migration to ensure no invalid addresses exist
- * 
+ *
  * Usage: npx ts-node prisma/validateStellarAddresses.ts
  */
 import { PrismaClient } from "@prisma/client";
-import { isValidStellarAddress } from "../src/utils/stellar";
+import { isPlaceholderStellarAddress, isValidStellarAddress } from "../src/utils/stellar";
 
 const prisma = new PrismaClient();
-
-// Common placeholder patterns to check
-const PLACEHOLDER_PATTERNS = [
-  /^G[A]{55}$/,           // All A's
-  /^G[B]{55}$/,           // All B's
-  /^G[0]{55}$/,           // All zeros
-  /^GTEST/,               // Starts with GTEST
-  /^GDUMMY/,              // Starts with GDUMMY
-  /^GPLACEHOLDER/,        // Starts with GPLACEHOLDER
-  /^GXXXXXXXX/,           // Starts with GXXXXXXXX
-];
-
-function isPlaceholderAddress(address: string): boolean {
-  return PLACEHOLDER_PATTERNS.some(pattern => pattern.test(address));
-}
 
 async function validateStellarAddresses() {
   console.log("🔍 Validating existing stellar addresses in database...\n");
@@ -73,7 +58,7 @@ async function validateStellarAddresses() {
       }
 
       // Check placeholder patterns
-      if (isPlaceholderAddress(address)) {
+      if (isPlaceholderStellarAddress(address)) {
         issues.push("Matches placeholder pattern");
       }
 
@@ -94,7 +79,7 @@ async function validateStellarAddresses() {
       return true;
     } else {
       console.log(`❌ Found ${invalidAddresses.length} invalid address(es):\n`);
-      
+
       for (const invalid of invalidAddresses) {
         console.log(`User: ${invalid.userId}`);
         console.log(`Username: ${invalid.username || "(none)"}`);
@@ -104,12 +89,16 @@ async function validateStellarAddresses() {
         console.log("---\n");
       }
 
-      console.log("⚠️  Please fix these addresses before applying the migration.\n");
-      console.log("Options:");
-      console.log("1. Delete invalid addresses: UPDATE users SET stellar_address = NULL WHERE id = '...'");
+      console.log(
+        "⚠️  Migration 20261121000000_purge_invalid_stellar_addresses will clear these.\n",
+      );
+      console.log("Options before deploying:");
+      console.log(
+        "1. Delete invalid addresses: UPDATE users SET stellar_address = NULL WHERE id = '...'",
+      );
       console.log("2. Replace with valid addresses (if user has a real wallet)");
       console.log("3. Contact affected users to provide valid addresses\n");
-      
+
       return false;
     }
   } catch (error) {

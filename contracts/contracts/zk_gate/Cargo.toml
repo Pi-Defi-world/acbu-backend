@@ -1,0 +1,18 @@
+[package]
+name = "zk_gate"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[lints]
+workspace = true

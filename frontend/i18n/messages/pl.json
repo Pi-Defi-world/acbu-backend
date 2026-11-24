@@ -1,0 +1,60 @@
+{
+  "not_found": {
+    "label": "Błąd 404",
+    "title": "Strona nie znaleziona",
+    "description": "Strona, której szukasz, nie istnieje lub mogła zostać przeniesiona.",
+    "cta": "Przejdź do pulpitu"
+  },
+  "home": {
+    "acbu": "ACBU",
+    "wallet_balance": "Saldo portfela",
+    "fiat": "Waluta fiducjarna",
+    "simulated_usd_equivalent": "Symulacja · odpowiednik USD",
+    "add_demo_funds": "Dodaj środki demo",
+    "recent_activity": "Ostatnia aktywność",
+    "view_all": "Zobacz wszystkie",
+    "no_recent_activity": "Brak ostatniej aktywności",
+    "send_money": "Wyślij pieniądze",
+    "some_currencies_missing_rate": "Brak kursu dla niektórych walut",
+    "usd": "USD",
+    "approx_usd": "≈ USD",
+    "transaction_count": "{count, plural, one {# transakcja} few {# transakcje} many {# transakcji} other {# transakcji}}",
+    "session_count": "{count, plural, one {# aktywna sesja} few {# aktywne sesje} many {# aktywnych sesji} other {# aktywnych sesji}}",
+    "today": "Dzisiaj",
+    "yesterday": "Wczoraj",
+    "tx_type": {
+      "mint": "Wybicie",
+      "burn": "Spalenie",
+      "transfer": "Przelew"
+    },
+    "status": {
+      "pending": "Oczekująca",
+      "completed": "Zakończona",
+      "failed": "Nieudana"
+    }
+  },
+  "features": {
+    "send": {
+      "title": "Wyślij",
+      "description": "Przelej pieniądze"
+    },
+    "mint": {
+      "title": "Wybij",
+      "description": "Utwórz ACBU"
+    },
+    "simulated_bank": {
+      "title": "Symulowany bank",
+      "description": "Demo fiat"
+    },
+    "rates": {
+      "title": "Kursy",
+      "description": "Kursy rynkowe"
+    }
+  },
+  "navigation": {
+    "unsavedChangesTitle": "Niezapisane zmiany",
+    "unsavedChangesDescription": "Masz niezapisane zmiany. Czy na pewno chcesz wyjść?",
+    "stay": "Zostań",
+    "leave": "Wyjdź"
+  }
+}

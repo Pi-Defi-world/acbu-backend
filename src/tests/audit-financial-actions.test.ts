@@ -82,7 +82,7 @@ jest.mock("../services/limits/limitsService", () => ({
 
 // Mock rates
 jest.mock("../services/rates", () => {
-  const { Decimal } = require("@prisma/client/runtime/library");
+  const { Decimal } = jest.requireActual("@prisma/client/runtime/library");
   return {
     convertLocalToUsd: jest.fn().mockResolvedValue(new Decimal("100")),
     convertLocalToUsdWithPrecision: jest.fn().mockResolvedValue({
@@ -121,7 +121,7 @@ jest.mock("../services/stellar/feeManager", () => ({
 }));
 
 // Mock recipient resolver
-jest.mock("../recipient/recipientResolver", () => ({
+jest.mock("../services/recipient/recipientResolver", () => ({
   normalizeRecipientQuery: jest.fn((to: string) => {
     if (to.startsWith("G") && to.length === 56) {
       return { kind: "address" as const, value: to };

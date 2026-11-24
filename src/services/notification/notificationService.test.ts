@@ -66,8 +66,6 @@ describe("sendEmail (SendGrid provider)", () => {
   it("propagates an error instead of swallowing it", async () => {
     mockedAxios.post.mockRejectedValue(new Error("SendGrid down"));
 
-    await expect(sendEmail("ops@example.com", "Subject", "Body")).rejects.toThrow(
-      "SendGrid down",
-    );
+    await expect(sendEmail("ops@example.com", "Subject", "Body")).rejects.toThrow("SendGrid down");
   });
 });

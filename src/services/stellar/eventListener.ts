@@ -39,6 +39,8 @@ interface ContractEffectsApi {
 
 const FETCH_ATTEMPTS = 3;
 const HANDLER_ATTEMPTS = 3;
+const CIRCUIT_FAILURE_THRESHOLD = 3;
+const CIRCUIT_OPEN_DURATION_MS = 15000;
 const RETRY_BASE_DELAY_MS = 500;
 const ACTIVE_POLL_DELAY_MS = 250;
 const IDLE_POLL_DELAY_MS = 1000;
@@ -73,9 +75,35 @@ export class EventListener {
   private isReconnecting = false;
   private defaultCursor: string | null = null;
   private healthStatus = eventListenerHealth;
+  private consecutiveFailures = 0;
+  private circuitOpenUntil = 0;
 
   constructor() {
     this.server = stellarClient.getServer();
+  }
+
+  /**
+   * Circuit breaker: after repeated failures, skip polling for a cooldown window
+   * so the listener fails over to a fresh server endpoint instead of hammering one.
+   */
+  private isCircuitOpen(): boolean {
+    return Date.now() < this.circuitOpenUntil;
+  }
+
+  private recordSuccess(): void {
+    this.consecutiveFailures = 0;
+    this.circuitOpenUntil = 0;
+  }
+
+  private recordFailure(): void {
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+      this.circuitOpenUntil = Date.now() + CIRCUIT_OPEN_DURATION_MS;
+      this.consecutiveFailures = 0;
+      logger.warn("Soroban event listener circuit opened", {
+        cooldownMs: CIRCUIT_OPEN_DURATION_MS,
+      });
+    }
   }
 
   /**
@@ -146,6 +174,11 @@ export class EventListener {
     const contractIds = [...this.registeredContractIds];
     if (contractIds.length === 0) {
       logger.debug("EventListener poll skipped: no registered contract IDs");
+      return false;
+    }
+
+    if (this.isCircuitOpen()) {
+      logger.debug("EventListener poll skipped: circuit open");
       return false;
     }
 
@@ -353,6 +386,7 @@ export class EventListener {
       });
 
       this.markHealthy();
+      this.recordSuccess();
 
       for (const effect of effects.records) {
         await this.dispatchRawEffect(contractId, effect);
@@ -368,6 +402,7 @@ export class EventListener {
         error: message,
       });
       this.markUnhealthy(message);
+      this.recordFailure();
       await this.reconnectServer(contractId);
       return false;
     }
