@@ -66,12 +66,27 @@ describe("Monetary Precision Tests", () => {
       expect(contractNumber).toBe(15);
     });
 
-    it("should preserve precision for large amounts", () => {
-      const largeAmount = parseMonetaryString("987654321.1234567");
-      const contractNumber = decimalToContractNumber(largeAmount);
+    it("should allow values at the maximum safe contract integer", () => {
+      const maxSafeAmount = parseMonetaryString("900719925.4740991");
 
-      // eslint-disable-next-line no-loss-of-precision
-      expect(contractNumber).toBe(9876543211234567);
+      expect(decimalToContractNumber(maxSafeAmount)).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it("should reject amounts exceeding the safe contract integer range", () => {
+      const largeAmount = parseMonetaryString("987654321.1234567");
+
+      expect(() => decimalToContractNumber(largeAmount)).toThrow(
+        expect.objectContaining({ statusCode: 400 }),
+      );
+    });
+
+    it("should reject non-finite amounts and invalid contract precision", () => {
+      expect(() => decimalToContractNumber(new Decimal(Infinity))).toThrow(
+        expect.objectContaining({ statusCode: 400 }),
+      );
+      expect(() => decimalToContractNumber(new Decimal(1), -1)).toThrow(
+        expect.objectContaining({ statusCode: 500 }),
+      );
     });
   });
 
@@ -133,6 +148,24 @@ describe("Monetary Precision Tests", () => {
       const fee = calculateFee(amount, 10000); // 100% fee
 
       expect(fee.toString()).toBe("123456789.1234567");
+    });
+
+    it.each([-1, 0.5, 10001, Number.NaN, Number.POSITIVE_INFINITY])(
+      "should reject invalid fee rate %s",
+      (feeBps) => {
+        expect(() => calculateFee(new Decimal(1), feeBps)).toThrow(
+          expect.objectContaining({ statusCode: 500 }),
+        );
+      },
+    );
+
+    it("should reject non-finite or negative fee amounts", () => {
+      expect(() => calculateFee(new Decimal(Infinity), 30)).toThrow(
+        expect.objectContaining({ statusCode: 400 }),
+      );
+      expect(() => calculateFee(new Decimal(-1), 30)).toThrow(
+        expect.objectContaining({ statusCode: 400 }),
+      );
     });
   });
 

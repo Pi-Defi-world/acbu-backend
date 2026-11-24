@@ -1,0 +1,26 @@
+# CODEOWNERS – acbu-frontend
+# Syntax: <pattern>  <owner> [<owner> …]
+# Owners are GitHub usernames or team slugs (@org/team).
+# The last matching pattern wins.
+
+# === Catch-all: every file requires a review from the core team ===
+*  @Pi-Defi-world/frontend
+
+# === App pages ===
+/app/  @Pi-Defi-world/frontend
+
+# === Shared component library ===
+/components/  @Pi-Defi-world/frontend
+
+# === Lib / utilities / API clients ===
+/lib/  @Pi-Defi-world/frontend
+
+# === CI / GitHub Actions workflows ===
+/.github/workflows/  @Pi-Defi-world/frontend @Pi-Defi-world/devops
+
+# === Dependency manifests – require extra scrutiny ===
+package.json  @Pi-Defi-world/frontend @Pi-Defi-world/devops
+pnpm-lock.yaml  @Pi-Defi-world/frontend @Pi-Defi-world/devops
+
+# === Deployment / infrastructure config ===
+next.config.mjs  @Pi-Defi-world/frontend @Pi-Defi-world/devops

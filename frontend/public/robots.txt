@@ -1,0 +1,44 @@
+User-agent: *
+
+# Public pages — allow crawling
+Allow: /$
+Allow: /rates
+Allow: /reserves
+Allow: /help
+Allow: /support
+
+# Auth flows — no SEO value
+Disallow: /auth/
+Disallow: /*/auth/
+
+# Authenticated / private app routes
+Disallow: /me/
+Disallow: /wallet
+Disallow: /send/
+Disallow: /transactions/
+Disallow: /activity
+Disallow: /burn
+Disallow: /mint
+Disallow: /fiat
+Disallow: /currency
+Disallow: /savings/
+Disallow: /bills/
+Disallow: /business/
+Disallow: /lending/
+Disallow: /recovery
+Disallow: /admin/
+
+# Internal / API routes
+Disallow: /api/
+Disallow: /_next/
+
+# Block URLs with session tokens or user-specific query params
+Disallow: /*?token=
+Disallow: /*?session=
+Disallow: /*?auth=
+Disallow: /*?code=
+Disallow: /*?state=
+Disallow: /*?access_token=
+Disallow: /*?refresh_token=
+
+Sitemap: https://acbu.app/sitemap.xml

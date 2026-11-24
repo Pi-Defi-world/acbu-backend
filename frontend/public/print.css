@@ -1,0 +1,34 @@
+/* print.css — loaded only when media="print" (see app/layout.tsx).
+   This file is NOT parsed or applied on screen/mobile page loads. */
+
+@media print {
+  /* Hide interactive chrome */
+  header,
+  nav,
+  footer,
+  .page-header,
+  button,
+  [role="navigation"] {
+    display: none !important;
+  }
+
+  /* Reset backgrounds for ink-saving */
+  body,
+  main {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Ensure content fills the page */
+  main,
+  .page-container {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  /* Avoid breaking cards/rows across pages */
+  .card,
+  tr {
+    break-inside: avoid;
+  }
+}

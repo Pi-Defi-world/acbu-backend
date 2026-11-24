@@ -23,6 +23,51 @@ export function isValidStellarAddress(address: string): boolean {
 }
 
 /**
+ * Known test/dummy addresses that pass the StrKey checksum but must never be
+ * persisted as a real user wallet (B-013, #1313).
+ */
+const PLACEHOLDER_STELLAR_ADDRESS_PATTERNS = [
+  /^G[A]{55}$/, // All A's
+  /^G[B]{55}$/, // All B's
+  /^G[0]{55}$/, // All zeros
+  /^GTEST/,
+  /^GDUMMY/,
+  /^GPLACEHOLDER/,
+  /^GXXXXXXXX/,
+];
+
+/**
+ * Detect placeholder/dummy G-addresses. Kept in one place so the API, the
+ * persistence scripts and the incident checks all agree on what is invalid.
+ */
+export function isPlaceholderStellarAddress(address: string): boolean {
+  if (!address || typeof address !== "string") return true;
+  // Anything that is not a G-address is a placeholder/invalid value (this is
+  // exactly what the old signup helper wrote).
+  if (!address.startsWith("G")) return true;
+  return PLACEHOLDER_STELLAR_ADDRESS_PATTERNS.some((pattern) => pattern.test(address));
+}
+
+/**
+ * A stored address is only usable when it is a real G-address and not a
+ * placeholder. This is the predicate every write path must pass.
+ */
+export function isValidNonPlaceholderStellarAddress(address: string): boolean {
+  return isValidStellarAddress(address) && !isPlaceholderStellarAddress(address);
+}
+
+/**
+ * Defensive read-path sanitizer. Legacy rows (e.g. the old `P`-prefixed
+ * placeholder written on signup) may still exist in production; callers must
+ * treat them as "no wallet" instead of returning them to clients or passing
+ * them to Stellar validation.
+ */
+export function sanitizeStellarAddress(address: string | null | undefined): string | null {
+  if (!address || typeof address !== "string") return null;
+  return isValidNonPlaceholderStellarAddress(address) ? address : null;
+}
+
+/**
  * Assert that an address is a valid Stellar public key or throw.
  */
 export function assertValidStellarAddress(address: string): void {

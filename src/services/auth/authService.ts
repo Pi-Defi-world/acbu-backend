@@ -318,7 +318,9 @@ export async function resolveUserByIdentifier(identifier: string) {
 }
 
 /**
- * Simple account creation: username + passcode. No email. Stellar wallet is created on first signin.
+ * Simple account creation: username + passcode. No email. The Stellar wallet is
+ * bound explicitly by the client on first signin; signup never writes a
+ * placeholder stellarAddress (#1313).
  */
 export async function signup(params: SignupParams): Promise<SignupResult> {
   const username = (params.username || "").trim().toLowerCase().replace(/\s/g, "");
