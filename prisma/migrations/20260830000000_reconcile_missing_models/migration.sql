@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS "refresh_tokens" (
 -- The earlier refresh-token migration creates a standalone unique index
 -- with this name. Check pg_class as well as pg_constraint: PostgreSQL cannot
 -- create a UNIQUE constraint using a name already occupied by that index.
-DO $
+DO $$
 BEGIN
     IF to_regclass('public.refresh_tokens_token_hash_key') IS NULL
        AND NOT EXISTS (
@@ -57,7 +57,7 @@ BEGIN
         ALTER TABLE "refresh_tokens"
             ADD CONSTRAINT "refresh_tokens_token_hash_key" UNIQUE ("token_hash");
     END IF;
-END$;
+END$$;
 
 -- Foreign key to users
 DO $$
