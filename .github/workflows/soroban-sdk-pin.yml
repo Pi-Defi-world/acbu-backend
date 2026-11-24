@@ -1,0 +1,43 @@
+name: Soroban SDK provenance guard (W11-CAR-001)
+
+# Fail if any contract crate references soroban-sdk outside the workspace pin
+# (floating git rev, caret version, or bare version string) to prevent build
+# nondeterminism and runtime traps from mismatched host-function ABI.
+#
+# All crates must satisfy BOTH conditions:
+#   1. soroban-sdk is declared as { workspace = true } in every member Cargo.toml.
+#   2. The workspace root pins soroban-sdk with an exact crates.io version ("=X.Y.Z").
+#
+# References:
+#   - W11-CAR-001 (carried from SC#1039 / W10-P-001)
+#   - contracts/Cargo.toml [workspace.dependencies] comment block
+
+on:
+  push:
+    branches: ["main", "dev"]
+    paths:
+      - "contracts/**/Cargo.toml"
+      - "contracts/Cargo.lock"
+      - ".github/workflows/soroban-sdk-pin.yml"
+      - "scripts/check-soroban-sdk-pin.sh"
+  pull_request:
+    branches: ["main", "dev"]
+    paths:
+      - "contracts/**/Cargo.toml"
+      - "contracts/Cargo.lock"
+      - ".github/workflows/soroban-sdk-pin.yml"
+      - "scripts/check-soroban-sdk-pin.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  soroban-sdk-provenance:
+    name: Verify soroban-sdk pin consistency
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run soroban-sdk pin guard
+        run: bash scripts/check-soroban-sdk-pin.sh
