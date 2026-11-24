@@ -8,6 +8,8 @@
  *  - Virus-scan hook: after upload the object is tagged `scan-status=pending` and a
  *    post-upload scan trigger is fired (ClamAV / AWS Security Hub compatible)
  *  - Checksum (SHA-256) is returned so callers can verify integrity
+ *  - W11-AUD-014: KMS encryption-at-rest enforced on every PutObject via aws:kms
+ *    when S3_KMS_KEY_ID is configured; falls back to AES256 for local/MinIO envs
  */
 
 import {
@@ -154,8 +156,15 @@ export async function generateUploadUrl(
     ContentType: mimeType,
     // PII documents must never be publicly accessible
     ACL: "private",
-    // Enforce encryption at rest at the object level
-    ServerSideEncryption: "AES256",
+    // W11-AUD-014: enforce KMS encryption-at-rest for KYC documents.
+    // Use aws:kms with the configured CMK when available; fall back to
+    // S3-managed AES256 for local/MinIO environments where KMS is absent.
+    ...(config.s3.kmsKeyId
+      ? {
+          ServerSideEncryption: "aws:kms",
+          SSEKMSKeyId: config.s3.kmsKeyId,
+        }
+      : { ServerSideEncryption: "AES256" }),
     // Tag the object immediately as pending scan — the virus-scan hook reads this
     Tagging: "scan-status=pending&owner=" + encodeURIComponent(userId),
     Metadata: {
