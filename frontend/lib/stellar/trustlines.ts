@@ -15,6 +15,7 @@ const TESTNET_HORIZON_URL =
   process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ??
   "https://horizon-testnet.stellar.org";
 const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
+export const TRANSACTION_TIMEOUT_SECONDS = 60;
 
 async function hasTrustline(
   account: Horizon.AccountResponse,
@@ -150,7 +151,7 @@ async function addTrustlineForAsset(params: {
     networkPassphrase,
   })
     .addOperation(op)
-    .setTimeout(0)
+    .setTimeout(TRANSACTION_TIMEOUT_SECONDS)
     .build();
   let res: Horizon.HorizonApi.SubmitTransactionResponse;
   if (params.external?.kit) {

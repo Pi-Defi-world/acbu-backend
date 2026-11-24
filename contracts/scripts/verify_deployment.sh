@@ -52,6 +52,16 @@ for contract in "${!EXPECTED_HASHES[@]}"; do
     fi
     
     ACTUAL_HASH=$(sha256sum "$WASM" | awk '{print $1}')
+    EXPECTED_HASH="${EXPECTED_HASHES[$contract]}"
+
+    if [[ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
+        echo -e "${RED}❌ FAIL${NC}: Hash mismatch for $contract.wasm"
+        echo "   Expected: $EXPECTED_HASH"
+        echo "   Actual:   $ACTUAL_HASH"
+        ARTIFACTS_OK=false
+        continue
+    fi
+
     echo -e "${GREEN}✅ PASS${NC}: $contract.wasm"
     echo "   Hash: $ACTUAL_HASH"
 done
