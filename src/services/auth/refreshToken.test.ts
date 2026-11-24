@@ -128,8 +128,8 @@ describe("refresh token flow (#734)", () => {
 
       // The old family must be fully revoked, not just the one token used.
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
-        expect.objectContainig({
-          where: expect.objectContainig({
+        expect.objectContaining({
+          where: expect.objectContaining({
             tokenFamilyId: existingToken.tokenFamilyId,
             revokedAt: null,
           }),
@@ -140,7 +140,7 @@ describe("refresh token flow (#734)", () => {
       // The prior api key associated with the rotated family must be revoked.
       expect(prisma.apiKey.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContainig({
+          where: expect.objectContaining({
             id: existingToken.apiKeyId,
             revokedAt: null,
           }),
@@ -230,7 +230,7 @@ describe("refresh token flow (#734)", () => {
       expect(result).toEqual({ ok: true });
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContainig({
+          where: expect.objectContaining({
             tokenFamilyId: "family-1",
             revokedAt: null,
           }),
@@ -259,7 +259,7 @@ describe("refresh token flow (#734)", () => {
 
       expect(prisma.apiKey.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContainig({
+          where: expect.objectContaining({
             id: "apk-1",
             revokedAt: null,
           }),
