@@ -100,7 +100,7 @@ describe("refresh token flow (#734)", () => {
       user: { id: userId, actorType: "retail", organizationId: null },
     };
 
-    it("rejects when no matching, unrevoked, unexpired token exists", async () => {
+    it("rejects when no active or recently rotated token exists", async () => {
       (prisma.refreshToken.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(refreshAccessToken({ refresh_token: "bogus" })).rejects.toThrow(
@@ -109,6 +109,54 @@ describe("refresh token flow (#734)", () => {
 
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(generateApiKey).not.toHaveBeenCalled();
+    });
+
+    it("accepts a recently rotated token during the 10-second concurrency grace period", async () => {
+      const requestStartedAt = Date.now();
+      const recentlyRotatedToken = {
+        ...existingToken,
+        revokedAt: new Date(),
+        replacedByToken: "replacement-marker",
+      };
+      (prisma.refreshToken.findFirst as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(recentlyRotatedToken);
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({});
+      (generateApiKey as jest.Mock).mockResolvedValue("new-api-key");
+
+      const result = await refreshAccessToken({
+        refresh_token: "old-refresh-token",
+      });
+
+      const graceLookup = (prisma.refreshToken.findFirst as jest.Mock).mock.calls[1][0];
+      const gracePeriodStart = graceLookup.where.revokedAt.gte as Date;
+      expect(gracePeriodStart.getTime()).toBeGreaterThanOrEqual(requestStartedAt - 10_100);
+      expect(gracePeriodStart.getTime()).toBeLessThanOrEqual(requestStartedAt - 9_900);
+      expect(graceLookup.where.replacedByToken).toEqual({ not: null });
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(result.api_key).toBe("new-api-key");
+    });
+
+    it("accepts a simultaneous rotation after losing the conditional update race", async () => {
+      const recentlyRotatedToken = {
+        ...existingToken,
+        revokedAt: new Date(),
+        replacedByToken: "replacement-marker",
+      };
+      (prisma.refreshToken.findFirst as jest.Mock)
+        .mockResolvedValueOnce(existingToken)
+        .mockResolvedValueOnce(recentlyRotatedToken);
+      (prisma.refreshToken.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({});
+      (generateApiKey as jest.Mock).mockResolvedValue("new-api-key");
+
+      const result = await refreshAccessToken({
+        refresh_token: "old-refresh-token",
+      });
+
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.refreshToken.create).toHaveBeenCalledTimes(1);
+      expect(result.api_key).toBe("new-api-key");
     });
 
     it("rotates the whole token family and issues a new token + api key", async () => {
