@@ -33,6 +33,21 @@ merges. `license-check` (`CI / License Check`) and the push-only
 
 ---
 
+## Force-Push and Deletion Protection (W11-INC-005)
+
+Create an active repository ruleset targeting:
+
+- `dev` (the default branch)
+- `main`
+- `release/*` (the release branch naming convention)
+
+Enable **Restrict deletions** and **Block force pushes**. Leave the bypass list
+empty so repository administrators cannot bypass these protections. A
+repository administrator must apply this ruleset in GitHub; this document does
+not configure repository settings.
+
+---
+
 ## Configuring Branch Protection on GitHub
 
 1. Navigate to **Settings → Branches** in the repository.
