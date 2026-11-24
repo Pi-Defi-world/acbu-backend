@@ -413,8 +413,17 @@ if (webhookBypassEnabled && !WEBHOOK_BYPASS_TEST_PROFILES.has(profile)) {
 }
 
 // Runtime production assertion also checks deployment-specific environment markers.
-for (const signal of [env.NODE_ENV, process.env.NODE_ENV, process.env.APP_ENV, process.env.ENVIRONMENT]) {
-  if (typeof signal === "string" && signal.trim().toLowerCase() === "production" && webhookBypassEnabled) {
+for (const signal of [
+  env.NODE_ENV,
+  process.env.NODE_ENV,
+  process.env.APP_ENV,
+  process.env.ENVIRONMENT,
+]) {
+  if (
+    typeof signal === "string" &&
+    signal.trim().toLowerCase() === "production" &&
+    webhookBypassEnabled
+  ) {
     throw new Error("WEBHOOK_SIGNATURE_BYPASS must never be enabled in production.");
   }
 }
