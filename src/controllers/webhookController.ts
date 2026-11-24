@@ -23,24 +23,38 @@ import { ErrorCodes } from "../types/errorCodes";
 import { reconcileBillsWebhook } from "../services/bills";
 import type { FinancialEventStatus } from "../types/logging";
 
+/** Read the bypass flag at call time so tests and deployment guards see the
+ * current environment rather than a stale module-load snapshot. */
+export function isWebhookSignatureBypassEnabled(
+  rawValue: string | undefined = process.env.WEBHOOK_SIGNATURE_BYPASS,
+): boolean {
+  return typeof rawValue === "string" && rawValue.trim().toLowerCase() === "true";
+}
+
+/** Fail closed unless the bypass is explicitly enabled for tests only. */
+export function assertWebhookSignatureBypassSafe(): void {
+  if (!isWebhookSignatureBypassEnabled()) return;
+  const profiles = [
+    process.env.NODE_ENV,
+    process.env.APP_PROFILE,
+    process.env.APP_ENV,
+    process.env.ENVIRONMENT,
+  ].filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
+  if (!profiles.some((profile) => ["test", "testing", "ci"].includes(profile)) ||
+      profiles.includes("production")) {
+    throw new Error(
+      "WEBHOOK_SIGNATURE_BYPASS must only be enabled in an explicit test profile.",
+    );
+  }
+}
+
 // ── Dev/stage mock bypass ────────────────────────────────────────────────────
 // The bypass is deliberately limited to local/test environments. env.ts also
 // rejects this setting during startup for staging-facing deployments.
-const bypassRequested = process.env.WEBHOOK_SIGNATURE_BYPASS === "true";
-
-// Fail closed: the bypass is only ever honoured under an explicit test profile.
-// A misconfigured or copied dev env must not silently disable signature
-// verification on the deposit/mint-confirmation webhook path.
+const bypassRequested = isWebhookSignatureBypassEnabled();
+assertWebhookSignatureBypassSafe();
 const isExplicitTestProfile = config.nodeEnv === "test" || process.env.APP_PROFILE === "test";
-
-if (bypassRequested && !isExplicitTestProfile) {
-  throw new Error(
-    "WEBHOOK_SIGNATURE_BYPASS is set outside an explicit test profile. " +
-      "Refusing to start: webhook signature verification must not be disabled. " +
-      "Unset WEBHOOK_SIGNATURE_BYPASS or run with NODE_ENV=test / APP_PROFILE=test.",
-  );
-}
-
 const bypassEnabled = bypassRequested && isExplicitTestProfile;
 
 /**
