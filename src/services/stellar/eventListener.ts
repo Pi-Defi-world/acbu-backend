@@ -37,7 +37,37 @@ interface ContractEffectsApi {
   forContract(contractId: string): ContractEffectsBuilder;
 }
 
+interface LedgerRecord {
+  sequence?: unknown;
+  hash?: unknown;
+  prev_hash?: unknown;
+}
+
+interface LedgersApi {
+  ledger(sequence: number): { call(): Promise<LedgerRecord> };
+}
+
+/** Confirmed ledger tracked per contract so reorgs/rollbacks can be detected. */
+interface ConfirmedLedger {
+  hash: string;
+  /** Cursor to resume from to re-ingest this ledger's events. */
+  cursorBefore: string | null;
+}
+
+class LedgerDiscontinuityError extends Error {
+  constructor(
+    message: string,
+    readonly rewindToLedger: number,
+  ) {
+    super(message);
+    this.name = "LedgerDiscontinuityError";
+  }
+}
+
 const FETCH_ATTEMPTS = 3;
+/** Number of most recent confirmed ledger hashes kept (and re-verified) per contract. */
+const LEDGER_HASH_WINDOW = 50;
+const LEDGER_REVERIFY_DEPTH = 5;
 const HANDLER_ATTEMPTS = 3;
 const CIRCUIT_FAILURE_THRESHOLD = 3;
 const CIRCUIT_OPEN_DURATION_MS = 15000;
@@ -71,6 +101,7 @@ export class EventListener {
   private eventHandlers: Map<string, EventHandler[]> = new Map();
   private registeredContractIds: Set<string> = new Set();
   private contractCursors: Map<string, string | null> = new Map();
+  private confirmedLedgers: Map<string, Map<number, ConfirmedLedger>> = new Map();
   private isListening = false;
   private isReconnecting = false;
   private defaultCursor: string | null = null;
@@ -388,12 +419,30 @@ export class EventListener {
       this.markHealthy();
       this.recordSuccess();
 
-      for (const effect of effects.records) {
-        await this.dispatchRawEffect(contractId, effect);
-        this.updateCursor(contractId, effect);
+      if (effects.records.length === 0) {
+        return false;
       }
 
-      return effects.records.length > 0;
+      // Verify ledger continuity before committing this batch to the handlers.
+      let ledgerHashes: Map<number, string>;
+      try {
+        ledgerHashes = await this.verifyLedgerContinuity(contractId, effects.records);
+      } catch (error) {
+        if (error instanceof LedgerDiscontinuityError) {
+          await this.handleLedgerDiscontinuity(contractId, error);
+          return false;
+        }
+        throw error;
+      }
+
+      for (const effect of effects.records) {
+        const cursorBefore = this.contractCursors.get(contractId) ?? this.defaultCursor ?? null;
+        await this.dispatchRawEffect(contractId, effect);
+        this.updateCursor(contractId, effect);
+        this.recordConfirmedLedger(contractId, effect, ledgerHashes, cursorBefore);
+      }
+
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("Failed to poll contract effects", {
@@ -406,6 +455,154 @@ export class EventListener {
       await this.reconnectServer(contractId);
       return false;
     }
+  }
+
+  private getLedgersApi(): LedgersApi {
+    return this.server.ledgers() as unknown as LedgersApi;
+  }
+
+  private effectLedger(effect: RawContractEffect): number {
+    const ledger =
+      typeof effect.ledger === "number"
+        ? effect.ledger
+        : Number.parseInt(String(effect.ledger ?? "0"), 10);
+    return Number.isFinite(ledger) ? ledger : 0;
+  }
+
+  private async fetchLedger(sequence: number): Promise<{ hash: string; prevHash: string }> {
+    const record = await this.withRetries({
+      label: "stellar ledger fetch",
+      attempts: FETCH_ATTEMPTS,
+      context: { ledger: sequence },
+      fn: async () => this.getLedgersApi().ledger(sequence).call(),
+    });
+
+    if (typeof record.hash !== "string" || typeof record.prev_hash !== "string") {
+      throw new Error(`Ledger ${sequence} response missing hash/prev_hash`);
+    }
+    return { hash: record.hash, prevHash: record.prev_hash };
+  }
+
+  /**
+   * Verify that a batch of effects sits on the same chain we previously confirmed.
+   * - Re-checks the hashes of the most recent confirmed ledgers (detects rollback/reorg).
+   * - Rejects batches that go backwards behind already-confirmed ledgers.
+   * - Checks each new ledger's prev_hash against the confirmed hash of the preceding ledger.
+   * Returns the verified hash for each ledger in the batch.
+   * Throws LedgerDiscontinuityError when the chain no longer matches.
+   */
+  private async verifyLedgerContinuity(
+    contractId: string,
+    records: RawContractEffect[],
+  ): Promise<Map<number, string>> {
+    const confirmed = this.confirmedLedgers.get(contractId) ?? new Map<number, ConfirmedLedger>();
+
+    // 1. Re-verify the newest confirmed ledgers still match the network.
+    const recent = [...confirmed.keys()].sort((a, b) => a - b).slice(-LEDGER_REVERIFY_DEPTH);
+    for (const sequence of recent) {
+      const current = await this.fetchLedger(sequence);
+      if (current.hash !== confirmed.get(sequence)!.hash) {
+        throw new LedgerDiscontinuityError(
+          `Confirmed ledger ${sequence} hash changed (reorg detected)`,
+          sequence,
+        );
+      }
+    }
+
+    // 2. Verify each new ledger in the batch.
+    const maxConfirmed = confirmed.size > 0 ? Math.max(...confirmed.keys()) : 0;
+    const sequences = [...new Set(records.map((r) => this.effectLedger(r)))]
+      .filter((sequence) => sequence > 0)
+      .sort((a, b) => a - b);
+    const verified = new Map<number, string>();
+
+    for (const sequence of sequences) {
+      if (confirmed.has(sequence)) {
+        // Same ledger resumed mid-way; already hash-checked above or confirmed.
+        verified.set(sequence, confirmed.get(sequence)!.hash);
+        continue;
+      }
+      if (sequence < maxConfirmed) {
+        throw new LedgerDiscontinuityError(
+          `Ledger ${sequence} is behind confirmed ledger ${maxConfirmed} (rollback)`,
+          sequence,
+        );
+      }
+
+      const { hash, prevHash } = await this.fetchLedger(sequence);
+      const parentHash = verified.get(sequence - 1) ?? confirmed.get(sequence - 1)?.hash;
+      if (parentHash && parentHash !== prevHash) {
+        throw new LedgerDiscontinuityError(
+          `Ledger ${sequence} prev_hash does not match confirmed ledger ${sequence - 1}`,
+          sequence - 1,
+        );
+      }
+      verified.set(sequence, hash);
+    }
+
+    return verified;
+  }
+
+  private recordConfirmedLedger(
+    contractId: string,
+    effect: RawContractEffect,
+    ledgerHashes: Map<number, string>,
+    cursorBefore: string | null,
+  ): void {
+    const sequence = this.effectLedger(effect);
+    const hash = ledgerHashes.get(sequence);
+    if (!hash) return;
+
+    let confirmed = this.confirmedLedgers.get(contractId);
+    if (!confirmed) {
+      confirmed = new Map();
+      this.confirmedLedgers.set(contractId, confirmed);
+    }
+    if (!confirmed.has(sequence)) {
+      confirmed.set(sequence, { hash, cursorBefore });
+    }
+
+    if (confirmed.size > LEDGER_HASH_WINDOW) {
+      const oldest = [...confirmed.keys()].sort((a, b) => a - b);
+      for (const old of oldest.slice(0, confirmed.size - LEDGER_HASH_WINDOW)) {
+        confirmed.delete(old);
+      }
+    }
+  }
+
+  /**
+   * Rewind the contract cursor to before the divergent ledger and drop stale state,
+   * so the canonical ledgers are re-ingested. Events already handed to handlers from
+   * orphaned ledgers are reported to the DLQ for reconciliation.
+   */
+  private async handleLedgerDiscontinuity(
+    contractId: string,
+    error: LedgerDiscontinuityError,
+  ): Promise<void> {
+    const confirmed = this.confirmedLedgers.get(contractId) ?? new Map<number, ConfirmedLedger>();
+    const affected = [...confirmed.keys()].filter((seq) => seq >= error.rewindToLedger);
+    const earliest = affected.length > 0 ? Math.min(...affected) : null;
+
+    logger.error("Ledger discontinuity detected, rewinding event cursor", {
+      contractId,
+      rewindToLedger: error.rewindToLedger,
+      affectedLedgers: affected,
+      error: error.message,
+    });
+
+    if (earliest !== null) {
+      this.contractCursors.set(contractId, confirmed.get(earliest)!.cursorBefore);
+    }
+    for (const seq of affected) {
+      confirmed.delete(seq);
+    }
+
+    await this.captureFailure("ledger_reorg", {
+      contractId,
+      rewindToLedger: error.rewindToLedger,
+      affectedLedgers: affected,
+      error: error.message,
+    });
   }
 
   private parseEffect(registeredContractId: string, effect: RawContractEffect): ContractEvent {
@@ -476,7 +673,7 @@ export class EventListener {
   }
 
   private async captureFailure(
-    reason: "parse_failure" | "handler_failure",
+    reason: "parse_failure" | "handler_failure" | "ledger_reorg",
     payload: Record<string, unknown>,
   ): Promise<void> {
     try {
