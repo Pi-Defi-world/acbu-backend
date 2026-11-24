@@ -205,7 +205,7 @@ impl CurrencyCode {
         CurrencyCode(SorobanString::from_str(env, code))
     }
 
-    /// Borrow the underlying currency code string (e.g. `"NGN"`).
+    /// Borrow the underlying currency code string (e.g. "NGN").
     pub fn code(&self) -> &SorobanString {
         &self.0
     }
