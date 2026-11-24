@@ -31,6 +31,7 @@ import webhookRoutes from "./routes/webhookRoutes";
 import { ErrorCodes } from "./types/errorCodes";
 import {
   registerGracefulShutdown,
+  setBalanceWebSocketServer,
   setHttpServer,
   setMemoryMonitorHandle,
 } from "./gracefulShutdown";
@@ -494,6 +495,11 @@ async function startServer() {
       }
     });
     setHttpServer(server);
+
+    // W11-AUD-013: WebSocket server for balance updates with heartbeat.
+    const { createBalanceWebSocketServer } = await import("./services/websocket/server");
+    const balanceWsServer = createBalanceWebSocketServer(server);
+    setBalanceWebSocketServer(balanceWsServer);
   } catch (error) {
     logger.error("Failed to start server", error);
     process.exit(1);

@@ -132,6 +132,7 @@ export class CircuitBreaker {
         to: newState,
         failureCount: this.failureCount,
         successCount: this.successCount,
+        service: this.serviceName,
       });
 
       // W10-I-013: Record circuit breaker state to metrics
