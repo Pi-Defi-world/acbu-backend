@@ -15,6 +15,7 @@ import {
   NonExistentContractFunctionError,
   ValidationError,
 } from "../../errors/index";
+import { assertValidRecipientAccount } from "../../utils/stellar";
 
 const DECIMALS_7 = 1e7;
 const DECIMALS_7_BIGINT = 10_000_000n;
@@ -366,6 +367,7 @@ export async function simulateOffRamp(
   currency: string,
   acbuAmount: number,
   blockchainTxHash?: string,
+  idempotencyKey?: string,
 ): Promise<{
   fiatAmount: number;
   acbuAmount: number;
@@ -375,6 +377,7 @@ export async function simulateOffRamp(
   if (!user?.stellarAddress) {
     throw new ValidationError("User wallet address not set");
   }
+  assertValidRecipientAccount(user.stellarAddress);
 
   const acbuRateRecord = await getLatestAcbuRate();
 
@@ -404,9 +407,11 @@ export async function simulateOffRamp(
 
     const result = await acbuBurningService.redeemSingle({
       user: sourceAccount,
-      recipient: sourceAccount,
+      recipient: user.stellarAddress,
       acbuAmount: acbuAmount7,
       currency,
+      idempotencyKey:
+        idempotencyKey || `off-ramp:${userId}:${currency}:${acbuAmount7}`,
     });
     txHash = result.transactionHash;
   }

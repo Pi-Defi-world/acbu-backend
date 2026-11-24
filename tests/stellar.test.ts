@@ -62,6 +62,19 @@ describe("Stellar address validation", () => {
       expect(kp.publicKey()).toHaveLength(56);
     }
   });
+
+  test("accepts a valid G-address as a recipient account", () => {
+    expect(isValidRecipientAccount(validAddress)).toBe(true);
+    expect(() => assertValidRecipientAccount(validAddress)).not.toThrow();
+  });
+
+  test("rejects contract addresses as recipient accounts", () => {
+    const contractAddress = "C" + "A".repeat(55);
+    expect(isValidRecipientAccount(contractAddress)).toBe(false);
+    expect(() => assertValidRecipientAccount(contractAddress)).toThrow(
+      /Invalid recipient account/,
+    );
+  });
 });
 
 describe("placeholder Stellar address prevention (#1313)", () => {

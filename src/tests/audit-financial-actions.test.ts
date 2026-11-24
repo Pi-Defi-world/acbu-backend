@@ -41,6 +41,7 @@ jest.mock("../config/database", () => ({
   },
 }));
 
+// Mock wallet state service
 // Mock logger
 jest.mock("../config/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -56,6 +57,13 @@ jest.mock("../services/contracts", () => ({
   acbuBurningService: {
     redeemSingle: jest.fn(),
   },
+}));
+
+jest.mock("../config/contracts", () => ({
+  getContractAddresses: jest.fn(() => ({
+    minting: "minting-contract-id",
+    burning: "burning-contract-id",
+  })),
 }));
 
 // Mock stellar client
@@ -193,6 +201,9 @@ describe("W10-OBS-006: Audit logging on every money movement", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedLogAudit.mockResolvedValue(undefined);
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+      stellarAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    });
   });
 
   // ── Mint (deposit) ────────────────────────────────────────────────────────
