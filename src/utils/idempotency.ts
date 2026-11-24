@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { AppError } from "../middleware/errorHandler";
 
 export const IDEMPOTENCY_KEY_MAX_LENGTH = 255;
@@ -17,8 +18,7 @@ export function scopeIdempotencyKey(userId: string, rawKey: string): string {
     return scoped;
   }
   // Truncate deterministically: keep the user prefix + first 32 chars of key hash
-  const crypto = require("crypto") as typeof import("crypto");
-  const hash = crypto.createHash("sha256").update(rawKey).digest("hex").slice(0, 32);
+  const hash = createHash("sha256").update(rawKey).digest("hex").slice(0, 32);
   const prefix = `${userId}:`;
   const maxKeyLen = IDEMPOTENCY_KEY_MAX_LENGTH - prefix.length - 1;
   return `${prefix}${hash.slice(0, Math.max(maxKeyLen, 32))}`;
