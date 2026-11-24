@@ -24,11 +24,11 @@ const collectionMock = jest.fn().mockReturnValue({
   createIndex: createIndexMock,
 });
 
-jest.mock("../../src/config/mongodb", () => ({
+jest.mock("../src/config/mongodb", () => ({
   getMongoDB: jest.fn().mockReturnValue({ collection: collectionMock }),
 }));
 
-jest.mock("../../src/config/logger", () => ({
+jest.mock("../src/config/logger", () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
@@ -36,8 +36,8 @@ import {
   acquireIdempotencyKey,
   resolveIdempotencyKey,
   ensureIdempotencyIndex,
-} from "../../src/services/idempotency/idempotencyStore";
-import { logger } from "../../src/config/logger";
+} from "../src/services/idempotency/idempotencyStore";
+import { logger } from "../src/config/logger";
 
 describe("idempotencyStore", () => {
   beforeEach(() => {

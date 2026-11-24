@@ -71,11 +71,14 @@ function checkJurisdictionLicensing(countryCode: string): boolean {
       });
       return false;
     }
-    logger.warn("Jurisdiction limitation: KYC operation in unlicensed jurisdiction (not enforced)", {
-      countryCode: normalizedCountryCode,
-      licensedJurisdictions,
-      operatingModel: kycOperatingModel,
-    });
+    logger.warn(
+      "Jurisdiction limitation: KYC operation in unlicensed jurisdiction (not enforced)",
+      {
+        countryCode: normalizedCountryCode,
+        licensedJurisdictions,
+        operatingModel: kycOperatingModel,
+      },
+    );
   }
 
   return true;

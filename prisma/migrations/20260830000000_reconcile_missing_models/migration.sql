@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS "refresh_tokens" (
     CONSTRAINT "refresh_tokens_pkey" PRIMARY KEY ("id")
 );
 
--- Unique constraint on token_hash for O(1) lookup during refresh
+-- The earlier refresh-token migration creates a standalone unique index
+-- with this name. Check pg_class as well as pg_constraint: PostgreSQL cannot
+-- create a UNIQUE constraint using a name already occupied by that index.
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -60,6 +62,7 @@ BEGIN
 END$$;
 
 -- Foreign key to users
+-- The table is created above on clean installs; this guard supports legacy databases.
 DO $$
 BEGIN
     IF NOT EXISTS (

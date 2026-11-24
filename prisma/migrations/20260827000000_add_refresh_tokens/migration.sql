@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS "refresh_tokens" (
     "replaced_by_token" VARCHAR(255),
     "created_at" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "last_used_at" TIMESTAMP(6),
-
     CONSTRAINT "refresh_tokens_pkey" PRIMARY KEY ("id")
 );
 

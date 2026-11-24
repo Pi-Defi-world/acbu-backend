@@ -16,7 +16,9 @@ import { registry } from "../config/promMetrics";
  * network (e.g. behind a NetworkPolicy / ClusterIP service).
  */
 function requireScrapeToken(req: Request, res: Response, next: NextFunction): void {
-  const token = process.env.METRICS_SCRAPE_TOKEN ?? (config as Record<string, unknown>).metricsScrapeToken as string | undefined;
+  const token =
+    process.env.METRICS_SCRAPE_TOKEN ??
+    ((config as Record<string, unknown>).metricsScrapeToken as string | undefined);
 
   // No token configured → open endpoint (internal-network deployments)
   if (!token) {
@@ -36,8 +38,7 @@ function requireScrapeToken(req: Request, res: Response, next: NextFunction): vo
   const providedBuf = Buffer.from(provided, "utf8");
   const expectedBuf = Buffer.from(token, "utf8");
   const valid =
-    providedBuf.length === expectedBuf.length &&
-    crypto.timingSafeEqual(providedBuf, expectedBuf);
+    providedBuf.length === expectedBuf.length && crypto.timingSafeEqual(providedBuf, expectedBuf);
 
   if (!valid) {
     res.status(403).end();

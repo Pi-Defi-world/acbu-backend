@@ -46,11 +46,48 @@ detect security vulnerabilities before they ship.
 - **codeql.yml**: GitHub CodeQL with the `security-and-quality` query suite. Results
   surface in the GitHub Security tab.
 - **semgrep.yml**: Semgrep using the repo-root `.semgrep.yml` rules plus the OWASP
-  Top Ten and security-audit rulesets. Fails on `ERROR`-severity findings.
+  Top Ten and security-audit rulesets. Custom and frontend registry scans fail
+  on `ERROR` findings; the Rust registry scan fails on `WARNING` or higher.
 
 Both jobs are configured as **required status checks** so PRs are blocked on
 critical findings. Shared workflow templates live in `ci/workflows/` and can be
 reused across the platform's repositories (see `ci/workflows/README.md`).
+
+### Scan scope and rule profiles
+
+Gitleaks scans the repository using `.gitleaks.toml`, extending its default
+rules with Stellar secret-seed, Soroban key-material, frontend public-env,
+API-credential, and JWT checks. Stellar public keys (`G...`) are not treated as
+secrets by Gitleaks. Its path allowlist covers dependency/build output,
+lockfiles, and specific files containing known fake fixtures. Do not allowlist
+whole documentation or source/test directories.
+
+Semgrep scans the repository with `.semgrep.yml`, the OWASP Top Ten rules, and
+the security-audit rules. It compares findings against the PR target branch (or
+previous push) and blocks newly introduced findings while retaining existing
+findings in the baseline. The existing backend rules are scoped to backend
+source, tests, scripts, and shared code.
+Additional rules are scoped to `frontend/` (and the current `acbu-frontend/`
+workspace) for TypeScript/React risks and `contracts/` for Rust/Soroban risks.
+The workflow also runs `p/typescript` and `p/react` only against frontend paths,
+and `p/rust` only against `contracts/`. The Rust registry scan includes
+`WARNING`-severity findings so its maintained rules are not silently filtered
+out. Dependency directories, Rust targets, build output, Next.js output, and
+generated files are excluded.
+The single registry rule `yaml.github-actions.security.gha-curl-pipe-shell`
+is excluded because its Bash parser cannot parse GitHub Actions expressions;
+other workflow checks, including shell-injection rules, remain enabled.
+
+When adding a rule, keep it under the relevant subtree profile and add a focused
+canary test for the behavior it detects. If a finding is a confirmed false
+positive, prefer a narrow rule-level exception with a comment explaining the
+specific fixture/value; never add a blanket source, test, or documentation
+allowlist. Run the scanners locally with:
+
+```bash
+gitleaks detect --source . --config .gitleaks.toml --verbose --redact
+semgrep scan --config .semgrep.yml --config p/owasp-top-ten --config p/security-audit --error --severity ERROR .
+```
 
 ## Dependency Vulnerability Scanning
 
@@ -86,7 +123,7 @@ This repository uses **gitleaks** to detect secrets in the git history and block
 
 ### CI Workflow
 - **gitleaks.yml**: Runs on every push and PR to block new secrets from entering the codebase
-- Full fetch (`fetch-depth: 0`) ensures the entire commit history is scanned on each PR
+- Full fetch (`fetch-depth: 0`) allows Gitleaks to scan the exact commits introduced by each PR or push, avoiding unrelated historical findings
 
 ### Manual History Scan (Maintainers Only)
 For a comprehensive audit of existing history, maintainers can run:
