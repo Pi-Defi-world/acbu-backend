@@ -72,6 +72,14 @@ summary rather than showing a plain, unexplained green check. Snyk is a
 **supplementary** scan — the two checks above are what actually block a merge
 when Snyk itself does not run.
 
+## Software Bill of Materials (SBOM)
+
+Release artifacts published by the release workflow (`.github/workflows/release.yml`) ship with a Software Bill of Materials (SBOM) so consumers can independently verify dependency provenance and monitor for newly disclosed CVEs.
+
+- SBOM manifests are generated in **CycloneDX** and **SPDX** formats with `syft` (or `trivy`) for each release.
+- Manifests are attached to the corresponding **GitHub Release** and signed alongside the release artifacts.
+- Consumers can feed the SBOM into their own vulnerability scanners to track newly disclosed CVEs against the exact dependency set shipped.
+
 ## Secret Scanning (Gitleaks)
 
 This repository uses **gitleaks** to detect secrets in the git history and block commits containing credentials.
