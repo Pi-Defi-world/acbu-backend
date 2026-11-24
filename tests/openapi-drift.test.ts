@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 import { routeSchemas } from "../src/controllers/route-schemas";
 import OpenAPISchemaValidator from "openapi-schema-validator";
 
@@ -80,7 +80,7 @@ describe("OpenAPI Drift vs Implementation", () => {
       // Convert Zod schema to JSON schema
       let jsonSchema: any;
       try {
-        jsonSchema = zodToJsonSchema(zodSchema as any);
+        jsonSchema = z.toJSONSchema(zodSchema as any);
       } catch (e) {
         errors.push(`[ERROR] ${routeKey}: Failed to convert Zod schema to JSON: ${(e as Error).message}`);
         continue;

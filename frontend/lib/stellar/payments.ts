@@ -13,6 +13,7 @@ const TESTNET_HORIZON_URL =
   process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ??
   "https://horizon-testnet.stellar.org";
 const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
+export const TRANSACTION_TIMEOUT_SECONDS = 60;
 
 async function resolveHorizonUrl(): Promise<string> {
   try {
@@ -88,7 +89,7 @@ export async function submitAcbuPaymentClient(params: {
         amount: params.amount,
       }),
     )
-    .setTimeout(0)
+    .setTimeout(TRANSACTION_TIMEOUT_SECONDS)
     .build();
 
   if (params.external?.kit) {

@@ -788,11 +788,7 @@ export function verifyMintConfirmationSignature(
  *  - Circuit-breaker respected: rejects if reserve ratio is below threshold.
  *  - No minting is possible via deprecated Flutterwave/Paystack webhook paths.
  */
-export async function confirmMint(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function confirmMint(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const parsed = mintConfirmBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -880,7 +876,7 @@ export async function confirmMint(
       data: {
         status: "processing",
         rateSnapshot: {
-          ...(tx.rateSnapshot as object | null ?? {}),
+          ...((tx.rateSnapshot as object | null) ?? {}),
           partner_reference,
           confirmed_at: new Date(confirmed_at * 1000).toISOString(),
           confirmation_received_at: new Date().toISOString(),
@@ -906,7 +902,7 @@ export async function confirmMint(
           blockchainTxHash: mintResult.transactionHash,
           completedAt: new Date(),
           rateSnapshot: {
-            ...(tx.rateSnapshot as object | null ?? {}),
+            ...((tx.rateSnapshot as object | null) ?? {}),
             partner_reference,
             confirmed_at: new Date(confirmed_at * 1000).toISOString(),
             confirmed_amount: amount,
@@ -961,7 +957,7 @@ export async function confirmMint(
         data: {
           status: "failed",
           rateSnapshot: {
-            ...(tx.rateSnapshot as object | null ?? {}),
+            ...((tx.rateSnapshot as object | null) ?? {}),
             partner_reference,
             confirmed_at: new Date(confirmed_at * 1000).toISOString(),
             error: message,

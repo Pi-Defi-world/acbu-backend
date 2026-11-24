@@ -4,7 +4,12 @@
  */
 import { prisma } from "../../config/database";
 import { logger } from "../../config/logger";
-import { assertValidStellarAddress, isValidStellarAddress } from "../../utils/stellar";
+import {
+  assertValidStellarAddress,
+  isValidNonPlaceholderStellarAddress,
+  isPlaceholderStellarAddress,
+  sanitizeStellarAddress,
+} from "../../utils/stellar";
 import { AppError } from "../../middleware/errorHandler";
 import { updateWalletWithConcurrency } from "./walletStateService";
 import { CLIENT_WRAPPED_KEY_HINT, assertClientWrappedBackup } from "./walletKeyStorage";
@@ -34,8 +39,8 @@ export async function assertUserWalletAddress(
     throw new AppError("User wallet address not set", 400);
   }
 
-  // Validate stored address format (defense in depth)
-  if (!isValidStellarAddress(user.stellarAddress)) {
+  // Validate stored address format (defense in depth, #1313)
+  if (!isValidNonPlaceholderStellarAddress(user.stellarAddress)) {
     logger.error("Invalid stellar address format in database", {
       userId,
       stellarAddress: user.stellarAddress,
@@ -59,7 +64,15 @@ export async function getWalletEnrollmentStatus(userId: string): Promise<WalletE
     where: { id: userId },
     select: { stellarAddress: true },
   });
-  return { enrolled: Boolean(user?.stellarAddress), stellar_address: user?.stellarAddress ?? null };
+
+  // #1313: a legacy placeholder/invalid value must never be reported as an
+  // enrolled wallet or forwarded to clients by signin/verify2fa.
+  const stellarAddress = sanitizeStellarAddress(user?.stellarAddress);
+  if (user?.stellarAddress && !stellarAddress) {
+    logger.warn("Ignoring invalid stored stellar address", { userId });
+  }
+
+  return { enrolled: stellarAddress !== null, stellar_address: stellarAddress };
 }
 
 /**
@@ -73,11 +86,8 @@ export async function enrollClientGeneratedWallet(
   ifMatch: string | undefined,
   params: EnrollWalletParams,
 ): Promise<number> {
-  if (!isValidStellarAddress(params.stellarAddress)) {
+  if (!isValidNonPlaceholderStellarAddress(params.stellarAddress)) {
     throw new AppError("Invalid stellar address: must be a valid Stellar public key", 400);
-  }
-  if (isPlaceholderAddress(params.stellarAddress)) {
-    throw new AppError("Invalid stellar address: appears to be a placeholder", 400);
   }
 
   const user = await prisma.user.findUnique({
@@ -115,27 +125,6 @@ export async function enrollClientGeneratedWallet(
 }
 
 /**
- * Check if an address looks like a common placeholder pattern.
- * This provides defense-in-depth against test/dummy addresses in production.
- */
-function isPlaceholderAddress(address: string): boolean {
-  if (!address || address.length !== 56) return true;
-
-  // Common placeholder patterns
-  const placeholderPatterns = [
-    /^G[A]{55}$/, // All A's (GAAAA...)
-    /^G[B]{55}$/, // All B's (GBBBB...)
-    /^G[0]{55}$/, // All zeros
-    /^GTEST/, // Starts with GTEST
-    /^GDUMMY/, // Starts with GDUMMY
-    /^GPLACEHOLDER/, // Starts with GPLACEHOLDER
-    /^GXXXXXXXX/, // Starts with GXXXXXXXX
-  ];
-
-  return placeholderPatterns.some((pattern) => pattern.test(address));
-}
-
-/**
  * Validate and set stellar address for a user (e.g., for imported wallets).
  * This is the ONLY function that should be used to set stellarAddress externally.
  */
@@ -146,8 +135,8 @@ export async function setStellarAddressForUser(
   // Strict validation
   assertValidStellarAddress(stellarAddress);
 
-  // Reject placeholders
-  if (isPlaceholderAddress(stellarAddress)) {
+  // Reject placeholders that share the G-prefix and a valid checksum
+  if (isPlaceholderStellarAddress(stellarAddress)) {
     throw new AppError("Invalid stellar address: appears to be a placeholder", 400);
   }
 

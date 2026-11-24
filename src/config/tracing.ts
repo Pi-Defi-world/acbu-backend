@@ -78,7 +78,6 @@ export function initTracing(): void {
     sdk
       ?.shutdown()
       .catch((err: unknown) => {
-        // eslint-disable-next-line no-console
         console.error("[tracing] SDK shutdown error", err);
       })
       .finally(() => process.exit(0));

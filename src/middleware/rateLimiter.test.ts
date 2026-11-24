@@ -11,6 +11,7 @@ import {
 import { cacheService } from "../utils/cache";
 import { logger } from "../config/logger";
 import { getMongoDB } from "../config/mongodb";
+import { redisService } from "../services/cache/redisService";
 
 // Mock dependencies
 jest.mock("../utils/cache", () => ({
@@ -33,10 +34,18 @@ jest.mock("../config/mongodb", () => ({
   getMongoDB: jest.fn(),
 }));
 
+jest.mock("../services/cache/redisService", () => ({
+  redisService: {
+    getClient: jest.fn(),
+  },
+}));
+
 jest.mock("../config/env", () => ({
   config: {
     rateLimitWindowMs: 60000,
     rateLimitMaxRequests: 100,
+    authRateLimitWindowMs: 15 * 60 * 1000,
+    authRateLimitMaxRequests: 10,
     adminRateLimitWindowMs: 60000,
     adminRateLimitMaxRequests: 30,
   },
@@ -50,6 +59,16 @@ describe("Rate Limiter with Circuit Breaker", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     circuitBreaker.reset();
+    fallbackRateLimitStore.clear();
+    (redisService.getClient as jest.Mock).mockReturnValue({
+      incr: jest.fn().mockRejectedValue(new Error("Redis unavailable")),
+      expire: jest.fn(),
+      pttl: jest.fn(),
+      decr: jest.fn(),
+      del: jest.fn(),
+      keys: jest.fn().mockResolvedValue([]),
+      get: jest.fn(),
+    });
 
     mockReq = {
       ip: "192.168.1.100",
@@ -74,6 +93,25 @@ describe("Rate Limiter with Circuit Breaker", () => {
   });
 
   describe("Shared Mongo-backed store", () => {
+    it("uses a bounded in-memory counter when MongoDB and Redis are unavailable", async () => {
+      (getMongoDB as jest.Mock).mockImplementation(() => {
+        throw new Error("MongoDB unavailable");
+      });
+
+      const store = createMongoRateLimitStore("auth");
+      store.init({ windowMs: 60_000 } as any);
+
+      const first = await store.increment("203.0.113.12");
+      const second = await store.increment("203.0.113.12");
+
+      expect(first.totalHits).toBe(1);
+      expect(second.totalHits).toBe(2);
+      expect(fallbackRateLimitStore.get("rate_limit:auth:203.0.113.12")).toEqual({
+        count: 2,
+        expiresAt: expect.any(Number),
+      });
+    });
+
     it("should namespace limiter keys so instances do not share counters", async () => {
       const findOneAndUpdate = jest.fn().mockResolvedValue({
         value: {

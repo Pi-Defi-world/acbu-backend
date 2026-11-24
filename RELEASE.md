@@ -97,7 +97,8 @@ same version across packages, push one tag per package at the same commit.
 
 ### Step 4: Verify Automated Pipeline
 1. Navigate to **Actions** -> **Release & Artifact Publish**.
-2. Confirm the workflow builds the bundle, pushes the GHCR image, and publishes the GitHub Release with attached `.tar.gz` and `SHA256SUMS`.
+2. Confirm the workflow builds the bundle, pushes the GHCR image, and publishes the GitHub Release with attached `.tar.gz`, `SHA256SUMS`, and the CycloneDX and SPDX SBOM manifests.
+3. Verify the SBOM step succeeded and that the SBOM files are present on the release.
 
 ---
 

@@ -26,7 +26,7 @@ describe("Fee Destination and Reserve Ratio", () => {
       expect(acbuMinted.toString()).toBe("99.7"); // $99.70 ACBU minted
       expect(reserveAmount.toString()).toBe("100"); // $100 in reserves
       expect(backingRatio.toNumber()).toBeCloseTo(100.3, 1); // ~100.3% backing ratio
-      
+
       // The fee stays in reserves, not passed to partners
       expect(reserveAmount.toNumber()).toBeGreaterThan(acbuMinted.toNumber());
     });

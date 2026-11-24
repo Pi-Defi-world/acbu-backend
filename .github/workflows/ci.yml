@@ -29,7 +29,15 @@ jobs:
           gitleaks version
 
       - name: Run gitleaks
-        run: gitleaks detect --verbose --redact
+        run: |
+          # A depth-0 checkout fetches every branch, so an unscoped scan also
+          # reports findings from unrelated branch history. On pull requests,
+          # scan only the commits the PR would add.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gitleaks detect --verbose --redact --log-opts="origin/${{ github.base_ref }}..HEAD"
+          else
+            gitleaks detect --verbose --redact
+          fi
 
   lint-and-format:
     name: Lint, Format & Security Audit
@@ -131,7 +139,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage
           path: coverage/
@@ -175,11 +183,46 @@ jobs:
         run: pnpm build
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dist
           path: dist/
           retention-days: 7
+
+  # W11-CAR-023: single fail-closed gate over every job a pull request must pass.
+  # Branch protection can require `CI / CI Gate` instead of depending on each
+  # individual job staying required (and non-blocking) in the repository
+  # settings. The job fails if any dependency failed, was cancelled or was
+  # skipped, so a failing test, lint or build can never be merged.
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [secret-scan, lint-and-format, test, build]
+    steps:
+      - name: Require every blocking CI job to succeed
+        env:
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+          LINT_AND_FORMAT_RESULT: ${{ needs.lint-and-format.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          failed=0
+          for entry in \
+            "secret-scan=$SECRET_SCAN_RESULT" \
+            "lint-and-format=$LINT_AND_FORMAT_RESULT" \
+            "test=$TEST_RESULT" \
+            "build=$BUILD_RESULT"; do
+            job="${entry%%=*}"
+            result="${entry##*=}"
+            echo "${job}: ${result}"
+            if [ "${result}" != "success" ]; then
+              echo "::error::Blocking job '${job}' did not succeed (result: ${result})"
+              failed=1
+            fi
+          done
+          exit "${failed}"
 
   license-check:
     name: License Check
@@ -300,10 +343,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -311,7 +354,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -320,7 +363,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build-and-push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
           push: true

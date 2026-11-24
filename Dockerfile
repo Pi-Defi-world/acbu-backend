@@ -44,4 +44,6 @@ COPY --from=builder /app/dist ./dist
 
 EXPOSE 5000
 
+USER node
+
 CMD ["node", "dist/index.js"]
