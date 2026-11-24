@@ -31,8 +31,7 @@ const bypassRequested = process.env.WEBHOOK_SIGNATURE_BYPASS === "true";
 // Fail closed: the bypass is only ever honoured under an explicit test profile.
 // A misconfigured or copied dev env must not silently disable signature
 // verification on the deposit/mint-confirmation webhook path.
-const isExplicitTestProfile =
-  config.nodeEnv === "test" || process.env.APP_PROFILE === "test";
+const isExplicitTestProfile = config.nodeEnv === "test" || process.env.APP_PROFILE === "test";
 
 if (bypassRequested && !isExplicitTestProfile) {
   throw new Error(
@@ -60,11 +59,7 @@ function assertBypassNotInProduction(): void {
       "WEBHOOK_SIGNATURE_BYPASS is active in a production-like environment — " +
         "rejecting webhook. Signature verification must never be bypassed in production.",
     );
-    throw new AppError(
-      "Webhook signature verification unavailable",
-      503,
-      ErrorCodes.CONFIG_ERROR,
-    );
+    throw new AppError("Webhook signature verification unavailable", 503, ErrorCodes.CONFIG_ERROR);
   }
 }
 

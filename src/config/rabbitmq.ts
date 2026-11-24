@@ -145,9 +145,11 @@ export async function consumeWithMetrics(
     if (msg) {
       recordQueueConsume(queueName);
       // Update queue depth after consumption
-      ch.checkQueue(queueName).then((info) => {
-        recordQueueDepth(queueName, info.messageCount);
-      }).catch(() => {});
+      ch.checkQueue(queueName)
+        .then((info) => {
+          recordQueueDepth(queueName, info.messageCount);
+        })
+        .catch(() => {});
       onMessage(msg);
     }
   };

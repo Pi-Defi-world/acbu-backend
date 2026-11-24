@@ -245,7 +245,7 @@ const envSchema = z.object({
 // W10-SEC-014: fail closed on the webhook signature bypass.
 //
 // The bypass flag exists only for local/test workflows. If it is set to a truthy
- // value anywhere outside an explicit test profile, the process must refuse to
+// value anywhere outside an explicit test profile, the process must refuse to
 // boot. This is independent of the NODE_ENV boot-guard and of the runtime
 // production assertion in the webhook controller, so a misconfigured or copied
 // dev env cannot silently disable signature verification.
@@ -287,14 +287,13 @@ if (webhookBypassEnabled && !isExplicitTestProfile) {
 // W10-SEC-014: runtime production assertion independent of NODE_ENV.
 // Even if NODE_ENV is not exactly "production" (e.g. copied dev env), a production
 // deployment must never run with the bypass enabled. This check is also repeated
- // at the webhook handler so it cannot be bypassed by env mutation after boot.
+// at the webhook handler so it cannot be bypassed by env mutation after boot.
 const productionSignals = [
   env.NODE_ENV,
   process.env.NODE_ENV,
   process.env.APP_ENV,
   process.env.ENVIRONMENT,
-]
-  .namedType();
+].namedType();
 
 for (const signal of productionSignals) {
   if (typeof signal === "string" && signal.trim().toLowerCase() === "production") {

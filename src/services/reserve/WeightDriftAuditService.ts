@@ -76,9 +76,7 @@ export class WeightDriftAuditService {
     try {
       // Get policy (target) weights from active basket config
       const policyBasket = await basketService.getCurrentBasket();
-      const policyWeights = new Map(
-        policyBasket.map((e) => [e.currency, new Decimal(e.weight)]),
-      );
+      const policyWeights = new Map(policyBasket.map((e) => [e.currency, new Decimal(e.weight)]));
 
       // W10-B-012: Validate basket weight normalization (should sum to 100%)
       const policySum = [...policyWeights.values()].reduce((sum, w) => sum + w, 0);
@@ -116,8 +114,7 @@ export class WeightDriftAuditService {
       for (const [currency, policyWeight] of policyWeights) {
         const actualWeight = new Decimal(actualWeights.get(currency) ?? 0);
         const driftPercent = actualWeight.sub(policyWeight);
-        const exceedsThreshold =
-          driftPercent.abs().gt(DRIFT_THRESHOLD_PCT);
+        const exceedsThreshold = driftPercent.abs().gt(DRIFT_THRESHOLD_PCT);
 
         if (exceedsThreshold) {
           exceedingCount++;
@@ -180,9 +177,7 @@ export class WeightDriftAuditService {
           auditPeriodEnd: report.auditPeriodEnd,
           totalCurrencies: report.totalCurrencies,
           currenciesExceedingThreshold: report.currenciesExceedingThreshold,
-          maxDriftPercent: new Decimal(
-            report.decimalMaxDriftPercent ?? report.maxDriftPercent,
-          ),
+          maxDriftPercent: new Decimal(report.decimalMaxDriftPercent ?? report.maxDriftPercent),
           status: "pending",
           diffReport: report as unknown as Prisma.InputJsonValue,
           createdBy,
@@ -190,11 +185,13 @@ export class WeightDriftAuditService {
       });
 
       // Create per-currency entries
-      const entries = report.decimalEntries ?? report.entries.map((entry) => ({
-        policyWeight: entry.policyWeight.toString(),
-        actualWeight: entry.actualWeight.toString(),
-        driftPercent: entry.driftPercent.toString(),
-      }));
+      const entries =
+        report.decimalEntries ??
+        report.entries.map((entry) => ({
+          policyWeight: entry.policyWeight.toString(),
+          actualWeight: entry.actualWeight.toString(),
+          driftPercent: entry.driftPercent.toString(),
+        }));
       for (let index = 0; index < report.entries.length; index += 1) {
         const entry = report.entries[index];
         const exactEntry = entries[index];

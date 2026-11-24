@@ -134,12 +134,10 @@ export class ReserveTracker {
               if (custody) {
                 onChainAmountAtomic = custody.amountAtomic;
                 onChainValueUsdAtomic = custody.valueUsdAtomic;
-                balance = new Decimal(custody.amountAtomic.toString()).div(
+                balance = new Decimal(custody.amountAtomic.toString()).div(RESERVE_DECIMALS);
+                reserveValueUsd = new Decimal(custody.valueUsdAtomic.toString()).div(
                   RESERVE_DECIMALS,
                 );
-                reserveValueUsd = new Decimal(
-                  custody.valueUsdAtomic.toString(),
-                ).div(RESERVE_DECIMALS);
               }
             } catch (e) {
               logger.warn(
@@ -153,16 +151,12 @@ export class ReserveTracker {
             // Fallback path (non-custodial deployments with real fintech partners).
             balance = new Decimal(
               await withRetry(
-                async () =>
-                  (await fintechRouter.getProvider(currency)).getBalance(currency),
+                async () => (await fintechRouter.getProvider(currency)).getBalance(currency),
                 `getBalance(${currency})`,
               ),
             );
             const rate = new Decimal(
-              await withRetry(
-                () => this.getCurrencyRate(currency),
-                `getCurrencyRate(${currency})`,
-              ),
+              await withRetry(() => this.getCurrencyRate(currency), `getCurrencyRate(${currency})`),
             );
             reserveValueUsd = balance.mul(rate);
           }
@@ -267,9 +261,7 @@ export class ReserveTracker {
     const totalAcbuSupply = await this.getTotalAcbuSupply();
     const totalReserveValue = await this.getTotalReserveValue(segment);
     const overcollateralizationRatio =
-      totalAcbuSupply > 0
-        ? totalReserveValue.div(totalAcbuSupply).mul(100)
-        : new Decimal(0);
+      totalAcbuSupply > 0 ? totalReserveValue.div(totalAcbuSupply).mul(100) : new Decimal(0);
 
     const currencies = await basketService.getCurrencies();
     const currencyStatuses: ReserveStatus[] = [];
@@ -287,19 +279,18 @@ export class ReserveTracker {
           actualWeight: new Decimal(latestReserve.actualWeight),
           reserveAmount: new Decimal(latestReserve.reserveAmount),
           reserveValueUsd: new Decimal(latestReserve.reserveValueUsd),
-          weightDrift: new Decimal(latestReserve.actualWeight).sub(
-            latestReserve.targetWeight,
-          ),
+          weightDrift: new Decimal(latestReserve.actualWeight).sub(latestReserve.targetWeight),
         });
       }
     }
 
-    const health: "healthy" | "warning" | "critical" =
-      overcollateralizationRatio.gte(config.reserve.targetRatio * 100)
-        ? "healthy"
-        : overcollateralizationRatio.gte(config.reserve.alertThreshold * 100)
-          ? "warning"
-          : "critical";
+    const health: "healthy" | "warning" | "critical" = overcollateralizationRatio.gte(
+      config.reserve.targetRatio * 100,
+    )
+      ? "healthy"
+      : overcollateralizationRatio.gte(config.reserve.alertThreshold * 100)
+        ? "warning"
+        : "critical";
 
     return {
       totalAcbuSupply,
@@ -369,8 +360,7 @@ export class ReserveTracker {
             health: health.health,
             totalAcbuSupply: health.totalAcbuSupply,
             totalReserveValueUsd: health.totalReserveValueUsd.toNumber(),
-            overcollateralizationRatio:
-              health.overcollateralizationRatio.toNumber(),
+            overcollateralizationRatio: health.overcollateralizationRatio.toNumber(),
             timestamp: new Date().toISOString(),
           }),
         ),

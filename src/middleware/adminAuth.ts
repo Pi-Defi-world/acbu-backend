@@ -16,7 +16,8 @@ export interface AdminRequest extends Request {
  */
 export function requireAdminApiKey(req: Request, _res: Response, next: NextFunction): void {
   const configuredKeys = (config as any).adminApiKeys as
-    Array<{ id: string; key: string }> | undefined;
+    | Array<{ id: string; key: string }>
+    | undefined;
 
   const adminApiKeys =
     configuredKeys && configuredKeys.length > 0

@@ -463,11 +463,13 @@ async function startServer() {
       await startMintEventListener();
       const { startBurnEventListener } = await import("./jobs/acbu_burning_event_listener");
       await startBurnEventListener();
-      const { startSavingsVaultEventListener } =
-        await import("./jobs/acbu_savings_vault_event_listener");
+      const { startSavingsVaultEventListener } = await import(
+        "./jobs/acbu_savings_vault_event_listener"
+      );
       await startSavingsVaultEventListener();
-      const { startLendingPoolEventListener } =
-        await import("./jobs/acbu_lending_pool_event_listener");
+      const { startLendingPoolEventListener } = await import(
+        "./jobs/acbu_lending_pool_event_listener"
+      );
       await startLendingPoolEventListener();
       // Start Stellar event listener (runs in background; depends on RabbitMQ for event dispatch)
       const { eventListener } = await import("./services/stellar/eventListener");

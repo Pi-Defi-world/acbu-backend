@@ -31,7 +31,7 @@ export function extractIdempotencyKey(req: {
   const rawKey =
     typeof req.get === "function"
       ? req.get("Idempotency-Key")
-      : (req.headers?.["Idempotency-Key"] ?? req.headers?.["idempotency-key"]);
+      : req.headers?.["Idempotency-Key"] ?? req.headers?.["idempotency-key"];
   if (rawKey === undefined) {
     return undefined;
   }

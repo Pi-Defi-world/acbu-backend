@@ -166,9 +166,7 @@ describe("refresh token flow (#734)", () => {
     });
 
     it("revokes the prior api key when the token family has an associated key", async () => {
-      (prisma.refreshToken.findFirst as jest.Mock).mockResolvedValue(
-        existingToken,
-      );
+      (prisma.refreshToken.findFirst as jest.Mock).mockResolvedValue(existingToken);
       (prisma.refreshToken.updateMany as jest.Mock).mockResolvedValue({
         count: 1,
       });
@@ -231,7 +229,7 @@ describe("refresh token flow (#734)", () => {
 
       expect(result).toEqual({ ok: true });
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining( {
+        expect.objectContaining({
           where: expect.objectContainig({
             tokenFamilyId: "family-1",
             revokedAt: null,

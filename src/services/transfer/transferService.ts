@@ -124,35 +124,47 @@ function checkTravelRuleCompliance(
   // In allowlist mode, only VASP-intermediated transfers are allowed above threshold
   if (mode === "allowlist" && !isVaspIntermediated) {
     if (enforce) {
-      logger.error("Travel Rule violation: direct P2P transfer above threshold not allowed in allowlist mode", {
+      logger.error(
+        "Travel Rule violation: direct P2P transfer above threshold not allowed in allowlist mode",
+        {
+          amountAcbu,
+          threshold,
+          recipientAddress,
+        },
+      );
+      return false;
+    }
+    logger.warn(
+      "Travel Rule limitation: direct P2P transfer above threshold (allowlist mode, not enforced)",
+      {
         amountAcbu,
         threshold,
         recipientAddress,
-      });
-      return false;
-    }
-    logger.warn("Travel Rule limitation: direct P2P transfer above threshold (allowlist mode, not enforced)", {
-      amountAcbu,
-      threshold,
-      recipientAddress,
-    });
+      },
+    );
   }
 
   // In strict mode, all transfers above threshold require VASP intermediation
   if (mode === "strict" && !isVaspIntermediated) {
     if (enforce) {
-      logger.error("Travel Rule violation: direct P2P transfer above threshold not allowed in strict mode", {
+      logger.error(
+        "Travel Rule violation: direct P2P transfer above threshold not allowed in strict mode",
+        {
+          amountAcbu,
+          threshold,
+          recipientAddress,
+        },
+      );
+      return false;
+    }
+    logger.warn(
+      "Travel Rule limitation: direct P2P transfer above threshold (strict mode, not enforced)",
+      {
         amountAcbu,
         threshold,
         recipientAddress,
-      });
-      return false;
-    }
-    logger.warn("Travel Rule limitation: direct P2P transfer above threshold (strict mode, not enforced)", {
-      amountAcbu,
-      threshold,
-      recipientAddress,
-    });
+      },
+    );
   }
 
   return true;
@@ -298,7 +310,7 @@ async function revalidateFeeBeforeSubmit(builtQuote: PaymentFeeQuote): Promise<F
  */
 export async function createTransfer(
   params: CreateTransferParams,
-  options: CreateTransferOptions = {}
+  options: CreateTransferOptions = {},
 ): Promise<CreateTransferResult> {
   // W10-BE-008: reject money-moving transfers that lack an idempotency key
   // before any transaction row is created or any Stellar payment is submitted.
@@ -375,7 +387,7 @@ export async function createTransfer(
           destination: recipientAddress,
           asset: acbuAsset,
           amount,
-        })
+        }),
       )
       .setTimeout(PAYMENT_VALIDITY_SECONDS)
       .build();
@@ -498,7 +510,11 @@ export async function createTransfer(
   // #1142: Travel Rule compliance check
   // Direct P2P transfers (non-VASP-intermediated) above threshold are flagged/rejected
   const isVaspIntermediated = false; // Current implementation is direct wallet-to-wallet
-  const isTravelRuleCompliant = checkTravelRuleCompliance(amount, isVaspIntermediated, recipientAddress);
+  const isTravelRuleCompliant = checkTravelRuleCompliance(
+    amount,
+    isVaspIntermediated,
+    recipientAddress,
+  );
   if (!isTravelRuleCompliant) {
     throw new Error(
       `Transfer amount ${amount} ACBU exceeds Travel Rule threshold of ${config.travelRule.thresholdAcbu} ACBU. ` +
