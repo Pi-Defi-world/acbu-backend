@@ -106,7 +106,7 @@
     "uuid": "^14.0.1",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "zod": "^3.25.76"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
@@ -133,8 +133,7 @@
     "prisma": "^6.4.3",
     "supertest": "^7.2.2",
     "ts-jest": "^29.1.2",
-    "ts-node": "^10.9.2",
-    "zod-to-json-schema": "^3.25.2"
+    "ts-node": "^10.9.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -182,7 +181,7 @@
       "proxy-addr": ">=2.0.8",
       "compression": ">=1.8.2",
       "systeminformation": ">=5.33.16",
-      "effect": ">=3.22.1",
+      "effect": ">=3.22.1 <4",
       "glob": ">=14.0.2",
       "minimatch": ">=11.0.1"
     }
