@@ -60,6 +60,7 @@ BEGIN
 END$$;
 
 -- Foreign key to users
+-- The table is created above on clean installs; this guard supports legacy databases.
 DO $$
 BEGIN
     IF NOT EXISTS (
