@@ -123,9 +123,9 @@ export async function startNotificationConsumer(): Promise<void> {
 
       try {
         // Validate OTP send message
-      const validatedPayload = parseIncomingMessage(QUEUES.OTP_SEND, msg.content);
-      await processOtpSend(validatedPayload);
-      ch.ack(msg);
+        const validatedPayload = parseIncomingMessage(QUEUES.OTP_SEND, msg.content);
+        await processOtpSend(validatedPayload);
+        ch.ack(msg);
       } catch (e) {
         if (e instanceof MessageValidationError) {
           logger.error("OTP_SEND validation failed, sending to DLQ", {

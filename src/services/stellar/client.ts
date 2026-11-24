@@ -41,6 +41,7 @@ export class StellarClient {
     failureThreshold: 3,
     cooldownMs: 30_000,
     successThreshold: 2,
+    serviceName: "stellar_horizon",
   });
 
   constructor(cfg?: Partial<StellarNetworkConfig>) {
@@ -372,20 +373,6 @@ export class StellarClient {
       logger.error("Failed to get balance", { accountId, assetCode, error });
       throw error;
     }
-  }
-
-  /**
-   * Create a keypair from secret
-   */
-  static createKeypairFromSecret(secret: string): Keypair {
-    return Keypair.fromSecret(secret);
-  }
-
-  /**
-   * Generate a new random keypair
-   */
-  static generateKeypair(): Keypair {
-    return Keypair.random();
   }
 
   /**

@@ -39,17 +39,33 @@ export interface AuthRequest extends Request {
 }
 
 /**
- * Validate and parse permissions from Prisma JSON field
+ * Validate and parse permissions from Prisma JSON field.
+ *
+ * Fail-closed behaviour (W10-BE-016): if the stored value is not an array the
+ * key is **rejected** rather than silently downgraded to an empty-permission
+ * key.  An empty array `[]` stored in the database is a legitimate "no
+ * permissions" state and is allowed through; any non-array type (object,
+ * string, null, etc.) is treated as data corruption and throws so that the
+ * caller denies access.
+ *
  * @param permissions - Raw permissions from database (Json type)
- * @returns Array of validated permission strings, or empty array if invalid
+ * @returns Array of validated permission strings
+ * @throws {AppError} 403 if the stored value is present but not an array
  */
 function validatePermissions(permissions: unknown): PermissionScope[] {
   if (!Array.isArray(permissions)) {
     if (permissions != null) {
-      logger.warn("Invalid permissions in API key record (not an array)", {
-        raw: permissions,
-      });
+      // Non-null, non-array value means the record is malformed — fail closed.
+      logger.error(
+        "Malformed permissions in API key record (not an array) — key rejected",
+        { raw: permissions },
+      );
+      throw new AppError(
+        "API key has malformed permissions and cannot be used",
+        403,
+      );
     }
+    // null / undefined means the column was never set — treat as empty array.
     return [];
   }
   const valid: PermissionScope[] = [];

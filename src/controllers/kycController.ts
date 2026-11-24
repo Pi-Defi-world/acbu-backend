@@ -27,6 +27,60 @@ import {
 } from "../services/storage/s3Service";
 import { generateId } from "../utils/idGenerator";
 
+/**
+ * #1143: Jurisdiction licensing check for KYC operations.
+ *
+ * ACBU's KYC/AML operations may trigger licensing obligations in countries where
+ * it does not hold licenses. This check ensures the operating model matches actual
+ * regulatory permissions.
+ *
+ * @param countryCode - User's ISO 3166-1 alpha-3 country code
+ * @returns true if licensed/partner-operated, false if not licensed and enforcement is enabled
+ */
+function checkJurisdictionLicensing(countryCode: string): boolean {
+  const { licensedJurisdictions, enforce, kycOperatingModel } = config.jurisdiction;
+  const normalizedCountryCode = countryCode.toUpperCase();
+
+  // In partner model, KYC is handled by licensed partners - no direct licensing required
+  if (kycOperatingModel === "partner") {
+    logger.info("KYC operating model: partner (no direct jurisdiction check required)", {
+      countryCode: normalizedCountryCode,
+      operatingModel: kycOperatingModel,
+    });
+    return true;
+  }
+
+  // In direct model, check if jurisdiction is licensed
+  const isLicensed = licensedJurisdictions.includes(normalizedCountryCode);
+
+  // Log jurisdiction check for audit trail
+  logger.info("Jurisdiction licensing check", {
+    countryCode: normalizedCountryCode,
+    licensedJurisdictions,
+    isLicensed,
+    enforce,
+    operatingModel: kycOperatingModel,
+  });
+
+  if (!isLicensed) {
+    if (enforce) {
+      logger.error("Jurisdiction licensing violation: KYC operation in unlicensed jurisdiction", {
+        countryCode: normalizedCountryCode,
+        licensedJurisdictions,
+        operatingModel: kycOperatingModel,
+      });
+      return false;
+    }
+    logger.warn("Jurisdiction limitation: KYC operation in unlicensed jurisdiction (not enforced)", {
+      countryCode: normalizedCountryCode,
+      licensedJurisdictions,
+      operatingModel: kycOperatingModel,
+    });
+  }
+
+  return true;
+}
+
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
 const requestUploadUrlSchema = z.object({
@@ -64,10 +118,24 @@ async function getOrCreateApplication(userId: string) {
     select: { countryCode: true },
   });
 
+  const countryCode = user?.countryCode ?? "XX";
+
+  // #1143: Check jurisdiction licensing before creating KYC application
+  const isJurisdictionCompliant = checkJurisdictionLicensing(countryCode);
+  if (!isJurisdictionCompliant) {
+    throw new AppError(
+      `KYC operations are not licensed for jurisdiction ${countryCode}. ` +
+        `ACBU currently holds licenses for: ${config.jurisdiction.licensedJurisdictions.join(", ")}. ` +
+        `If this is a partner-operated KYC, set KYC_OPERATING_MODEL=partner. ` +
+        `Otherwise, contact legal/compliance to obtain the required license.`,
+      422,
+    );
+  }
+
   return prisma.kycApplication.create({
     data: {
       userId,
-      countryCode: user?.countryCode ?? "XX",
+      countryCode,
       status: "pending",
       feePaidAcbu: 0,
     },

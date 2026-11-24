@@ -21,6 +21,7 @@ be merged to `main`. Configure them under
 | `lint-and-test / Gate destructive Prisma migrations` | Destructive schema migrations carry the `allow-destructive-migration` label |
 | `lint-and-test / Run tests` | All Jest tests pass (full suite on `main`/`develop`, changed files on PRs) |
 | `lint-and-test / Build` | TypeScript compiles to JavaScript without errors |
+| `Malware IoC Scan / ioc-scan` | Scans for known malware IoC files and content strings (e.g. dist/setup.js, fa-solid woff2 files, folderOpen task triggers) |
 
 > These checks map directly to the steps in `.github/workflows/ci.yml` under
 > the `lint-and-test` job.
@@ -60,6 +61,7 @@ lint-and-test / Audit dependencies for critical vulnerabilities
 lint-and-test / Gate destructive Prisma migrations
 lint-and-test / Run tests
 lint-and-test / Build
+Malware IoC Scan / ioc-scan
 ```
 
 > **Note:** GitHub uses the format `<job-name> / <step-name>` for status check

@@ -1,10 +1,28 @@
-// Tests for requireMinTier (B-047)
+// Tests for requireMinTier (B-047) and requireAdminKeyType (W10-BE-005)
 import { Response } from "express";
-import { requireMinTier, TIER_ORDER } from "../src/middleware/segmentGuard";
-import type { AuthRequest, UserTier } from "../src/middleware/auth";
+import { requireAdminKeyType, requireMinTier, TIER_ORDER } from "../src/middleware/segmentGuard";
+import type { ApiKeyType, AuthRequest, UserTier } from "../src/middleware/auth";
 
 function makeReq(tier?: UserTier): AuthRequest {
   return { userTier: tier } as AuthRequest;
+}
+
+function makeApiKeyReq(keyType?: ApiKeyType): AuthRequest {
+  return {
+    apiKey: keyType
+      ? ({
+          id: "key-1",
+          userId: "user-1",
+          organizationId: null,
+          keyType,
+          createdByUserId: null,
+          emergencyReason: null,
+          emergencyExpiresAt: null,
+          permissions: [],
+          rateLimit: 100,
+        } as NonNullable<AuthRequest["apiKey"]>)
+      : undefined,
+  } as AuthRequest;
 }
 
 function makeNext(): jest.Mock {
@@ -76,5 +94,31 @@ describe("requireMinTier", () => {
 
   it("TIER_ORDER is correctly ordered", () => {
     expect(TIER_ORDER).toEqual(["free", "verified", "sme", "enterprise"]);
+  });
+});
+
+describe("requireAdminKeyType", () => {
+  it("blocks when no API key is attached", () => {
+    const next = makeNext();
+    requireAdminKeyType()(makeApiKeyReq(), {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
+  });
+
+  it("blocks a USER_KEY", () => {
+    const next = makeNext();
+    requireAdminKeyType()(makeApiKeyReq("USER_KEY"), {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+  });
+
+  it("allows an ADMIN_KEY", () => {
+    const next = makeNext();
+    requireAdminKeyType()(makeApiKeyReq("ADMIN_KEY"), {} as Response, next);
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it("allows a BREAK_GLASS_KEY", () => {
+    const next = makeNext();
+    requireAdminKeyType()(makeApiKeyReq("BREAK_GLASS_KEY"), {} as Response, next);
+    expect(next).toHaveBeenCalledWith();
   });
 });

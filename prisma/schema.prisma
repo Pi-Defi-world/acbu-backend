@@ -48,7 +48,11 @@ model User {
   passcodeHash           String?          @map("passcode_hash") @db.VarChar(255)
   failedSigninAttempts   Int              @default(0) @map("failed_signin_attempts")
   lockoutUntil           DateTime?        @map("lockout_until") @db.Timestamp(6)
+  /// Opaque wallet backup encrypted by the client (W10-SEC-006). The backend
+  /// never receives the secret that opens it and ships no decryption path.
   encryptedStellarSecret String?          @map("encrypted_stellar_secret") @db.VarChar(512)
+  /// How encryptedStellarSecret was produced: "client_wrapped" or "external"
+  /// (address bound, no backup stored). Never "passcode".
   keyEncryptionHint      String?          @map("key_encryption_hint") @db.VarChar(50)
   walletVersion          Int              @default(0) @map("wallet_version")
   twoFaMethod            String?          @map("two_fa_method") @db.VarChar(20)
@@ -408,6 +412,7 @@ model ApiKey {
   expiresAt      DateTime? @map("expires_at") @db.Timestamp(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
   revokedAt      DateTime? @map("revoked_at") @db.Timestamp(6)
+  refreshTokenFamilyId String? @map("refresh_token_family_id") @db.Uuid
 
   user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization? @relation("OrganizationApiKeys", fields: [organizationId], references: [id], onDelete: Cascade)
@@ -416,6 +421,7 @@ model ApiKey {
   @@index([organizationId], name: "idx_api_keys_organization_id")
   @@index([keyType], name: "idx_api_keys_key_type")
   @@index([keyHash], name: "idx_api_keys_key_hash")
+  @@index([refreshTokenFamilyId], name: "idx_api_keys_refresh_token_family_id")
   @@map("api_keys")
 }
 
@@ -661,6 +667,7 @@ model SalarySchedule {
   status         String        @default("active") @db.VarChar(20)
   lastRunAt      DateTime?     @map("last_run_at") @db.Timestamp(6)
   nextRunAt      DateTime?     @map("next_run_at") @db.Timestamp(6)
+  lockedAt       DateTime?     @map("locked_at") @db.Timestamp(6)
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamp(6)
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
@@ -669,6 +676,7 @@ model SalarySchedule {
   @@index([organizationId], map: "idx_salary_schedule_org_id")
   @@index([status], map: "idx_salary_schedule_status")
   @@index([nextRunAt], map: "idx_salary_schedule_next_run")
+  @@index([status, nextRunAt, id], map: "idx_salary_schedule_status_next_run_id")
   @@map("salary_schedules")
 }
 

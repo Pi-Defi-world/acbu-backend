@@ -18,6 +18,7 @@ import type {
 
 const DEFAULT_CHUNK_SIZE = config.bulkTransfer.chunkSize;
 const DEFAULT_MAX_FILE_SIZE_BYTES = config.bulkTransfer.maxFileSizeBytes;
+const DEFAULT_MAX_ROWS = config.bulkTransfer.maxRows;
 
 function bufferFromInput(input: Buffer | NodeJS.ReadableStream): Promise<Buffer> {
   if (Buffer.isBuffer(input)) {
@@ -160,6 +161,7 @@ async function processRow(
     const transaction = await prisma.transaction.create({
       data: {
         userId: senderUserId,
+        organizationId,
         type: "transfer",
         status: "completed",
         recipientAddress: row.to,
@@ -223,6 +225,7 @@ export async function processBulkTransfer(
 ): Promise<BulkTransferJobResult> {
   const chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE;
   const maxFileSizeBytes = options.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
+  const maxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
 
   const buffer = await bufferFromInput(params.fileContent);
   if (buffer.length > maxFileSizeBytes) {
@@ -230,6 +233,10 @@ export async function processBulkTransfer(
   }
 
   const { rows } = parseCsvBuffer(buffer);
+
+  if (rows.length > maxRows) {
+    throw new AppError(`CSV exceeds maximum of ${maxRows} rows (received ${rows.length})`, 413);
+  }
 
   const job = await prisma.bulkTransferJob.create({
     data: {
@@ -298,6 +305,10 @@ export async function processBulkTransfer(
   }
 
   const failureReport = allResults.filter((result) => result.status === "failure");
+  // Persist every non-success outcome so a later job lookup can reconstruct
+  // skippedCount as well as the failure details. The public process response
+  // continues to expose failures only for backwards compatibility.
+  const persistedReport = allResults.filter((result) => result.status !== "success");
   await prisma.bulkTransferJob.update({
     where: { id: job.id },
     data: {
@@ -305,7 +316,7 @@ export async function processBulkTransfer(
       completedAt: new Date(),
       successCount,
       failureCount,
-      failureReport: failureReport as unknown as Prisma.InputJsonValue,
+      failureReport: persistedReport,
     },
   });
 
@@ -343,7 +354,11 @@ export async function getBulkTransferJob(jobId: string, organizationId: string) 
     totalRows: job.totalRows,
     successCount: job.successCount,
     failureCount: job.failureCount,
-    skippedCount: 0,
+    skippedCount: Array.isArray(job.failureReport)
+      ? (job.failureReport as BulkTransferRowResult[]).filter(
+          (result) => result.status === "skipped",
+        ).length
+      : 0,
     status: job.status as BulkTransferJobStatus,
     createdAt: job.createdAt.toISOString(),
     completedAt: job.completedAt?.toISOString(),

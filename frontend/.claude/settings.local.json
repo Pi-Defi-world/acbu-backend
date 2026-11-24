@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git merge *)",
+      "Bash(git -C /Users/user/Documents/GitHub/acbu-frontend log --oneline -10)",
+      "Bash(git -C /Users/user/Documents/GitHub/acbu-frontend diff dev...HEAD --name-only)",
+      "Bash(gh issue *)",
+      "Bash(grep -rn \"next/image\\\\|from 'next/image'\\\\|Image.*src=\" /Users/user/Documents/GitHub/acbu-frontend/ --include=\"*.tsx\" --include=\"*.jsx\" ! -path \"*/node_modules/*\")",
+      "Bash(git fetch *)"
+    ]
+  }
+}

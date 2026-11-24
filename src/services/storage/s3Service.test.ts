@@ -197,9 +197,9 @@ describe("download access control", () => {
   it("rejects download URLs when scan status is unknown", async () => {
     jest.spyOn(s3Service, "getObjectScanStatus").mockResolvedValue("unknown");
 
-    await expect(
-      generateDownloadUrl("user-abc", "kyc/user-abc/passport/doc-123"),
-    ).rejects.toThrow(/virus scan|unavailable|blocked/i);
+    await expect(generateDownloadUrl("user-abc", "kyc/user-abc/passport/doc-123")).rejects.toThrow(
+      /virus scan|unavailable|blocked/i,
+    );
   });
 
   it("treats scan lookup failures as pending/blocked instead of safe", async () => {

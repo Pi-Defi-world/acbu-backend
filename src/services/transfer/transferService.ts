@@ -13,9 +13,24 @@ import { getAcbuAsset } from "../../config/acbuAsset";
 import { StellarFeeSurgeError } from "../../errors";
 import crypto from "crypto";
 import { reserveWalletVersion, fetchWalletBalance } from "../wallet/walletStateService";
+import { config } from "../../config/env";
 
 import { logger, logFinancialEvent } from "../../config/logger";
+import { logAudit } from "../audit";
 import type { CreateTransferParams, CreateTransferOptions, CreateTransferResult } from "./types";
+
+/**
+ * W10-BE-008: money-moving transfers must carry an idempotency key so a client
+ * timeout/retry cannot create a duplicate transaction row or a duplicate Stellar
+ * payment. Enforced here (server-side) in addition to the controller check so
+ * no caller can bypass it.
+ */
+function requireIdempotencyKey(idempotencyKey: string | undefined | null): string {
+  if (typeof idempotencyKey !== "string" || idempotencyKey.trim().length === 0) {
+    throw new Error("Idempotency key is required for transfers");
+  }
+  return idempotencyKey.trim();
+}
 
 /** Parse a non-negative amount string into 7-decimal smallest units to avoid float drift. */
 function amountToSmallestUnit(amount: string): number {
@@ -63,6 +78,85 @@ const MAX_SUBMIT_ATTEMPTS = 3;
  * several times while the network fee is moving.
  */
 const PAYMENT_VALIDITY_SECONDS = 60;
+
+/**
+ * #1142: Travel Rule compliance check for P2P transfers.
+ *
+ * Direct P2P transfers between non-custodied wallets cannot satisfy Travel Rule
+ * originator/beneficiary data requirements because the blockchain layer only
+ * carries addresses, not KYC/identity information. This creates a compliance gap
+ * for transfers above regulatory thresholds.
+ *
+ * The check logs a warning when the transfer amount exceeds the threshold.
+ * When enforcement is enabled via TRAVEL_RULE_ENFORCE=true, it rejects transfers
+ * that cannot be verified as compliant (e.g., direct wallet-to-wallet transfers).
+ *
+ * @param amountAcbu - Transfer amount in ACBU
+ * @param isVaspIntermediated - Whether the transfer is intermediated by a VASP
+ * @param recipientAddress - The recipient's Stellar address
+ * @returns true if compliant, false if non-compliant and enforcement is enabled
+ */
+function checkTravelRuleCompliance(
+  amountAcbu: string,
+  isVaspIntermediated: boolean,
+  recipientAddress: string,
+): boolean {
+  const threshold = config.travelRule.thresholdAcbu;
+  const amount = Number.parseFloat(amountAcbu);
+
+  // Only check amounts above the threshold
+  if (amount <= threshold) {
+    return true;
+  }
+
+  const { enforce, mode } = config.travelRule;
+
+  // Log compliance check for audit trail
+  logger.warn("Travel Rule compliance check", {
+    amountAcbu,
+    threshold,
+    enforce,
+    mode,
+    isVaspIntermediated,
+    recipientAddress,
+  });
+
+  // In allowlist mode, only VASP-intermediated transfers are allowed above threshold
+  if (mode === "allowlist" && !isVaspIntermediated) {
+    if (enforce) {
+      logger.error("Travel Rule violation: direct P2P transfer above threshold not allowed in allowlist mode", {
+        amountAcbu,
+        threshold,
+        recipientAddress,
+      });
+      return false;
+    }
+    logger.warn("Travel Rule limitation: direct P2P transfer above threshold (allowlist mode, not enforced)", {
+      amountAcbu,
+      threshold,
+      recipientAddress,
+    });
+  }
+
+  // In strict mode, all transfers above threshold require VASP intermediation
+  if (mode === "strict" && !isVaspIntermediated) {
+    if (enforce) {
+      logger.error("Travel Rule violation: direct P2P transfer above threshold not allowed in strict mode", {
+        amountAcbu,
+        threshold,
+        recipientAddress,
+      });
+      return false;
+    }
+    logger.warn("Travel Rule limitation: direct P2P transfer above threshold (strict mode, not enforced)", {
+      amountAcbu,
+      threshold,
+      recipientAddress,
+    });
+  }
+
+  return true;
+}
 
 /**
  * Horizon/Stellar result codes that unambiguously mean "the fee on this
@@ -200,117 +294,130 @@ async function revalidateFeeBeforeSubmit(builtQuote: PaymentFeeQuote): Promise<F
  * The fee is not resolved once per call. It is re-read on every attempt and
  * re-validated immediately before submission, so a base-fee increase that lands
  * after the transaction is built is absorbed by rebuilding rather than by losing
- * the payment to `tx_insufficient_fee` (AB-052). Rebuilding only ever happens
- * while nothing has been submitted, so it cannot double-spend.
- *
- * Throws {@link StellarFeeSurgeError} when the network base fee is above the
- * configured per-payment fee ceiling, or when the payment is rejected for
- * underpricing and cannot be repriced within {@link MAX_SUBMIT_ATTEMPTS}. Other
- * submission failures propagate unchanged.
+ * the payment to `tx_insufficient_fee` (AB-052)
  */
-async function submitStellarPayment(
-  sourceSecretKey: string,
-  destinationAddress: string,
-  amountAcbu: string,
-  asset: Asset,
-  logContext: SubmitStellarPaymentLogContext = {},
-): Promise<string> {
-  const keypair = Keypair.fromSecret(sourceSecretKey);
-  const sourceAccountId = keypair.publicKey();
-  const server = stellarClient.getServer();
-  const networkPassphrase = stellarClient.getNetworkPassphrase();
-  const op = Operation.payment({
-    destination: destinationAddress,
-    asset,
-    amount: amountAcbu,
+export async function createTransfer(
+  params: CreateTransferParams,
+  options: CreateTransferOptions = {}
+): Promise<CreateTransferResult> {
+  // W10-BE-008: reject money-moving transfers that lack an idempotency key
+  // before any transaction row is created or any Stellar payment is submitted.
+  const idempotencyKey = requireIdempotencyKey(params.idempotencyKey);
+
+  const { fromUserId, to, amount, currency = "ACBU", memo } = params;
+  const { getSenderSigningKey, correlationId } = options;
+
+  const sender = await prisma.user.findUnique({
+    where: { id: fromUserId },
+    select: { id: true, stellarAddress: true },
+  });
+  if (!sender?.stellarAddress) {
+    throw new Error("Sender has no Stellar address");
+  }
+
+  const recipientAddress = await resolveRecipientAddress(to, fromUserId);
+  if (!recipientAddress) {
+    throw new Error("Recipient could not be resolved");
+  }
+
+  const amountSmallest = amountToSmallestUnit(amount);
+  if (!Number.isFinite(amountSmallest) || amountSmallest <= 0) {
+    throw new Error("Invalid transfer amount");
+  }
+
+  const existing = await prisma.transaction.findUnique({
+    where: { idempotencyKey },
+    select: { id: true, status: true, stellarTxHash: true },
+  });
+  if (existing) {
+    return {
+      transactionId: existing.id,
+      status: existing.status,
+      stellarTxHash: existing.stellarTxHash ?? undefined,
+    };
+  }
+
+  const transaction = await prisma.transaction.create({
+    data: {
+      userId: fromUserId,
+      type: "transfer",
+      amount: new Prisma.Decimal(amount),
+      currency,
+      status: "pending",
+      idempotencyKey,
+      metadata: {
+        to,
+        recipientAddress,
+        memo: memo ?? null,
+        correlationId: correlationId ?? null,
+      },
+    },
   });
 
-  for (let attempt = 1; attempt <= MAX_SUBMIT_ATTEMPTS; attempt += 1) {
-    // Reload the account on every attempt so a rebuilt transaction carries a
-    // sequence number that is still current; reusing the one from a previous
-    // attempt would be rejected as tx_bad_seq instead of being accepted.
-    const sourceAccount = await server.loadAccount(sourceAccountId);
+  if (!getSenderSigningKey) {
+    return { transactionId: transaction.id, status: "pending" };
+  }
 
-    // Price the fee after the account load and immediately before the build, so
-    // the window in which a surge can make the fee stale is as short as possible.
+  const signingKey = await getSenderSigningKey();
+  const senderKeypair = Keypair.fromSecret(signingKey);
+  const acbuAsset = getAcbuAsset();
+
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < MAX_SUBMIT_ATTEMPTS; attempt++) {
     const quote = await getPaymentFee();
-    if (quote.buffered) {
-      logger.debug("Stellar payment fee priced with surge buffer", {
-        ...logContext,
-        attempt,
-        feeStroops: quote.feeStroops,
-        networkFeeStroops: quote.networkFeeStroops,
-      });
-    }
-    if (quote.clampedToCeiling) {
-      // The network base fee alone is above the ceiling, so every transaction we
-      // are willing to build is guaranteed to be rejected. Fail fast instead of
-      // spending submission attempts to rediscover that.
-      throw new StellarFeeSurgeError({
-        networkFeeStroops: quote.networkFeeStroops,
-        transactionFeeStroops: quote.feeStroops,
-        maxFeeStroops: quote.maxFeeStroops,
-        detectedBy: "fee_pricing",
-      });
-    }
-
-    const transaction = new TransactionBuilder(sourceAccount, {
+    const account = await stellarClient.loadAccount(sender.stellarAddress);
+    const tx = new TransactionBuilder(account, {
       fee: String(quote.feeStroops),
-      networkPassphrase,
+      networkPassphrase: stellarClient.getNetworkPassphrase(),
     })
-      .addOperation(op)
+      .addOperation(
+        Operation.payment({
+          destination: recipientAddress,
+          asset: acbuAsset,
+          amount,
+        })
+      )
       .setTimeout(PAYMENT_VALIDITY_SECONDS)
       .build();
-    transaction.sign(keypair);
+
+    tx.sign(senderKeypair);
 
     const revalidation = await revalidateFeeBeforeSubmit(quote);
     if (!revalidation.current) {
-      if (attempt === MAX_SUBMIT_ATTEMPTS) {
-        throw new StellarFeeSurgeError({
-          networkFeeStroops: revalidation.networkFeeStroops,
-          transactionFeeStroops: quote.feeStroops,
-          maxFeeStroops: quote.maxFeeStroops,
-          detectedBy: "pre_submission_check",
-          message:
-            "Stellar base fee kept rising while the payment was being prepared; the transfer " +
-            "was not submitted. Retry shortly.",
-        });
-      }
-      logger.warn("Stellar fee rose above the built transaction fee; rebuilding and repricing", {
-        ...logContext,
-        attempt,
-        feeStroops: quote.feeStroops,
+      logger.warn("Stellar base fee rose before submission; rebuilding transaction", {
+        transactionId: transaction.id,
+        correlationId,
+        builtFeeStroops: quote.feeStroops,
         networkFeeStroops: revalidation.networkFeeStroops,
       });
       continue;
     }
 
     try {
-      const result = await server.submitTransaction(transaction);
-      return result.hash;
+      const result = await stellarClient.submitTransaction(tx);
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: { status: "completed", stellarTxHash: result.hash },
+      });
+      logFinancialEvent("transfer.completed", {
+        transactionId: transaction.id,
+        correlationId,
+        stellarTxHash: result.hash,
+      });
+      return {
+        transactionId: transaction.id,
+        status: "completed",
+        stellarTxHash: result.hash,
+      };
     } catch (err) {
+      lastError = err;
       if (!isInsufficientFeeRejection(err)) {
         throw err;
       }
-      if (attempt === MAX_SUBMIT_ATTEMPTS) {
-        throw new StellarFeeSurgeError({
-          networkFeeStroops: null,
-          transactionFeeStroops: quote.feeStroops,
-          maxFeeStroops: quote.maxFeeStroops,
-          detectedBy: "horizon_rejection",
-          message:
-            "Stellar rejected the payment as underpriced on every attempt; no funds were " +
-            "transferred. Retry when the network fee falls.",
-        });
-      }
-      // The surge happened during the submission round trip itself, which the
-      // pre-submission check could not observe. Reprice against a freshly read
-      // fee and rebuild.
-      logger.warn("Stellar rejected the payment for an insufficient fee; repricing and retrying", {
-        ...logContext,
+      logger.warn("Stellar rejected underpriced payment; retrying with fresh fee", {
+        transactionId: transaction.id,
+        correlationId,
         attempt,
-        feeStroops: quote.feeStroops,
-        err,
       });
     }
   }
@@ -388,6 +495,18 @@ export async function createTransfer(
     throw new Error("Cannot transfer to yourself");
   }
 
+  // #1142: Travel Rule compliance check
+  // Direct P2P transfers (non-VASP-intermediated) above threshold are flagged/rejected
+  const isVaspIntermediated = false; // Current implementation is direct wallet-to-wallet
+  const isTravelRuleCompliant = checkTravelRuleCompliance(amount, isVaspIntermediated, recipientAddress);
+  if (!isTravelRuleCompliant) {
+    throw new Error(
+      `Transfer amount ${amount} ACBU exceeds Travel Rule threshold of ${config.travelRule.thresholdAcbu} ACBU. ` +
+        "Direct P2P transfers cannot satisfy Travel Rule requirements. " +
+        "Use on/off-ramp services or enable VASP intermediation for compliance.",
+    );
+  }
+
   let tx;
   try {
     tx = await prisma.transaction.create({
@@ -439,6 +558,26 @@ export async function createTransfer(
     correlationId,
   });
 
+  // Audit trail: record that a transfer was initiated (W10-OBS-006)
+  await logAudit({
+    eventType: "transaction",
+    entityType: "transaction",
+    entityId: tx.id,
+    action: "transfer_initiated",
+    newValue: {
+      type: "transfer",
+      recipientAddress,
+      amount: amount,
+      currency: "ACBU",
+    },
+    performedBy: senderUserId,
+  }).catch((auditErr) => {
+    logger.error("Audit log failed for transfer_initiated", {
+      transactionId: tx.id,
+      error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+    });
+  });
+
   let status = "pending";
   let blockchainTxHash: string | null = null;
 
@@ -467,6 +606,29 @@ export async function createTransfer(
       correlationId,
       providerRef: blockchainTxHash,
     });
+
+    // Audit trail: record transfer completion (W10-OBS-006)
+    await logAudit({
+      eventType: "transaction",
+      entityType: "transaction",
+      entityId: tx.id,
+      action: "transfer_completed",
+      newValue: {
+        type: "transfer",
+        status: "completed",
+        recipientAddress,
+        amount: amount,
+        currency: "ACBU",
+        blockchainTxHash,
+      },
+      performedBy: senderUserId,
+    }).catch((auditErr) => {
+      logger.error("Audit log failed for transfer_completed", {
+        transactionId: tx.id,
+        error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+      });
+    });
+
     return {
       transactionId: tx.id,
       status,
@@ -511,6 +673,28 @@ export async function createTransfer(
           correlationId,
           providerRef: blockchainTxHash,
         });
+
+        // Audit trail: record transfer completion (W10-OBS-006)
+        await logAudit({
+          eventType: "transaction",
+          entityType: "transaction",
+          entityId: tx.id,
+          action: "transfer_completed",
+          newValue: {
+            type: "transfer",
+            status: "completed",
+            recipientAddress,
+            amount: amount,
+            currency: "ACBU",
+            blockchainTxHash,
+          },
+          performedBy: senderUserId,
+        }).catch((auditErr) => {
+          logger.error("Audit log failed for transfer_completed", {
+            transactionId: tx.id,
+            error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          });
+        });
       } catch (err) {
         // A fee surge is a distinct, retryable condition: the payment was never
         // accepted, so nothing moved. Record it with its own error code instead
@@ -549,6 +733,29 @@ export async function createTransfer(
           correlationId,
           errorCode: isFeeSurge ? err.code : undefined,
           errorMessage: err instanceof Error ? err.message : String(err),
+        });
+
+        // Audit trail: record transfer failure (W10-OBS-006)
+        await logAudit({
+          eventType: "transaction",
+          entityType: "transaction",
+          entityId: tx.id,
+          action: "transfer_failed",
+          newValue: {
+            type: "transfer",
+            status: "failed",
+            recipientAddress,
+            amount: amount,
+            currency: "ACBU",
+            errorCode: isFeeSurge ? err.code : undefined,
+            errorMessage: err instanceof Error ? err.message : String(err),
+          },
+          performedBy: senderUserId,
+        }).catch((auditErr) => {
+          logger.error("Audit log failed for transfer_failed", {
+            transactionId: tx.id,
+            error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          });
         });
 
         // A fee surge is retryable and no funds moved, so the caller is told

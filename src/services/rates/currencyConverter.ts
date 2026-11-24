@@ -122,9 +122,12 @@ export async function convertLocalToUsd(
  * Convert a local currency amount to its USD equivalent using current exchange rates.
  * This version preserves the original amount as a string (Decimal) for audit logging.
  *
+ * W10-B-005: Always use `usdAmountDecimal` for accounting and audit logging. The
+ * `usdAmount` number field is deprecated and may lose precision on large amounts.
+ *
  * @param localAmount - The amount in local currency (as Decimal string or number)
  * @param currency - The currency code (e.g., "NGN", "KES")
- * @returns Object with both Decimal (primary) and number representations
+ * @returns Object with Decimal (primary) and deprecated number representations
  */
 export async function convertLocalToUsdWithPrecision(
   localAmount: string | number,
@@ -133,8 +136,9 @@ export async function convertLocalToUsdWithPrecision(
   /** Primary high-precision USD amount — use this for audit logs and accounting. */
   usdAmountDecimal: Decimal;
   /**
-   * @deprecated Use `usdAmountDecimal` for accounting. This number field is kept for
-   * backwards compatibility but may lose precision on very large or high-decimal amounts.
+   * @deprecated W10-B-005: Use `usdAmountDecimal` for accounting. This number field is
+   * kept for backwards compatibility but may lose precision on very large or high-decimal
+   * amounts. Converting Decimal to number can cause floating-point precision loss.
    */
   usdAmount: number;
   originalAmount: Decimal;

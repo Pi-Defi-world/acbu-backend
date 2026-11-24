@@ -4,6 +4,14 @@
 
 The KYC (Know Your Customer) domain handles identity verification for users. A user submits a `KycApplication` with supporting `KycDocument` uploads. Trained `KycValidator` users review each application and record their decision as a `KycValidation`. Validators earn ACBU token rewards tracked in `KycValidatorReward`. Machine-confidence scoring supplements the human review process.
 
+## Canonical operating and regulatory model
+
+ACBU operates the KYC decisioning layer through its controlled validator pool. ACBU owns the application workflow, document redaction/storage controls, validator assignment, consensus decision, audit trail, and validator rewards. The `KycApplication` decision is therefore an ACBU compliance decision, subject to the applicable regulated-entity and jurisdictional review before launch.
+
+Fintech partners are delegated service providers only: they may supply identity, sanctions, document, or liveness signals through an integration, but they do not become the canonical KYC controller and cannot approve or reject an ACBU application. Partner data is minimized, retained according to the ACBU retention policy, and reconciled into the ACBU application record. If a jurisdiction requires a locally licensed provider to perform a regulated step, that provider is onboarded as an ACBU-controlled vendor and the responsibility matrix is updated; the system does not run a second, parallel partner-owned KYC architecture.
+
+This decision resolves the former ambiguity between partner-delegated KYC and an ACBU-operated validator pool: the validator pool is canonical, while partner checks are optional evidence inputs and jurisdiction-specific outsourced processing under ACBU oversight.
+
 ---
 
 ## Entity-Relationship Diagram

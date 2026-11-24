@@ -4,6 +4,12 @@
 
 The Treasury & Reserve domain manages the ACBU token's backing reserve and price oracle infrastructure. `Reserve` snapshots track the reserve composition by currency and segment. `ReserveHistory` provides an immutable change log tied to transactions. `OracleRate` aggregates multi-source FX rates. `AcbuRate` records the ACBU token price in multiple currencies. `BasketMetrics` and `BasketConfig` govern the statistical model that determines currency weights in the basket. `RebalancingEvent` tracks rebalancing operations triggered by drift or scheduled policy changes.
 
+## Custodian concentration policy
+
+Reserve custody must be diversified by region and provider. No custodian may be the primary custodian for more than one currency in a region, and no custodian may represent more than 35% of the approved basket's total reserve exposure. Each currency must have a documented secondary custodian or an approved, tested fallback before it is enabled for production minting or redemption. The treasury risk register records provider licenses, jurisdictions, limits, balances, and failover readiness.
+
+The concentration limit is measured against current reserve value, not merely the number of currency assignments. A breach blocks new exposure to the affected custodian and raises a `RebalancingEvent`; it is not treated as diversification merely because the same provider is listed as secondary across additional currencies. Flutterwave therefore remains an available fintech rail, but it must not be the primary or fallback custodian for most of the basket.
+
 ---
 
 ## Entity-Relationship Diagram
@@ -103,7 +109,7 @@ erDiagram
 `ReserveHistory.transactionId` FK links reserve changes back to the causative `Transaction` (defined in the Transactions & Payments domain). `reason` values — `mint`, `burn`, `rebalance`, `conversion` — classify the change type. `previousAmount` and `newAmount` provide a complete before/after record.
 
 ### OracleRate aggregation
-Each `OracleRate` row aggregates rates from multiple sources for the same `currency` at a given `timestamp` (unique constraint). `centralBankRate`, `fintechRate`, and `forexRate` are the individual source inputs; `medianRate` is the consensus value used by the system; `twap24h` is the time-weighted average price over 24 hours for smoothing. `validatorSignatures` (omitted from diagram for clarity) stores cryptographic signatures from oracle validators.
+Each `OracleRate` row aggregates rates from multiple sources for the same `currency` at a given `timestamp` (unique constraint). `centralBankRate`, `fintechRate`, and `forexRate` are the individual source inputs; `medianRate` is the consensus value used by the system; `twap24h` is the time-weighted average price over 24 hours for smoothing. `validatorSignatures` (omitted from diagram for clarity) stores cryptographic signatures from oracle validators. `rawValues.reviewRequired` marks an emergency update (a move beyond the 5% per-update limit) and `rawValues.deviationFromPreviousRate` records the size of the move — see [Oracle rate updates and the 5% deviation rule](../../oracle-rate-updates.md).
 
 ### AcbuRate price snapshots
 `AcbuRate` records the ACBU token price in USD and a set of African currencies (NGN, KES, ZAR, RWF, GHS, EGP, MAD, TZS, UGX, XOF) at a point in time. `change24hUsd` is a pre-computed percentage change used by client apps for display.

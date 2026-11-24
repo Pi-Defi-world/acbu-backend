@@ -130,4 +130,50 @@ describe("requestLogger middleware (#792)", () => {
       }),
     );
   });
+
+  it("derives actionType from resource name, not UUID (W10-B-014)", () => {
+    const req = makeReq({
+      method: "GET",
+      path: "/v1/transfers/b3f1c2d4-e5f6-7890-abcd-ef1234567890",
+    });
+    const res = makeRes();
+    const next: NextFunction = jest.fn();
+
+    requestLogger(req, res, next);
+    res.emit("finish");
+
+    const [, meta] = mockInfo.mock.calls[0] as [string, Record<string, unknown>];
+    // actionType should be "transfers.read", not "<uuid>.read"
+    expect(meta.actionType).toBe("transfers.read");
+  });
+
+  it("derives actionType from resource name for numeric IDs (W10-B-014)", () => {
+    const req = makeReq({
+      method: "GET",
+      path: "/v1/accounts/12345",
+    });
+    const res = makeRes();
+    const next: NextFunction = jest.fn();
+
+    requestLogger(req, res, next);
+    res.emit("finish");
+
+    const [, meta] = mockInfo.mock.calls[0] as [string, Record<string, unknown>];
+    expect(meta.actionType).toBe("accounts.read");
+  });
+
+  it("derives actionType correctly for collection routes (W10-B-014)", () => {
+    const req = makeReq({
+      method: "POST",
+      path: "/v1/transfers",
+    });
+    const res = makeRes();
+    const next: NextFunction = jest.fn();
+
+    requestLogger(req, res, next);
+    res.emit("finish");
+
+    const [, meta] = mockInfo.mock.calls[0] as [string, Record<string, unknown>];
+    expect(meta.actionType).toBe("transfers.create");
+  });
 });

@@ -17,13 +17,14 @@
 -- sufficient to restore the generated client.
 
 -- Webhook: event_type + status composite index
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_webhooks_event_type_status"
+CREATE INDEX IF NOT EXISTS "idx_webhooks_event_type_status"
     ON "webhooks" ("event_type", "status");
 
 -- Webhook: status + created_at composite index for retry queue worker
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_webhooks_status_created_at"
+CREATE INDEX IF NOT EXISTS "idx_webhooks_status_created_at"
     ON "webhooks" ("status", "created_at");
 
 -- Transaction: organization_id + created_at composite index for org daily aggregates
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_transactions_org_id_created_at"
+CREATE INDEX IF NOT EXISTS "idx_transactions_org_id_created_at"
     ON "transactions" ("organization_id", "created_at" DESC);
+

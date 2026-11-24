@@ -29,6 +29,14 @@ We will acknowledge security reports as soon as practical, investigate privately
 
 Please allow reasonable time for triage and remediation before sharing details publicly.
 
+## Key Custody
+
+User wallets are self-custodied. The API never returns private key material and
+the database holds no copy the backend can decrypt, so a compromised server
+cannot spend user balances. The custody model, enrollment flow and the
+operations a wallet client must sign itself are documented in
+[docs/WALLET_CUSTODY.md](docs/WALLET_CUSTODY.md).
+
 ## Static Application Security Testing (SAST)
 
 This repository runs **CodeQL** and **Semgrep** on every push and pull request to
@@ -123,6 +131,10 @@ This script:
 - Use `git-filter-repo` to remove commits containing secrets (requires careful coordination)
 - Force push to rewrite history (notify the team before doing this)
 
+## Administrative & Audit Event Monitoring
+
+GitHub organization and repository administrative events (collaborator/membership changes, repository changes, and branch protection modifications) are monitored via external security webhooks (Slack, Discord, or SIEM) and the `.github/workflows/security-audit-alerts.yml` workflow. See [docs/SECURITY_AUDIT_WEBHOOKS.md](docs/SECURITY_AUDIT_WEBHOOKS.md) for webhook configuration, automated verification (`scripts/ci/configure-security-webhooks.js`), and incident triage procedures.
+
 ### Safe Harbor
 
 We consider good-faith security research to be helpful. Please avoid:
@@ -133,3 +145,9 @@ We consider good-faith security research to be helpful. Please avoid:
 - Exfiltrating secrets, credentials, or personal data
 
 If you accidentally encounter sensitive information during testing, stop immediately and report it through the private channel above.
+
+## Compromised Developer Credential Rotation (W11-INC-002)
+
+If a developer workstation may have executed untrusted repository automation, treat accessible credentials and sessions as potentially compromised. Follow the [Credential Rotation Attestation procedure](docs/security/CREDENTIAL_ROTATION_ATTESTATION.md). The procedure requires each in-scope team member and service owner to attest through the private incident tracker after applicable GitHub, npm, SSH, AWS/cloud, browser, and identity-provider credentials have been reviewed and revoked or rotated.
+
+Credential revocation is performed in the relevant provider consoles by authorized owners; a repository commit cannot perform or verify those provider-side actions. Keep attestations and audit evidence in the private incident tracker. Never commit token values, private keys, credential IDs, or individual attestation records to this repository.

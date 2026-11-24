@@ -46,6 +46,13 @@ const closeServer = async (): Promise<void> => {
 export const shutdown = async (): Promise<void> => {
   logger.info("Shutting down gracefully...");
   if (memoryMonitorHandle) stopMemoryMonitor(memoryMonitorHandle);
+  // W10-I-013: Stop reserve metrics job
+  try {
+    const { stopReserveMetricsJob } = await import("./jobs/reserveMetricsJob");
+    stopReserveMetricsJob();
+  } catch (error) {
+    logger.warn("[shutdown] Failed to stop reserve metrics job", { error });
+  }
   await closeServer();
   await disconnectMongoDB();
   await disconnectRabbitMQ();

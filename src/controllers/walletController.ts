@@ -1,8 +1,5 @@
-import crypto from "crypto";
 import { Response, NextFunction } from "express";
 import { z } from "zod";
-import bcrypt from "bcrypt";
-import { Keypair } from "@stellar/stellar-sdk";
 import { AuthRequest } from "../middleware/auth";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
@@ -13,18 +10,20 @@ import {
   getWalletState,
   updateWalletWithConcurrency,
 } from "../services/wallet/walletStateService";
+import { enrollClientGeneratedWallet } from "../services/wallet/walletService";
 import { getIfMatchHeader, setWalletEtagHeader } from "../utils/walletConcurrency";
 
-const WALLET_ENC_SALT_PREFIX = "acbu-wallet-v1:";
-const WALLET_ENC_KEYLEN = 32;
-const WALLET_ENC_IVLEN = 12;
-const WALLET_ENC_ALGO = "aes-256-gcm";
-
-export const walletConfirmSchema = z.object({
-  encryption_method: z.enum(["passcode"]),
-  passcode: z.string().min(1, "passcode required when encryption_method is passcode"),
-  passphrase: z.string().min(1, "passphrase is required"),
-});
+export const walletEnrollSchema = z
+  .object({
+    stellar_address: z.string().length(56).regex(/^G/, "Must be a valid Stellar public key"),
+    wrapped_key: z.string().min(1).max(512).optional(),
+    wrap_algorithm: z.string().min(1).max(64).optional(),
+    wrap_kdf: z.string().min(1).max(64).optional(),
+  })
+  .refine((body) => !body.wrapped_key || (body.wrap_algorithm && body.wrap_kdf), {
+    message: "wrapped_key requires wrap_algorithm and wrap_kdf",
+    path: ["wrapped_key"],
+  });
 
 function sendWalletState(res: Response, state: Awaited<ReturnType<typeof getWalletState>>): void {
   setWalletEtagHeader(res.setHeader.bind(res), state.wallet_version);
@@ -176,10 +175,12 @@ export async function deleteWallet(
 }
 
 /**
- * POST /users/me/wallet/confirm
+ * POST /users/me/wallet/enroll
+ * Binds a keypair generated in the client. Optional `wrapped_key` is an
+ * opaque backup the client encrypted with a secret this API never sees.
  * Requires If-Match with the current wallet ETag.
  */
-export async function postWalletConfirm(
+export async function postWalletEnroll(
   req: AuthRequest,
   res: Response,
   next: NextFunction,
@@ -187,47 +188,22 @@ export async function postWalletConfirm(
   try {
     const userId = req.apiKey?.userId;
     if (!userId) throw new AppError("User-scoped API key required", 401);
-    const body = walletConfirmSchema.parse(req.body);
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        stellarAddress: true,
-        encryptedStellarSecret: true,
-        passcodeHash: true,
-        walletVersion: true,
-      },
-    });
-    if (!user) throw new AppError("User not found", 404);
-    if (user.encryptedStellarSecret != null) throw new AppError("Wallet already confirmed", 400);
-    if (!user.stellarAddress) throw new AppError("No wallet to confirm", 400);
-    try {
-      const kp = Keypair.fromSecret(body.passphrase);
-      if (kp.publicKey() !== user.stellarAddress)
-        throw new AppError("Passphrase does not match wallet", 400);
-    } catch {
-      throw new AppError("Invalid passphrase", 400);
-    }
-    if (body.encryption_method !== "passcode" || !user.passcodeHash)
-      throw new AppError("Passcode encryption requires a passcode", 400);
-    const passcodeMatch = await bcrypt.compare(body.passcode, user.passcodeHash);
-    if (!passcodeMatch) throw new AppError("Invalid passcode", 401);
+    const body = walletEnrollSchema.parse(req.body);
 
-    const salt = WALLET_ENC_SALT_PREFIX + userId;
-    const key = crypto.scryptSync(body.passcode, salt, WALLET_ENC_KEYLEN);
-    const iv = crypto.randomBytes(WALLET_ENC_IVLEN);
-    const cipher = crypto.createCipheriv(WALLET_ENC_ALGO, key, iv);
-    const enc = Buffer.concat([cipher.update(body.passphrase, "utf8"), cipher.final()]);
-    const authTag = cipher.getAuthTag();
-    const blob = Buffer.concat([iv, enc, authTag]);
-    const encryptedStellarSecret = blob.toString("base64");
-
-    const walletVersion = await updateWalletWithConcurrency(userId, getIfMatchHeader(req), {
-      encryptedStellarSecret,
-      keyEncryptionHint: "passcode",
+    const walletVersion = await enrollClientGeneratedWallet(userId, getIfMatchHeader(req), {
+      stellarAddress: body.stellar_address,
+      wrappedKey: body.wrapped_key,
+      wrapAlgorithm: body.wrap_algorithm,
+      wrapKdf: body.wrap_kdf,
     });
 
     setWalletEtagHeader(res.setHeader.bind(res), walletVersion);
-    res.status(200).json({ ok: true, wallet_version: walletVersion });
+    res.status(200).json({
+      ok: true,
+      stellar_address: body.stellar_address,
+      has_encrypted_backup: body.wrapped_key !== undefined,
+      wallet_version: walletVersion,
+    });
   } catch (e) {
     if (e instanceof z.ZodError) {
       const msg = e.errors.map((x) => x.message).join("; ");

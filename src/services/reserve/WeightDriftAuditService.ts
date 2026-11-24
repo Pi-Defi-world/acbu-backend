@@ -37,14 +37,21 @@ export interface WeightDriftReport {
   maxDriftPercent: number;
   entries: WeightDriftEntry[];
   status: "pending" | "approved" | "rejected";
+  /** Exact values retained for persistence; omitted from API-shaped reports. */
+  decimalEntries?: Array<{
+    policyWeight: string;
+    actualWeight: string;
+    driftPercent: string;
+  }>;
+  decimalMaxDriftPercent?: string;
 }
 
 /** WeightDriftAudit row as stored in the database (no relations). */
-type WeightDriftAuditRow = Prisma.WeightDriftAuditGetPayload<{}>;
+export type WeightDriftAuditRow = Prisma.WeightDriftAuditGetPayload<Record<string, never>>;
 /** WeightDriftCurrency row as stored in the database. */
-type WeightDriftCurrencyRow = Prisma.WeightDriftCurrencyGetPayload<{}>;
+export type WeightDriftCurrencyRow = Prisma.WeightDriftCurrencyGetPayload<Record<string, never>>;
 /** WeightDriftAudit row including its per-currency snapshot rows. */
-type WeightDriftAuditWithCurrencies = Prisma.WeightDriftAuditGetPayload<{
+export type WeightDriftAuditWithCurrencies = Prisma.WeightDriftAuditGetPayload<{
   include: { currencies: true };
 }>;
 
@@ -61,12 +68,29 @@ export class WeightDriftAuditService {
   /**
    * Calculate drift for each currency: actual vs policy weight.
    * Returns audit-ready report.
+   *
+   * W10-B-012: Iterates the union of policy and actual currencies to ensure
+   * complete coverage. Validates that policy weights sum to 100% before computing drift.
    */
   async calculateDriftReport(): Promise<WeightDriftReport> {
     try {
       // Get policy (target) weights from active basket config
       const policyBasket = await basketService.getCurrentBasket();
-      const policyWeights = new Map(policyBasket.map((e) => [e.currency, e.weight]));
+      const policyWeights = new Map(
+        policyBasket.map((e) => [e.currency, new Decimal(e.weight)]),
+      );
+
+      // W10-B-012: Validate basket weight normalization (should sum to 100%)
+      const policySum = [...policyWeights.values()].reduce((sum, w) => sum + w, 0);
+      if (Math.abs(policySum - 100) > 0.1) {
+        logger.error("Basket weights do not sum to 100%", {
+          policySum,
+          currencies: policyBasket.length,
+        });
+        throw new Error(
+          `Basket weights must sum to 100%, but sum to ${policySum.toFixed(2)}%. Cannot compute meaningful drift.`,
+        );
+      }
 
       // Get actual weights from on-chain/fintech reserves
       const reserveHealth = await reserveTracker.getReserveStatus();
@@ -74,21 +98,32 @@ export class WeightDriftAuditService {
         reserveHealth.currencies.map((c) => [c.currency, c.actualWeight]),
       );
 
+      // W10-B-012: Iterate the union of policy and actual currencies
+      const allCurrencies = new Set([...policyWeights.keys(), ...actualWeights.keys()]);
+
       // Calculate drift per currency
-      const entries: WeightDriftEntry[] = [];
-      let maxDrift = 0;
+      const entries: Array<{
+        currency: string;
+        policyWeight: Decimal;
+        actualWeight: Decimal;
+        driftPercent: Decimal;
+        exceedsThreshold: boolean;
+        recommendation: string;
+      }> = [];
+      let maxDrift = new Decimal(0);
       let exceedingCount = 0;
 
       for (const [currency, policyWeight] of policyWeights) {
-        const actualWeight = actualWeights.get(currency) || 0;
-        const driftPercent = actualWeight - policyWeight;
-        const exceedsThreshold = Math.abs(driftPercent) > DRIFT_THRESHOLD_PCT;
+        const actualWeight = new Decimal(actualWeights.get(currency) ?? 0);
+        const driftPercent = actualWeight.sub(policyWeight);
+        const exceedsThreshold =
+          driftPercent.abs().gt(DRIFT_THRESHOLD_PCT);
 
         if (exceedsThreshold) {
           exceedingCount++;
         }
 
-        maxDrift = Math.max(maxDrift, Math.abs(driftPercent));
+        maxDrift = Decimal.max(maxDrift, driftPercent.abs());
 
         const recommendation = this.generateRecommendation(currency, policyWeight, driftPercent);
 
@@ -110,11 +145,22 @@ export class WeightDriftAuditService {
         auditId: "", // Will be set after DB insert
         auditPeriodStart: periodStart,
         auditPeriodEnd: now,
-        totalCurrencies: policyBasket.length,
+        totalCurrencies: allCurrencies.size,
         currenciesExceedingThreshold: exceedingCount,
-        maxDriftPercent: maxDrift,
-        entries,
+        maxDriftPercent: maxDrift.toNumber(),
+        entries: entries.map((entry) => ({
+          ...entry,
+          policyWeight: new Decimal(entry.policyWeight).toNumber(),
+          actualWeight: new Decimal(entry.actualWeight).toNumber(),
+          driftPercent: new Decimal(entry.driftPercent).toNumber(),
+        })),
         status: "pending",
+        decimalEntries: entries.map((entry) => ({
+          policyWeight: entry.policyWeight.toString(),
+          actualWeight: entry.actualWeight.toString(),
+          driftPercent: entry.driftPercent.toString(),
+        })),
+        decimalMaxDriftPercent: maxDrift.toString(),
       };
     } catch (e) {
       logger.error("Failed to calculate weight drift report", { error: e });
@@ -134,7 +180,9 @@ export class WeightDriftAuditService {
           auditPeriodEnd: report.auditPeriodEnd,
           totalCurrencies: report.totalCurrencies,
           currenciesExceedingThreshold: report.currenciesExceedingThreshold,
-          maxDriftPercent: new Decimal(report.maxDriftPercent),
+          maxDriftPercent: new Decimal(
+            report.decimalMaxDriftPercent ?? report.maxDriftPercent,
+          ),
           status: "pending",
           diffReport: report as unknown as Prisma.InputJsonValue,
           createdBy,
@@ -142,14 +190,21 @@ export class WeightDriftAuditService {
       });
 
       // Create per-currency entries
-      for (const entry of report.entries) {
+      const entries = report.decimalEntries ?? report.entries.map((entry) => ({
+        policyWeight: entry.policyWeight.toString(),
+        actualWeight: entry.actualWeight.toString(),
+        driftPercent: entry.driftPercent.toString(),
+      }));
+      for (let index = 0; index < report.entries.length; index += 1) {
+        const entry = report.entries[index];
+        const exactEntry = entries[index];
         await tx.weightDriftCurrency.create({
           data: {
             auditId: auditRecord.id,
             currency: entry.currency,
-            policyWeight: new Decimal(entry.policyWeight),
-            actualWeight: new Decimal(entry.actualWeight),
-            driftPercent: new Decimal(entry.driftPercent),
+            policyWeight: new Decimal(exactEntry.policyWeight),
+            actualWeight: new Decimal(exactEntry.actualWeight),
+            driftPercent: new Decimal(exactEntry.driftPercent),
             exceedsThreshold: entry.exceedsThreshold,
             recommendation: entry.recommendation,
           },
@@ -331,17 +386,20 @@ export class WeightDriftAuditService {
   // Helper: Generate remediation recommendation based on drift
   private generateRecommendation(
     currency: string,
-    policyWeight: number,
-    driftPercent: number,
+    policyWeight: Decimal | number,
+    actualWeight: Decimal | number,
+    driftPercent: Decimal | number,
   ): string {
-    if (Math.abs(driftPercent) <= 0.5) {
+    const drift = new Decimal(driftPercent);
+    const policy = new Decimal(policyWeight);
+    if (drift.abs().lte(0.5)) {
       return "Within acceptable range. No action required.";
     }
 
-    if (driftPercent > 0) {
-      return `Overweight by ${driftPercent.toFixed(2)}%. Consider reducing ${currency} position by ~${Math.abs(driftPercent).toFixed(1)}% to realign with ${policyWeight}% target.`;
+    if (drift.gt(0)) {
+      return `Overweight by ${drift.toFixed(2)}%. Consider reducing ${currency} position by ~${drift.abs().toFixed(1)}% to realign with ${policy}% target.`;
     } else {
-      return `Underweight by ${Math.abs(driftPercent).toFixed(2)}%. Consider increasing ${currency} position by ~${Math.abs(driftPercent).toFixed(1)}% to reach ${policyWeight}% target.`;
+      return `Underweight by ${drift.abs().toFixed(2)}%. Consider increasing ${currency} position by ~${drift.abs().toFixed(1)}% to reach ${policy}% target.`;
     }
   }
 

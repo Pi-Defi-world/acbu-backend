@@ -25,6 +25,8 @@ export const createTransferSchema = z.object({
 /**
  * POST /transfers
  * Body: { to: string, amount_acbu: string }. to = alias (@user, E.164, email) or raw G... (56 chars).
+ * Requires an Idempotency-Key header (money-moving endpoint) to prevent duplicate
+ * transaction rows / duplicate Stellar payments on client timeout + retry.
  * Returns { transaction_id, status }. No stellarAddress in response.
  */
 export async function postTransfers(
@@ -39,6 +41,9 @@ export async function postTransfers(
     }
     const body = createTransferSchema.parse(req.body);
     const idempotencyKey = extractIdempotencyKey(req);
+    if (!idempotencyKey) {
+      throw new AppError("Idempotency-Key header is required", 400);
+    }
     const result = await createTransfer(
       {
         senderUserId: userId,
@@ -70,6 +75,10 @@ export async function postTransfers(
     }
     if (e instanceof Error && e.message === "Cannot transfer to yourself") {
       return next(new AppError(e.message, 400));
+    }
+    // #1142: Travel Rule compliance error
+    if (e instanceof Error && e.message.includes("Travel Rule")) {
+      return next(new AppError(e.message, 422));
     }
     next(e);
   }

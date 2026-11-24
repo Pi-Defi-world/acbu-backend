@@ -60,8 +60,13 @@ WHERE (r.currency, r.segment, r.timestamp) IN (
 ```
 
 **Segments**:
-- `transactions`: Liquidity for operational transfers (primary)
+- `transactions`: Liquidity for operational transfers (primary; held in partner-held segregated accounts)
 - `investment_savings`: Locked reserves for investment/yield programs
+
+**Float Interest & Segregated Reserve Entitlement Policy (W10-S-012)**:
+- Operational reserves in the `transactions` segment are held in segregated bank/fintech partner accounts across local jurisdictions.
+- In accordance with standard custodial banking law, interest generated on these accounts accrues legally to the **partner**, not ACBU, unless an explicit **Partner Reserve & Interest Agreement (PRIA)** has been ratified.
+- The baseline revenue model zeroes out uncontracted partner float interest ($0.00). Yield is generated legitimately via protocol-governed deployments in the `investment_savings` segment (see [W10-S-012-FLOAT-INTEREST-REVENUE-RESOLUTION.md](./W10-S-012-FLOAT-INTEREST-REVENUE-RESOLUTION.md) and `src/services/investment/allocationService.ts`).
 
 #### 3. FX Snapshots (OracleRate Table)
 

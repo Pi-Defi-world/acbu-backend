@@ -21,5 +21,5 @@ WHERE t.id IN (
 );
 
 -- Postgres UNIQUE allows multiple NULLs, so this enforces uniqueness only when present.
-CREATE UNIQUE INDEX "uq_transactions_type_blockchain_tx_hash"
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_transactions_type_blockchain_tx_hash"
 ON "transactions" ("type", "blockchain_tx_hash");

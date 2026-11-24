@@ -1,5 +1,9 @@
 # Stellar Security Measures
 
+User wallets are self-custodied: the backend generates no keypair, never receives
+a private key, and stores no material it can turn back into one. See
+[WALLET_CUSTODY.md](./WALLET_CUSTODY.md) for the full custody model.
+
 ## Account Merge Protection
 
 ### Vulnerability
