@@ -8,6 +8,7 @@ export interface ContractAddresses {
   savingsVault: string;
   lendingPool: string;
   escrow: string;
+  zkVerifier: string;
 }
 
 /**
@@ -26,6 +27,7 @@ export const getContractAddresses = (): ContractAddresses => {
     savingsVault: process.env[`CONTRACT_SAVINGS_VAULT_${network.toUpperCase()}`] || "",
     lendingPool: process.env[`CONTRACT_LENDING_POOL_${network.toUpperCase()}`] || "",
     escrow: process.env[`CONTRACT_ESCROW_${network.toUpperCase()}`] || "",
+    zkVerifier: process.env[`CONTRACT_ZK_VERIFIER_${network.toUpperCase()}`] || "",
   };
 
   // Fallback to generic environment variables
@@ -49,6 +51,9 @@ export const getContractAddresses = (): ContractAddresses => {
   }
   if (!addresses.escrow) {
     addresses.escrow = process.env.CONTRACT_ESCROW || "";
+  }
+  if (!addresses.zkVerifier) {
+    addresses.zkVerifier = process.env.CONTRACT_ZK_VERIFIER || "";
   }
 
   return addresses;
