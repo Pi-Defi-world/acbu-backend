@@ -1,6 +1,7 @@
 {
   "name": "zk-contracts",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "description": "ZK contracts for ACBU protocol",
   "scripts": {
     "contracts:build": "cargo build --target wasm32-unknown-unknown --release"

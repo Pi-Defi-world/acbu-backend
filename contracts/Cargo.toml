@@ -17,6 +17,7 @@ resolver = "2"
 
 [workspace.package]
 rust-version = "1.88.0"
+license = "Apache-2.0"
 
 # ---------------------------------------------------------------------------
 # Workspace-wide dependency versions
