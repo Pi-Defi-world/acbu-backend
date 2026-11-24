@@ -1,0 +1,30 @@
+name: Install pinned Stellar CLI
+description: Install Stellar CLI from its checksummed crates.io package
+
+inputs:
+  version:
+    description: Exact stellar-cli version
+    required: false
+    default: "21.5.0"
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Stellar CLI binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/stellar
+        key: ${{ runner.os }}-${{ runner.arch }}-stellar-cli-${{ inputs.version }}
+
+    - name: Install checksummed crate
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo install --locked --version "${{ inputs.version }}" stellar-cli
+
+    - name: Verify installed version
+      shell: bash
+      run: |
+        set -euo pipefail
+        stellar --version
+        stellar --version | grep -F "${{ inputs.version }}"

@@ -1,19 +1,22 @@
 /**
- * GET /v1/config/assets — Public asset configuration.
+ * GET /v1/config/assets — Asset configuration endpoint.
  *
- * Returns the authoritative ACBU asset (code + issuer) and Stellar network info
- * used by the backend. The frontend relies on this so it can set up trustlines
- * against the exact same asset the minting contract expects. Keeping this
- * out-of-band (via NEXT_PUBLIC_* env vars) leads to silent mismatches whenever
- * backend and frontend are deployed with different values.
+ * Public callers receive only the information strictly needed to set up a
+ * trustline against the ACBU asset: the asset code/issuer and the Stellar
+ * network passphrase.  Infrastructure details (Horizon URL, Soroban RPC URL,
+ * contract addresses) are gated behind API-key authentication to limit the
+ * information-disclosure surface described in W10-BE-013.
+ *
+ * Authenticated callers (valid `x-api-key` or `Authorization: Bearer <key>`)
+ * receive the full response including infra endpoints.
  */
-import { Request, Response, NextFunction } from "express";
+import { Response, NextFunction } from "express";
 import { stellarClient } from "../services/stellar/client";
 import { getContractAddresses } from "../config/contracts";
 import { getAcbuAssetConfig } from "../config/acbuAsset";
 
 export async function getPublicAssetsConfig(
-  _req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction,
 ): Promise<void> {

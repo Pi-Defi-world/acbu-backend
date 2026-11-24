@@ -6,9 +6,17 @@ import { AuthRequest } from "./auth";
 /**
  * Derive a dot-namespaced action type from method + path for audit logs.
  * e.g. POST /v1/transfers → "transfers.create"
+ * For resource routes with IDs (e.g. /v1/transfers/{uuid}), strips the ID segment.
  */
 function deriveActionType(method: string, path: string): string {
-  const segment = path.split("/").filter(Boolean).pop() ?? "unknown";
+  const segments = path.split("/").filter(Boolean);
+  let segment = segments.pop() ?? "unknown";
+
+  // Skip ID segments (UUID, numeric, or alphanumeric slug) to get the resource name
+  if (!/^(v\d+|[a-z-]+)$/i.test(segment)) {
+    segment = segments.pop() ?? "resource";
+  }
+
   const verbMap: Record<string, string> = {
     GET: "read",
     POST: "create",

@@ -52,7 +52,10 @@ export function getRetryPolicyForUrl(url: string): WebhookRetryPolicy {
 }
 
 export type WebhookEventType =
-  "transaction.completed" | "transaction.failed" | "mint.completed" | "burn.completed";
+  | "transaction.completed"
+  | "transaction.failed"
+  | "mint.completed"
+  | "burn.completed";
 
 export interface WebhookPayload {
   event: WebhookEventType;
@@ -147,9 +150,7 @@ export async function deliverWebhook(
     const payloadStr = JSON.stringify(webhook.payload);
     const signature =
       webhook.signature ??
-      (config.webhook.secret
-        ? signPayload(payloadStr, config.webhook.secret)
-        : null);
+      (config.webhook.secret ? signPayload(payloadStr, config.webhook.secret) : null);
 
     try {
       await axios.post(url, webhook.payload, {

@@ -122,6 +122,9 @@ This file documents the environment variables required by the ACBU backend and t
 - `STELLAR_NATIVE_ASSET_CODE`
 - `WALLET_ACTIVATION_STRATEGY` - defaults to `create_account_native`
 - `TESTNET_CUSTODIAL_BOOTSTRAP`
+  - Deployment / runbook label identifying the Stellar testnet bootstrap profile.
+  - Used for diagnostics and log context only; it does **not** affect `nativeAssetCode` (that is always `XLM` unless `STELLAR_NATIVE_ASSET_CODE` is set).
+  - **Pi Network bridge variables were removed; activation is Stellar-only.** See [docs/ACTIVATION_SCOPE.md](./docs/ACTIVATION_SCOPE.md) for the scope decision record (W10-P-007).
 - `WALLET_ACTIVATION_AMOUNT` / `WALLET_ACTIVATION_NATIVE` / `WALLET_ACTIVATION_XLM` / `STELLAR_MIN_BALANCE`
 - `STELLAR_BASE_FEE_STROOPS` - defaults to `100`
 - `STELLAR_USE_DYNAMIC_FEES` - defaults to `false`; when `true`, reads the live
@@ -142,6 +145,7 @@ This file documents the environment variables required by the ACBU backend and t
 
 ### Oracle
 
+- `ORACLE_VALIDATOR_ADDRESSES` - required by oracle initialization scripts; five unique Stellar account public keys, comma-separated. The contract is initialized with a 3-of-5 minimum.
 - `ORACLE_UPDATE_INTERVAL_HOURS` - defaults to `6`
 - `ORACLE_EMERGENCY_THRESHOLD` - defaults to `0.05`
 - `ORACLE_MAX_DEVIATION_PER_UPDATE` - defaults to `0.05`
@@ -155,6 +159,11 @@ This file documents the environment variables required by the ACBU backend and t
 - `RESERVE_MIN_RATIO` - defaults to `1.02`
 - `RESERVE_TARGET_RATIO` - defaults to `1.05`
 - `RESERVE_ALERT_THRESHOLD` - defaults to `1.02`
+
+### Monitoring (W10-I-013)
+
+- `RESERVE_METRICS_INTERVAL_MS` - Interval for reserve metrics update job (default: 300000, i.e., 5 minutes)
+- `ENABLE_OBSERVABILITY` - Enable observability features (metrics, tracing). Defaults to `true`
 
 ### Notifications
 
@@ -195,6 +204,36 @@ This file documents the environment variables required by the ACBU backend and t
 
 - `CORS_ORIGIN`
   - Comma-separated list of allowed origins.
+
+### Frontend (`frontend/`)
+
+The root `.env.example` is the canonical local setup template for both the
+backend and the frontend in `frontend/`. Copy it to `.env`, then expose the
+frontend values to the frontend process as `.env.local` when running the
+frontend (`frontend/`) independently. Do not commit either runtime file.
+
+- `NEXT_PUBLIC_API_BASE_URL` - browser API base URL, normally `http://localhost:5000/api/v1` locally.
+- `NEXT_PUBLIC_API_URL` - legacy frontend alias used only when the base URL is unset.
+- `NEXT_PUBLIC_API_TIMEOUT` - browser request timeout in milliseconds.
+- `NEXT_PUBLIC_BILLS_ENABLED` - enables the bills experience (`true`/`false`).
+- `NEXT_PUBLIC_STELLAR_NETWORK` - `TESTNET` or `PUBLIC`.
+- `NEXT_PUBLIC_STELLAR_HORIZON_URL` - Horizon endpoint used by the browser.
+- `NEXT_PUBLIC_SOROBAN_RPC_URL` - optional Soroban RPC endpoint.
+- `NEXT_PUBLIC_SUPPORT_INTAKE_URL` / `SUPPORT_INTAKE_URL` - optional support form/API endpoints.
+- `NEXT_PUBLIC_ACBU_ASSET_CODE` / `NEXT_PUBLIC_ACBU_ASSET_ISSUER` - optional ACBU asset display configuration.
+
+### Smart-contract deployment
+
+Contract addresses belong in the same root template so backend, frontend, and
+deployment tooling can be configured together:
+
+- `CONTRACT_ORACLE`
+- `CONTRACT_RESERVE_TRACKER`
+- `CONTRACT_MINTING`
+- `CONTRACT_BURNING`
+- `CONTRACT_SAVINGS_VAULT`
+- `CONTRACT_LENDING_POOL`
+- `CONTRACT_ESCROW`
 
 ## Notes
 

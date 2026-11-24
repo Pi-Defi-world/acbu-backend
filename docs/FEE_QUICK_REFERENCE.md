@@ -1,5 +1,9 @@
 # ACBU Fee Policy - Quick Reference Card
 
+**Fee Destination**: All fees (mint and burn) are retained in protocol reserves to achieve and maintain the 103-105% over-collateralization target. Fees are NOT passed through to fintech partners. See [docs/fee-destination.md](./fee-destination.md) for detailed explanation.
+
+---
+
 ## Mint Fees (Fiat → ACBU)
 
 | Condition | Fee | When to Apply |
@@ -59,6 +63,21 @@
 - Sell rate: 1,001.25 NGN per ACBU (user receives less)
 
 ---
+
+## Merchant Payments & Flow Assumptions
+
+| Flow / Operation | Rate | Paid By | Recipient |
+|------------------|------|---------|-----------|
+| **Customer Payment** | **FREE** (0.00%) | Customer | N/A |
+| **Merchant Acceptance Fee** | **20 BPS** (0.20%) | Merchant | ACBU Protocol Reserve / Treasury |
+| **Merchant Withdrawal (Burn)** | **30 BPS** (0.30% base) | Merchant | ACBU Protocol Reserve / Treasury |
+
+### Projection Assumption Correction:
+- **Two-Sided Remittance Flow**: 0.30% (mint) + 0.30% (burn) = **0.60% (60 BPS)** per-tx volume.
+- **Merchant Flow**: **0.20% (20 BPS)** on checkout volume (payer is free). Total per-tx fees are **0.20%–0.50%** (0.20% acceptance + up to 0.30% withdrawal burn), **not 0.60%**. Projections must separate merchant volume to avoid overstating revenue.
+
+---
+
 
 ## Sanity Bounds
 
@@ -211,7 +230,7 @@ pnpm run test:coverage
 2. Calculate: `pctOfTarget = (actualWeight / targetWeight) × 100`
 3. If pctOfTarget < 85% → 200 BPS
 4. If pctOfTarget > 115% → 5 BPS
-5. Otherwise → 10 BPS
+5. Otherwise → 30 BPS
 
 ---
 

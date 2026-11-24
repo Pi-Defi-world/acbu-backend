@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { AppError } from "../middleware/errorHandler";
 
 /**
  * Decimal configuration for monetary calculations with high precision
@@ -56,9 +57,21 @@ export function parseMonetaryString(value: string, fieldName = "amount"): Decima
  * @param decimals - Number of decimal places for the contract (default 7)
  * @returns Integer amount in the contract's smallest unit
  */
-export function decimalToContractAmount(decimal: Decimal, decimals: number = 7): string {
+export function decimalToContractNumber(decimal: Decimal, decimals: number = 7): number {
+  if (!decimal.isFinite() || decimal.isNegative()) {
+    throw new AppError("Contract amount must be a finite non-negative value", 400);
+  }
+  if (!Number.isSafeInteger(decimals) || decimals < 0) {
+    throw new AppError("Contract decimal precision must be a non-negative integer", 500);
+  }
+
   const scaled = decimal.mul(new Decimal(10).pow(decimals));
-  return scaled.toDecimalPlaces(0, Decimal.ROUND_DOWN).toFixed(0);
+  const contractInteger = scaled.toDecimalPlaces(0, Decimal.ROUND_DOWN);
+  if (!contractInteger.isFinite() || contractInteger.abs().gt(Number.MAX_SAFE_INTEGER)) {
+    throw new AppError("Amount exceeds the safe integer range supported for contract calls", 400);
+  }
+
+  return contractInteger.toNumber();
 }
 
 /**
@@ -114,7 +127,19 @@ export function currencyAmountToSmallestUnit(amount: string | number, currency: 
  * @returns Fee amount as Decimal
  */
 export function calculateFee(amount: Decimal, feeBps: number): Decimal {
-  return amount.mul(new Decimal(feeBps)).div(new Decimal(10000));
+  if (!amount.isFinite() || amount.isNegative()) {
+    throw new AppError("Fee amount must be a finite non-negative value", 400);
+  }
+  if (!Number.isSafeInteger(feeBps) || feeBps < 0 || feeBps > 10000) {
+    throw new AppError("Fee rate must be an integer between 0 and 10000 basis points", 500);
+  }
+
+  const fee = amount.mul(new Decimal(feeBps)).div(new Decimal(10000));
+  if (!fee.isFinite() || fee.isNegative()) {
+    throw new AppError("Fee calculation exceeded the supported numeric range", 500);
+  }
+
+  return fee;
 }
 
 /**

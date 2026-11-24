@@ -54,6 +54,12 @@ function getChallengeSecret(): string {
 /**
  * Sign a 2FA challenge token for the given user (short-lived JWT).
  * Includes aud and iss claims for strict purpose binding.
+ *
+ * @param userId - The user's UUID.
+ * @param otpChallengeId - The OTP challenge record UUID created during the unlock step.
+ *   Embedding this ID in the token binds the challenge token to the specific OTP record,
+ *   so only the OTP issued for this particular unlock request can satisfy verification
+ *   (fixes W10-BE-020).
  */
 export function signChallengeToken(
   userId: string,

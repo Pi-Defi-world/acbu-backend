@@ -7,6 +7,38 @@ on:
     branches: [main, dev, develop]
 
 jobs:
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION="8.18.2"
+          curl -sSLo gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -zxf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+
+      - name: Run gitleaks
+        run: |
+          # A depth-0 checkout fetches every branch, so an unscoped scan also
+          # reports findings from unrelated branch history. On pull requests,
+          # scan only the commits the PR would add.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gitleaks detect --verbose --redact --log-opts="origin/${{ github.base_ref }}..HEAD"
+          else
+            gitleaks detect --verbose --redact
+          fi
+
   lint-and-format:
     name: Lint, Format & Security Audit
     runs-on: ubuntu-latest
@@ -27,7 +59,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run security audit
+        # W10-TEST-010: fail the pipeline on high-severity (and critical) advisories.
+        # --audit-level high  → non-zero exit for high + critical (pnpm default is critical-only).
+        # continue-on-error is intentionally absent so the job fails hard on violations.
+        # To triage a known advisory, add it to .auditrc.json (pnpm audit --ignore-registry-errors)
+        # or pin the affected transitive dep to a patched version via pnpm.overrides.
         run: pnpm audit --audit-level high
+        continue-on-error: false
 
       - name: Run non-blocking audit report
         if: always()
@@ -38,6 +76,9 @@ jobs:
 
       - name: Check Prettier formatting
         run: pnpm format:check
+
+      - name: Test release tag resolution
+        run: pnpm test:release
 
   test:
     name: Test
@@ -56,11 +97,11 @@ jobs:
       POSTGRES_USER: acbu_test
       POSTGRES_PASSWORD: acbu_test_pw
       POSTGRES_DB: acbu_test
-      MONGO_USER: acbu_test
-      MONGO_PASSWORD: acbu_test_pw
+      MONGO_INITDB_ROOT_USERNAME: acbu_test
+      MONGO_INITDB_ROOT_PASSWORD: acbu_test_pw
       MONGO_DB: acbu_test
-      RABBITMQ_USER: acbu_test
-      RABBITMQ_PASSWORD: acbu_test_pw
+      RABBITMQ_DEFAULT_USER: acbu_test
+      RABBITMQ_DEFAULT_PASS: acbu_test_pw
       DATABASE_URL: postgresql://acbu_test:acbu_test_pw@localhost:5432/acbu_test
       MONGODB_URI: mongodb://acbu_test:acbu_test_pw@localhost:27017/acbu_test?authSource=admin
       RABBITMQ_URL: amqp://acbu_test:acbu_test_pw@localhost:5672
@@ -70,7 +111,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Start local dev infrastructure
-        run: docker compose up -d --wait
+        run: docker compose up -d --wait postgres mongodb rabbitmq
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
@@ -87,7 +128,13 @@ jobs:
       - name: Verify bcrypt native build
         run: node -e "require('bcrypt')"
 
+      - name: Create schema drift shadow database
+        run: >
+          node -e "const{Pool}=require('pg');(async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL});await p.query('CREATE DATABASE acbu_test_shadow');await p.end();})().catch(e=>{console.error(e.message);process.exit(1);})"
+
       - name: Verify schema drift and down-migrations
+        env:
+          SHADOW_DATABASE_URL: postgresql://acbu_test:acbu_test_pw@localhost:5432/acbu_test_shadow
         run: pnpm run prisma:drift:check
 
       - name: Apply database migrations
@@ -98,7 +145,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage
           path: coverage/
@@ -116,7 +163,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint-and-format, test]
+    needs: [lint-and-format, test, secret-scan]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -142,11 +189,46 @@ jobs:
         run: pnpm build
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dist
           path: dist/
           retention-days: 7
+
+  # W11-CAR-023: single fail-closed gate over every job a pull request must pass.
+  # Branch protection can require `CI / CI Gate` instead of depending on each
+  # individual job staying required (and non-blocking) in the repository
+  # settings. The job fails if any dependency failed, was cancelled or was
+  # skipped, so a failing test, lint or build can never be merged.
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [secret-scan, lint-and-format, test, build]
+    steps:
+      - name: Require every blocking CI job to succeed
+        env:
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+          LINT_AND_FORMAT_RESULT: ${{ needs.lint-and-format.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          failed=0
+          for entry in \
+            "secret-scan=$SECRET_SCAN_RESULT" \
+            "lint-and-format=$LINT_AND_FORMAT_RESULT" \
+            "test=$TEST_RESULT" \
+            "build=$BUILD_RESULT"; do
+            job="${entry%%=*}"
+            result="${entry##*=}"
+            echo "${job}: ${result}"
+            if [ "${result}" != "success" ]; then
+              echo "::error::Blocking job '${job}' did not succeed (result: ${result})"
+              failed=1
+            fi
+          done
+          exit "${failed}"
 
   license-check:
     name: License Check
@@ -267,10 +349,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -278,7 +360,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -287,7 +369,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build-and-push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
           push: true

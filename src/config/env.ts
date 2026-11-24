@@ -189,6 +189,13 @@ const envSchema = z.object({
   STELLAR_HORIZON_URL: z.string().optional(),
   STELLAR_SOROBAN_RPC_URL: z.string().optional(),
   STELLAR_SECRET_KEY: z.string().optional(),
+  // W11-AUD-006: comma-separated Horizon / Soroban RPC endpoint pools used for
+  // automatic failover. The primary URL above remains the first entry in the pool.
+  STELLAR_HORIZON_URLS: z.string().optional(),
+  STELLAR_SOROBAN_RPC_URLS: z.string().optional(),
+  STELLAR_RPC_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().positive().default(3),
+  STELLAR_RPC_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().positive().default(30000),
+  STELLAR_RPC_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   STELLAR_NATIVE_ASSET_CODE: z.string().optional(),
   // These four are fallbacks for one another; `config.stellar.activationAmount`
   // applies the "1" default and validates it, so they stay plain strings here.
@@ -314,13 +321,6 @@ if (!parsed.success) {
 const isJestTest =
   typeof (globalThis as any).jest !== "undefined" || process.env.JEST_WORKER_ID !== undefined;
 
-if (
-  parsed.data.WEBHOOK_SIGNATURE_BYPASS !== undefined &&
-  !["development", "test"].includes(parsed.data.NODE_ENV)
-) {
-  throw new Error("WEBHOOK_SIGNATURE_BYPASS must be unset in staging and production environments");
-}
-
 if (parsed.data.NODE_ENV === "production" && !isJestTest && !parsed.data.PRISMA_ACCELERATE_URL) {
   throw new Error("Missing required environment variable: PRISMA_ACCELERATE_URL");
 }
@@ -404,6 +404,37 @@ if (parsed.data.NODE_ENV === "production" && !isJestTest) {
 
 const env = parsed.data;
 
+// Fail closed when webhook signature bypass is enabled outside an explicit test profile.
+const BYPASS_TRUTHY_VALUES = new Set(["true", "1", "yes", "on"]);
+const WEBHOOK_BYPASS_TEST_PROFILES = new Set(["test", "testing", "ci"]);
+function isWebhookSignatureBypassEnabled(rawValue: unknown): boolean {
+  return typeof rawValue === "string" && BYPASS_TRUTHY_VALUES.has(rawValue.trim().toLowerCase());
+}
+const webhookBypassEnabled = isWebhookSignatureBypassEnabled(env.WEBHOOK_SIGNATURE_BYPASS);
+const profile = env.NODE_ENV.trim().toLowerCase();
+if (webhookBypassEnabled && !WEBHOOK_BYPASS_TEST_PROFILES.has(profile)) {
+  throw new Error(
+    "WEBHOOK_SIGNATURE_BYPASS is enabled outside an explicit test profile. " +
+      "Refusing to start: webhook signature verification must not be bypassed.",
+  );
+}
+
+// Runtime production assertion also checks deployment-specific environment markers.
+for (const signal of [
+  env.NODE_ENV,
+  process.env.NODE_ENV,
+  process.env.APP_ENV,
+  process.env.ENVIRONMENT,
+]) {
+  if (
+    typeof signal === "string" &&
+    signal.trim().toLowerCase() === "production" &&
+    webhookBypassEnabled
+  ) {
+    throw new Error("WEBHOOK_SIGNATURE_BYPASS must never be enabled in production.");
+  }
+}
+
 // Placeholder/example values that must not be used as real API keys.
 const PLACEHOLDER_KEY_PATTERNS = [
   /^\s*$/, // empty or whitespace-only
@@ -428,6 +459,8 @@ export function isPlaceholderKey(value: string | null | undefined): boolean {
 
 export const config = {
   nodeEnv: env.NODE_ENV,
+  isTest: env.NODE_ENV === "test",
+  isProduction: profile === "production",
   port: env.PORT,
   apiVersion: env.API_VERSION,
   databaseUrl: env.DATABASE_URL,
@@ -751,7 +784,25 @@ export const config = {
   webhook: {
     url: env.WEBHOOK_URL,
     secret: env.WEBHOOK_SECRET,
+    signatureBypass: webhookBypassEnabled,
+    timestampToleranceMs: env.WEBHOOK_TIMESTAMP_TOLERANCE_MS,
   },
+  corsOrigins: parseCorsOrigins(env.CORS_ORIGIN),
+  stellarRpc: {
+    horizonUrls: parseEndpointPool(
+      env.STELLAR_HORIZON_URLS,
+      env.STELLAR_HORIZON_URL ?? "https://horizon-testnet.stellar.org",
+    ),
+    sorobanRpcUrls: parseEndpointPool(
+      env.STELLAR_SOROBAN_RPC_URLS,
+      env.STELLAR_SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org",
+    ),
+    circuitBreakerThreshold: env.STELLAR_RPC_CIRCUIT_BREAKER_THRESHOLD,
+    circuitBreakerCooldownMs: env.STELLAR_RPC_CIRCUIT_BREAKER_COOLDOWN_MS,
+    requestTimeoutMs: env.STELLAR_RPC_REQUEST_TIMEOUT_MS,
+  },
+  // ... remaining config consumers are unchanged and read from `env` as before
+};
 
   // Limits are NOT exposed here on purpose. `config.limits` existed but had no
   // readers anywhere in the codebase, so a second copy of the retail/business/
@@ -803,6 +854,7 @@ export const config = {
 
   // CORS — explicit origins only; wildcard * is rejected (incompatible with credentials)
   corsOrigin: parseCorsOrigins(env.CORS_ORIGIN, env.NODE_ENV),
+  corsOrigins: parseCorsOrigins(env.CORS_ORIGIN, env.NODE_ENV),
 
   // CDN — when set, DNS prefetch is enabled so browsers can resolve the CDN domain early
   cdnUrl: env.CDN_URL ?? null,

@@ -416,9 +416,10 @@ export async function reconcileBillsWebhook(event: BillsWebhookEvent): Promise<{
     accountId: transaction.userId ?? transaction.id,
     idempotencyKey: transaction.id,
     correlationId: crypto.randomUUID(),
-    amount: currencyAmountToSmallestUnit(
-      transaction.localAmount?.toString() ?? event.amount,
-      transaction.localCurrency ?? event.currency,
+    amount: Math.round(
+      (transaction.localAmount != null
+        ? Number(transaction.localAmount.toString())
+        : event.amount) * 100,
     ),
     currency: transaction.localCurrency ?? event.currency,
     provider: event.provider,

@@ -1,0 +1,20 @@
+[package]
+name = "zk_verifier"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+description = "On-chain ZK proof verifier with bounded per-entry persistent storage"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+soroban-sdk = { workspace = true }
+shared = { path = "../../shared" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[lints]
+workspace = true

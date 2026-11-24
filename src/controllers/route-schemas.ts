@@ -67,10 +67,11 @@ export const addGuardianSchema = z.object({
   guardian_phone: z.string().optional(),
 });
 
-export const walletConfirmSchema = z.object({
-  encryption_method: z.enum(["passcode"]),
-  passcode: z.string().min(1),
-  passphrase: z.string().min(1),
+export const walletEnrollSchema = z.object({
+  stellar_address: z.string().length(56),
+  wrapped_key: z.string().min(1).max(512).optional(),
+  wrap_algorithm: z.string().min(1).max(64).optional(),
+  wrap_kdf: z.string().min(1).max(64).optional(),
 });
 
 // ─── Fiat ─────────────────────────────────────────────────────────────────────
@@ -78,13 +79,11 @@ export const faucetSchema = z.object({
   currency: z.string().min(3).max(3),
   amount: z.number().positive(),
   recipient: z.string().optional(),
-  passcode: z.string().optional(),
 });
 
 export const onRampSchema = z.object({
   currency: z.string().min(3).max(3),
   amount: z.number().positive(),
-  passcode: z.string().optional(),
 });
 
 export const offRampSchema = z.object({
@@ -218,7 +217,7 @@ export const routeSchemas: Record<string, z.ZodSchema> = {
   "PATCH /v1/users/me": patchMeSchema,
   "POST /v1/users/me/contacts": addContactSchema,
   "POST /v1/users/me/guardians": addGuardianSchema,
-  "POST /v1/users/me/wallet/confirm": walletConfirmSchema,
+  "POST /v1/users/me/wallet/enroll": walletEnrollSchema,
 
   // Fiat endpoints
   "POST /v1/fiat/faucet": faucetSchema,

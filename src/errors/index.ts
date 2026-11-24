@@ -38,6 +38,12 @@ export class ServiceUnavailableError extends AppError {
   }
 }
 
+export class PolicyViolationError extends AppError {
+  constructor(message = "Policy violation", code = "POLICY_VIOLATION") {
+    super(message, 422, code);
+  }
+}
+
 // ─── Auth-specific errors ───────────────────────────────────────────────
 
 export class UsernameTakenError extends ConflictError {
@@ -219,6 +225,12 @@ export class InvalidCurrencyError extends ValidationError {
   }
 }
 
+export class InvalidAmountError extends ValidationError {
+  constructor(message = "Invalid amount") {
+    super(message);
+  }
+}
+
 export class TrustlineMissingError extends ValidationError {
   constructor(message = "Trustline missing") {
     super(message);
@@ -233,6 +245,12 @@ export class NonExistentContractFunctionError extends ServiceUnavailableError {
 
 export class InvalidMintAmountError extends ValidationError {
   constructor(message = "Invalid mint amount") {
+    super(message);
+  }
+}
+
+export class InvalidAmountUsdError extends ValidationError {
+  constructor(message = "Invalid amountUsd") {
     super(message);
   }
 }

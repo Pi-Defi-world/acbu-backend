@@ -29,6 +29,14 @@ We will acknowledge security reports as soon as practical, investigate privately
 
 Please allow reasonable time for triage and remediation before sharing details publicly.
 
+## Key Custody
+
+User wallets are self-custodied. The API never returns private key material and
+the database holds no copy the backend can decrypt, so a compromised server
+cannot spend user balances. The custody model, enrollment flow and the
+operations a wallet client must sign itself are documented in
+[docs/WALLET_CUSTODY.md](docs/WALLET_CUSTODY.md).
+
 ## Static Application Security Testing (SAST)
 
 This repository runs **CodeQL** and **Semgrep** on every push and pull request to
@@ -38,11 +46,48 @@ detect security vulnerabilities before they ship.
 - **codeql.yml**: GitHub CodeQL with the `security-and-quality` query suite. Results
   surface in the GitHub Security tab.
 - **semgrep.yml**: Semgrep using the repo-root `.semgrep.yml` rules plus the OWASP
-  Top Ten and security-audit rulesets. Fails on `ERROR`-severity findings.
+  Top Ten and security-audit rulesets. Custom and frontend registry scans fail
+  on `ERROR` findings; the Rust registry scan fails on `WARNING` or higher.
 
 Both jobs are configured as **required status checks** so PRs are blocked on
 critical findings. Shared workflow templates live in `ci/workflows/` and can be
 reused across the platform's repositories (see `ci/workflows/README.md`).
+
+### Scan scope and rule profiles
+
+Gitleaks scans the repository using `.gitleaks.toml`, extending its default
+rules with Stellar secret-seed, Soroban key-material, frontend public-env,
+API-credential, and JWT checks. Stellar public keys (`G...`) are not treated as
+secrets by Gitleaks. Its path allowlist covers dependency/build output,
+lockfiles, and specific files containing known fake fixtures. Do not allowlist
+whole documentation or source/test directories.
+
+Semgrep scans the repository with `.semgrep.yml`, the OWASP Top Ten rules, and
+the security-audit rules. It compares findings against the PR target branch (or
+previous push) and blocks newly introduced findings while retaining existing
+findings in the baseline. The existing backend rules are scoped to backend
+source, tests, scripts, and shared code.
+Additional rules are scoped to `frontend/` (and the current `acbu-frontend/`
+workspace) for TypeScript/React risks and `contracts/` for Rust/Soroban risks.
+The workflow also runs `p/typescript` and `p/react` only against frontend paths,
+and `p/rust` only against `contracts/`. The Rust registry scan includes
+`WARNING`-severity findings so its maintained rules are not silently filtered
+out. Dependency directories, Rust targets, build output, Next.js output, and
+generated files are excluded.
+The single registry rule `yaml.github-actions.security.gha-curl-pipe-shell`
+is excluded because its Bash parser cannot parse GitHub Actions expressions;
+other workflow checks, including shell-injection rules, remain enabled.
+
+When adding a rule, keep it under the relevant subtree profile and add a focused
+canary test for the behavior it detects. If a finding is a confirmed false
+positive, prefer a narrow rule-level exception with a comment explaining the
+specific fixture/value; never add a blanket source, test, or documentation
+allowlist. Run the scanners locally with:
+
+```bash
+gitleaks detect --source . --config .gitleaks.toml --verbose --redact
+semgrep scan --config .semgrep.yml --config p/owasp-top-ten --config p/security-audit --error --severity ERROR .
+```
 
 ## Dependency Vulnerability Scanning
 
@@ -64,13 +109,21 @@ summary rather than showing a plain, unexplained green check. Snyk is a
 **supplementary** scan — the two checks above are what actually block a merge
 when Snyk itself does not run.
 
+## Software Bill of Materials (SBOM)
+
+Release artifacts published by the release workflow (`.github/workflows/release.yml`) ship with a Software Bill of Materials (SBOM) so consumers can independently verify dependency provenance and monitor for newly disclosed CVEs.
+
+- SBOM manifests are generated in **CycloneDX** and **SPDX** formats with `syft` (or `trivy`) for each release.
+- Manifests are attached to the corresponding **GitHub Release** and signed alongside the release artifacts.
+- Consumers can feed the SBOM into their own vulnerability scanners to track newly disclosed CVEs against the exact dependency set shipped.
+
 ## Secret Scanning (Gitleaks)
 
 This repository uses **gitleaks** to detect secrets in the git history and block commits containing credentials.
 
 ### CI Workflow
 - **gitleaks.yml**: Runs on every push and PR to block new secrets from entering the codebase
-- Full fetch (`fetch-depth: 0`) ensures the entire commit history is scanned on each PR
+- Full fetch (`fetch-depth: 0`) allows Gitleaks to scan the exact commits introduced by each PR or push, avoiding unrelated historical findings
 
 ### Manual History Scan (Maintainers Only)
 For a comprehensive audit of existing history, maintainers can run:
@@ -88,6 +141,10 @@ This script:
 - Use `git-filter-repo` to remove commits containing secrets (requires careful coordination)
 - Force push to rewrite history (notify the team before doing this)
 
+## Administrative & Audit Event Monitoring
+
+GitHub organization and repository administrative events (collaborator/membership changes, repository changes, and branch protection modifications) are monitored via external security webhooks (Slack, Discord, or SIEM) and the `.github/workflows/security-audit-alerts.yml` workflow. See [docs/SECURITY_AUDIT_WEBHOOKS.md](docs/SECURITY_AUDIT_WEBHOOKS.md) for webhook configuration, automated verification (`scripts/ci/configure-security-webhooks.js`), and incident triage procedures.
+
 ### Safe Harbor
 
 We consider good-faith security research to be helpful. Please avoid:
@@ -98,3 +155,9 @@ We consider good-faith security research to be helpful. Please avoid:
 - Exfiltrating secrets, credentials, or personal data
 
 If you accidentally encounter sensitive information during testing, stop immediately and report it through the private channel above.
+
+## Compromised Developer Credential Rotation (W11-INC-002)
+
+If a developer workstation may have executed untrusted repository automation, treat accessible credentials and sessions as potentially compromised. Follow the [Credential Rotation Attestation procedure](docs/security/CREDENTIAL_ROTATION_ATTESTATION.md). The procedure requires each in-scope team member and service owner to attest through the private incident tracker after applicable GitHub, npm, SSH, AWS/cloud, browser, and identity-provider credentials have been reviewed and revoked or rotated.
+
+Credential revocation is performed in the relevant provider consoles by authorized owners; a repository commit cannot perform or verify those provider-side actions. Keep attestations and audit evidence in the private incident tracker. Never commit token values, private keys, credential IDs, or individual attestation records to this repository.

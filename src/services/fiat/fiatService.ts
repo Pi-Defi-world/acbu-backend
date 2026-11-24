@@ -5,8 +5,7 @@ import { getLatestAcbuRate } from "../rates/acbuRateCache";
 import { acbuBurningService, acbuMintingService, acbuOracleService } from "../contracts";
 import { stellarClient } from "../stellar/client";
 import { getContractAddresses } from "../../config/contracts";
-import { decryptUserStellarSecret } from "../wallet/stellarSecretService";
-import { ensureAcbuTrustline, ensureDemoFiatTrustline } from "../stellar/trustlineService";
+import { getAcbuAssetCode, getAcbuIssuer } from "../../config/acbuAsset";
 import { ensureAccountActivated } from "../stellar/activationService";
 import {
   InvalidCurrencyError,
@@ -16,7 +15,7 @@ import {
   NonExistentContractFunctionError,
   ValidationError,
 } from "../../errors/index";
-import { contractNumberToDecimal, decimalToContractAmount } from "../../utils/decimalUtils";
+import { assertValidRecipientAccount } from "../../utils/stellar";
 
 const DECIMALS_7 = 1e7;
 const DECIMALS_7_BIGINT = 10_000_000n;
@@ -35,6 +34,27 @@ function wholeFiatToI128(amount: number): string {
     throw new ValidationError("Invalid fiat amount");
   }
   return decimalToContractAmount(new Decimal(amount.toString()));
+}
+
+function isTrustlineMissing(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("trustline entry is missing");
+}
+
+/**
+ * Self-custody (W10-SEC-006): the backend holds no usable copy of a user's
+ * key, so it cannot submit the change_trust operation on their behalf. Tell the
+ * caller exactly which asset needs the trustline instead.
+ */
+function trustlineMissingError(assetCode: string): TrustlineMissingError {
+  let asset = assetCode;
+  try {
+    asset = `${assetCode}:${getAcbuIssuer()}`;
+  } catch {
+    // Issuer unset: guidance without it is still actionable.
+  }
+  return new TrustlineMissingError(
+    `Missing trustline for ${asset}. Add the trustline from your own wallet, then retry.`,
+  );
 }
 
 function divCeil(a: bigint, b: bigint): bigint {
@@ -156,7 +176,6 @@ export async function requestFaucet(
   currency: string,
   amount: number,
   recipient?: string,
-  passcode?: string,
 ): Promise<{
   currency: string;
   amount: number;
@@ -196,21 +215,6 @@ export async function requestFaucet(
   // Ensure the recipient account exists on-chain (testnet: newly generated addresses need funding).
   await ensureAccountActivated(stellarAddress);
 
-  // Ensure the recipient can receive the demo SAC-wrapped classic asset.
-  // This requires a classic trustline on the recipient account.
-  //
-  // We can auto-add it only if the backend can decrypt the user's seed.
-  if (passcode) {
-    try {
-      const secret = await decryptUserStellarSecret(userId, passcode);
-      if (secret) {
-        await ensureDemoFiatTrustline({ userSecret: secret, currency });
-      }
-    } catch {
-      // Ignore trustline failures and let the on-chain call surface the real error.
-    }
-  }
-
   const amountI128 = wholeFiatToI128(amount);
   let transactionHash: string;
   try {
@@ -220,21 +224,13 @@ export async function requestFaucet(
       amount: amountI128,
     }));
   } catch (e) {
-    // If the user has no trustline yet, try to add it (if passcode available) and retry once.
-    if (passcode && e instanceof Error && e.message.includes("trustline entry is missing")) {
-      const secret = await decryptUserStellarSecret(userId, passcode);
-      if (!secret) throw new TrustlineMissingError(e.message);
-      await ensureDemoFiatTrustline({ userSecret: secret, currency });
-      ({ transactionHash } = await acbuMintingService.adminDripDemoFiat({
-        recipient: stellarAddress,
-        currency,
-        amount: amountI128,
-      }));
-    } else if (e instanceof Error && e.message.includes("non-existent contract function")) {
-      throw new NonExistentContractFunctionError();
-    } else {
-      throw e;
+    if (isTrustlineMissing(e)) {
+      throw trustlineMissingError(currency.trim().toUpperCase());
     }
+    if (e instanceof Error && e.message.includes("non-existent contract function")) {
+      throw new NonExistentContractFunctionError();
+    }
+    throw e;
   }
 
   // Record faucet drips in transaction history so Activity can display them.
@@ -269,13 +265,13 @@ export async function requestFaucet(
 }
 
 /**
- * On-ramp: custodial `mint_from_demo_fiat` (no simulated bank ledger).
+ * On-ramp: `mint_from_demo_fiat` mints ACBU against the minting contract's demo
+ * fiat custody (no simulated bank ledger). The user's own key is never involved.
  */
 export async function simulateOnRamp(
   userId: string,
   currency: string,
   fiatAmount: number,
-  passcode?: string,
 ): Promise<{
   transactionId: string;
   acbuAmount: number;
@@ -299,19 +295,6 @@ export async function simulateOnRamp(
 
   const fiatAmountI128 = wholeFiatToI128(fiatAmount);
   await validateDemoMintAmount(currency, fiatAmountI128);
-
-  // Default setup: if passcode is available, ensure recipient has ACBU trustline
-  // before minting to avoid contract-level trustline failures.
-  if (passcode) {
-    try {
-      const secret = await decryptUserStellarSecret(userId, passcode);
-      if (secret) {
-        await ensureAcbuTrustline({ userSecret: secret });
-      }
-    } catch {
-      // Ignore and let on-chain call surface exact trustline error if still missing.
-    }
-  }
 
   const tx = await prisma.transaction.create({
     data: {
@@ -352,40 +335,6 @@ export async function simulateOnRamp(
       blockchain_tx_hash: result.transactionHash,
     };
   } catch (err: unknown) {
-    // Retry once after auto-adding ACBU trustline (same resilience pattern as faucet).
-    if (passcode && err instanceof Error && err.message.includes("trustline entry is missing")) {
-      const secret = await decryptUserStellarSecret(userId, passcode);
-      if (secret) {
-        await ensureAcbuTrustline({ userSecret: secret });
-        const retry = await acbuMintingService.mintFromDemoFiat({
-          operator: sourceAccount,
-          recipient: user.stellarAddress,
-          currency,
-          fiatAmount: fiatAmountI128,
-        });
-        const acbuDecimal = contractNumberToDecimal(retry.acbuAmount);
-        const acbuNum = acbuDecimal.toNumber();
-        await prisma.transaction.update({
-          where: { id: tx.id },
-          data: {
-            status: "completed",
-            acbuAmount: acbuDecimal,
-            blockchainTxHash: retry.transactionHash,
-            completedAt: new Date(),
-          },
-        });
-        return {
-          transactionId: tx.id,
-          acbuAmount: acbuNum,
-          blockchain_tx_hash: retry.transactionHash,
-        };
-      }
-      throw new TrustlineMissingError(err.message);
-    }
-    if (err instanceof Error && err.message.includes("non-existent contract function")) {
-      throw new NonExistentContractFunctionError();
-    }
-
     const message = err instanceof Error ? err.message : String(err);
     await prisma.transaction.update({
       where: { id: tx.id },
@@ -400,6 +349,13 @@ export async function simulateOnRamp(
         },
       },
     });
+    // The ACBU trustline has to be added by the wallet that holds the key.
+    if (isTrustlineMissing(err)) {
+      throw trustlineMissingError(getAcbuAssetCode());
+    }
+    if (err instanceof Error && err.message.includes("non-existent contract function")) {
+      throw new NonExistentContractFunctionError();
+    }
     throw err;
   }
 }
@@ -412,6 +368,7 @@ export async function simulateOffRamp(
   currency: string,
   acbuAmount: number,
   blockchainTxHash?: string,
+  idempotencyKey?: string,
 ): Promise<{
   fiatAmount: number;
   acbuAmount: number;
@@ -421,6 +378,7 @@ export async function simulateOffRamp(
   if (!user?.stellarAddress) {
     throw new ValidationError("User wallet address not set");
   }
+  assertValidRecipientAccount(user.stellarAddress);
 
   const acbuRateRecord = await getLatestAcbuRate();
 
@@ -450,9 +408,11 @@ export async function simulateOffRamp(
 
     const result = await acbuBurningService.redeemSingle({
       user: sourceAccount,
-      recipient: sourceAccount,
+      recipient: user.stellarAddress,
       acbuAmount: acbuAmount7,
       currency,
+      idempotencyKey:
+        idempotencyKey || `off-ramp:${userId}:${currency}:${acbuAmount7}`,
     });
     txHash = result.transactionHash;
   }

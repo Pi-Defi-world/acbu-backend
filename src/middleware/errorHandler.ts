@@ -32,6 +32,17 @@ export class AppError extends Error {
 }
 
 /**
+ * Dedicated error for CORS rejections so a disallowed Origin surfaces as a
+ * 403 with a clear message instead of a generic 500 INTERNAL_ERROR.
+ */
+export class CorsError extends AppError {
+  constructor(message = "Not allowed by CORS") {
+    super(message, 403, "CORS_FORBIDDEN");
+    this.name = "CorsError";
+  }
+}
+
+/**
  * Sanitize an error for logging: strip stack traces in production
  * and ensure no PII or secrets leak into log output.
  */
@@ -64,35 +75,21 @@ function summarizeErrorDetails(details: unknown): unknown {
  * Keys whose primitive values are safe to return to API clients as-is.
  * These carry field-level validation errors and small, structured metadata.
  */
-const SAFE_DETAIL_SCALAR_KEYS = new Set([
-  "message",
-  "path",
-  "field",
-  "code",
-  "reason",
-]);
+const SAFE_DETAIL_SCALAR_KEYS = new Set(["message", "path", "field", "code", "reason"]);
 
 /**
  * Known-safe containers emitted by the validation middleware. Their inner
  * keys (e.g. Zod field paths) are dynamic, so they are not allowlisted by
  * name, but their values must still resolve to primitives.
  */
-const SAFE_DETAIL_CONTAINER_KEYS = new Set([
-  "errors",
-  "formErrors",
-  "fieldErrors",
-]);
+const SAFE_DETAIL_CONTAINER_KEYS = new Set(["errors", "formErrors", "fieldErrors"]);
 
 const REDACTED_DETAILS = "REDACTED_DETAILS";
 const MAX_DETAIL_KEYS = 10;
 const MAX_DETAIL_DEPTH = 3;
 
 function isPrimitiveDetail(value: unknown): value is string | number | boolean {
-  return (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  );
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 
 /**
@@ -114,9 +111,7 @@ function sanitizeDetailValue(value: unknown, depth: number): unknown {
   if (value === null || value === undefined) return undefined;
   if (isPrimitiveDetail(value)) return value;
   if (depth >= MAX_DETAIL_DEPTH) {
-    return typeof value === "object"
-      ? redactDetailObject(value)
-      : REDACTED_DETAILS;
+    return typeof value === "object" ? redactDetailObject(value) : REDACTED_DETAILS;
   }
   if (Array.isArray(value)) {
     return value
@@ -130,10 +125,7 @@ function sanitizeDetailValue(value: unknown, depth: number): unknown {
     // key is allowlisted and every value is a primitive.
     if (
       keys.length > 0 &&
-      keys.every(
-        (key) =>
-          SAFE_DETAIL_SCALAR_KEYS.has(key) && isPrimitiveDetail(record[key]),
-      )
+      keys.every((key) => SAFE_DETAIL_SCALAR_KEYS.has(key) && isPrimitiveDetail(record[key]))
     ) {
       return keys.reduce<Record<string, unknown>>((acc, key) => {
         acc[key] = record[key];
@@ -152,9 +144,7 @@ function sanitizeDetailValue(value: unknown, depth: number): unknown {
 function sanitizeFieldErrors(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const out: Record<string, unknown> = {};
-  for (const [field, messages] of Object.entries(
-    value as Record<string, unknown>,
-  )) {
+  for (const [field, messages] of Object.entries(value as Record<string, unknown>)) {
     if (Array.isArray(messages)) {
       out[field] = messages.filter(isPrimitiveDetail);
     } else if (isPrimitiveDetail(messages)) {
@@ -183,9 +173,7 @@ function sanitizeErrorDetails(details: unknown): unknown {
   if (details === null || details === undefined) return undefined;
   if (isPrimitiveDetail(details)) return details;
   if (Array.isArray(details)) {
-    return details
-      .map((item) => sanitizeDetailValue(item, 1))
-      .filter((item) => item !== undefined);
+    return details.map((item) => sanitizeDetailValue(item, 1)).filter((item) => item !== undefined);
   }
   if (typeof details !== "object") return REDACTED_DETAILS;
 
@@ -200,17 +188,13 @@ function sanitizeErrorDetails(details: unknown): unknown {
     for (const key of keys) {
       const value = record[key];
       if (key === "formErrors") {
-        sanitized[key] = Array.isArray(value)
-          ? value.filter(isPrimitiveDetail)
-          : [];
+        sanitized[key] = Array.isArray(value) ? value.filter(isPrimitiveDetail) : [];
       } else if (key === "fieldErrors") {
         sanitized[key] = sanitizeFieldErrors(value);
       } else {
         // `errors`: an array of `{ path, message }` entries or primitives.
         sanitized[key] = Array.isArray(value)
-          ? value
-              .map((item) => sanitizeDetailValue(item, 1))
-              .filter((item) => item !== undefined)
+          ? value.map((item) => sanitizeDetailValue(item, 1)).filter((item) => item !== undefined)
           : sanitizeDetailValue(value, 1);
       }
     }
@@ -220,8 +204,7 @@ function sanitizeErrorDetails(details: unknown): unknown {
   // Flat, known-safe scalar objects (e.g. the JSON parse error detail).
   if (keys.length > 0) {
     const allSafeScalars = keys.every(
-      (key) =>
-        SAFE_DETAIL_SCALAR_KEYS.has(key) && isPrimitiveDetail(record[key]),
+      (key) => SAFE_DETAIL_SCALAR_KEYS.has(key) && isPrimitiveDetail(record[key]),
     );
     if (allSafeScalars) {
       return keys.reduce<Record<string, unknown>>((acc, key) => {
@@ -272,6 +255,9 @@ export const errorHandler = (
         error_code: err.code,
         message: isServerError ? "Internal server error" : err.message,
         statusCode: err.statusCode,
+        // Never send raw `err.details` to clients: sanitize first so stack
+        // traces, tokens and other internal state cannot leak.
+        ...(err.details ? { details: sanitizeErrorDetails(err.details) } : {}),
       },
     });
     return;

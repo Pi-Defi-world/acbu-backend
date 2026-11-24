@@ -132,9 +132,25 @@ router.post("/schedule", postSalarySchedule);
  *     summary: List salary batches
  *     security:
  *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         description: Maximum number of batches to return (1-100)
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *       - in: query
+ *         name: offset
+ *         description: Number of batches to skip
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
  *     responses:
  *       200:
- *         description: List of salary batches
+ *         description: Paginated list of salary batches
  */
 router.get("/batches", getSalaryBatches);
 
@@ -147,9 +163,25 @@ router.get("/batches", getSalaryBatches);
  *     summary: List salary schedules
  *     security:
  *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         description: Maximum number of schedules to return (1-100)
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *       - in: query
+ *         name: offset
+ *         description: Number of schedules to skip
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
  *     responses:
  *       200:
- *         description: List of salary schedules
+ *         description: Paginated list of salary schedules
  */
 router.get("/schedules", getSalarySchedules);
 

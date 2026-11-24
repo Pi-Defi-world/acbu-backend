@@ -26,6 +26,7 @@ import { parseMonetaryString, decimalToContractAmount, calculateFee } from "../u
 import { AppError } from "../middleware/errorHandler";
 import { getLatestAcbuRate } from "../services/rates/acbuRateCache";
 import { logger } from "../config/logger";
+import { assertValidRecipientAccount } from "../utils/stellar";
 
 function extractIdempotencyKey(req: AuthRequest): string | undefined {
   const key = req.headers["idempotency-key"];
@@ -94,6 +95,20 @@ export const burnAcbu = async (
     if (!wallet) {
       throw new AppError("Wallet not found", 404);
     }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.apiKey.userId },
+      select: { stellarAddress: true },
+    });
+    if (!user?.stellarAddress) {
+      throw new AppError("Recipient Stellar account is not configured", 400);
+    }
+    try {
+      assertValidRecipientAccount(user.stellarAddress);
+    } catch {
+      throw new AppError("Recipient Stellar account is invalid", 400);
+    }
+    const recipientAddress = user.stellarAddress;
 
     // **SECURITY FIX (AB-009)**: Verify sufficient balance before attempting burn
     const currentBalance = new Decimal(wallet.acbuBalance as any);
@@ -167,8 +182,8 @@ export const burnAcbu = async (
       try {
         const result = await acbuBurningService.redeemSingle({
           user: req.apiKey.userId,
-          recipient: wallet.id,
-          acbuAmount: decimalToContractAmount(acbuAmount),
+          recipient: recipientAddress,
+          acbuAmount: decimalToContractNumber(acbuAmount),
           currency: body.currency,
           idempotencyKey,
         });
@@ -195,11 +210,18 @@ export const burnAcbu = async (
           },
         });
 
-        await logAudit("BURN_SUCCESS", {
-          userId: req.apiKey.userId,
-          acbuAmount: acbuAmount.toString(),
-          currency: body.currency,
-          txHash: transactionHash,
+        await logAudit({
+          eventType: "transaction",
+          entityType: "burn_transaction",
+          entityId: burnTx.id,
+          action: "burn_success",
+          newValue: {
+            userId: req.apiKey.userId,
+            acbuAmount: acbuAmount.toString(),
+            currency: body.currency,
+            txHash: transactionHash,
+          },
+          performedBy: req.apiKey.userId,
         });
 
         res.status(200).json({
@@ -218,10 +240,17 @@ export const burnAcbu = async (
           data: { status: "FAILED" },
         });
 
-        await logAudit("BURN_FAILED", {
-          userId: req.apiKey.userId,
-          acbuAmount: acbuAmount.toString(),
-          reason: contractError instanceof Error ? contractError.message : "Unknown error",
+        await logAudit({
+          eventType: "transaction",
+          entityType: "burn_transaction",
+          entityId: burnTx.id,
+          action: "burn_failed",
+          newValue: {
+            userId: req.apiKey.userId,
+            acbuAmount: acbuAmount.toString(),
+            reason: contractError instanceof Error ? contractError.message : "Unknown error",
+          },
+          performedBy: req.apiKey.userId,
         });
 
         throw new AppError("Contract invocation failed. Please try again later.", 500);
