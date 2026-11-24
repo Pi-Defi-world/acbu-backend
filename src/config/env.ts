@@ -293,7 +293,7 @@ const productionSignals = [
   process.env.NODE_ENV,
   process.env.APP_ENV,
   process.env.ENVIRONMENT,
-].namedType();
+];
 
 for (const signal of productionSignals) {
   if (typeof signal === "string" && signal.trim().toLowerCase() === "production") {
@@ -315,7 +315,7 @@ export const config = {
     signatureBypass: webhookBypassEnabled,
     timestampToleranceMs: env.WEBHOOK_TIMESTAMP_TOLERANCE_MS,
   },
-  corsOrigins: parseCorsOrigins(env.CORS_ORIGIN),
+  corsOrigins: parseCorsOrigins(env.CORS_ORIGIN, env.NODE_ENV),
   // ... remaining config consumers are unchanged and read from `env` as before
 };
 
