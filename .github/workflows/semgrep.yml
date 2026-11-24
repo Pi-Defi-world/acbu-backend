@@ -37,6 +37,7 @@ jobs:
             echo "::error::Unable to determine the Semgrep baseline commit."
             exit 1
           fi
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git cat-file -e "${SEMGREP_BASE_SHA}^{commit}"
 
       # This rule's Bash parser fails on GitHub Actions expression syntax.
