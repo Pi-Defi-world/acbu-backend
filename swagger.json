@@ -3397,6 +3397,217 @@
         ]
       }
     },
+    "/v1/lending/borrow": {
+      "post": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Borrow from the lending pool",
+        "operationId": "post_v1_lending_borrow",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "borrower": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lender": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "collateralAmount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "loanId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "borrower",
+                  "lender",
+                  "amount",
+                  "collateralAmount",
+                  "loanId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/lending/repay": {
+      "post": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Repay a lending loan",
+        "operationId": "post_v1_lending_repay",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "borrower": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "loanId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "borrower",
+                  "amount",
+                  "loanId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/lending/liquidate": {
+      "post": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Liquidate an unhealthy lending loan",
+        "operationId": "post_v1_lending_liquidate",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "liquidator": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "borrower": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "loanId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "liquidator",
+                  "borrower",
+                  "loanId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/gateway/charges": {
       "post": {
         "tags": [

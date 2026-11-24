@@ -220,6 +220,26 @@ export const lendingBalanceQuerySchema = z.object({
   lender: z.string().min(1),
 });
 
+export const lendingBorrowSchema = z.object({
+  borrower: z.string().min(1),
+  lender: z.string().min(1),
+  amount: z.union([z.string(), z.number()]),
+  collateralAmount: z.union([z.string(), z.number()]),
+  loanId: z.union([z.string(), z.number()]),
+});
+
+export const lendingRepaySchema = z.object({
+  borrower: z.string().min(1),
+  amount: z.union([z.string(), z.number()]),
+  loanId: z.union([z.string(), z.number()]),
+});
+
+export const lendingLiquidateSchema = z.object({
+  liquidator: z.string().min(1),
+  borrower: z.string().min(1),
+  loanId: z.union([z.string(), z.number()]),
+});
+
 // ─── Gateway ─────────────────────────────────────────────────────────────────
 export const gatewayChargeSchema = z.object({
   payer: z.string().min(1),
@@ -469,6 +489,9 @@ export const routeSchemas: Record<string, ZodSchema> = {
   // Lending endpoints
   "POST /v1/lending/deposit": lendingBodySchema,
   "POST /v1/lending/withdraw": lendingBodySchema,
+  "POST /v1/lending/borrow": lendingBorrowSchema,
+  "POST /v1/lending/repay": lendingRepaySchema,
+  "POST /v1/lending/liquidate": lendingLiquidateSchema,
   "GET /v1/lending/balance": lendingBalanceQuerySchema,
 
   // Gateway endpoints

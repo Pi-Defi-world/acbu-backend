@@ -308,6 +308,9 @@ export const openApiRoutes: OpenApiRouteDefinition[] = [
   route("post", "/v1/lending/deposit", "Lending", "Deposit into the lending pool"),
   route("post", "/v1/lending/withdraw", "Lending", "Withdraw from the lending pool"),
   route("get", "/v1/lending/balance", "Lending", "Get a lending pool balance"),
+  route("post", "/v1/lending/borrow", "Lending", "Borrow from the lending pool"),
+  route("post", "/v1/lending/repay", "Lending", "Repay a lending loan"),
+  route("post", "/v1/lending/liquidate", "Lending", "Liquidate an unhealthy lending loan"),
 
   // Gateway
   route("post", "/v1/gateway/charges", "Gateway", "Create an escrow charge"),
