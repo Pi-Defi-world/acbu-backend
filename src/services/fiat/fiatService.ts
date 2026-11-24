@@ -33,7 +33,7 @@ function wholeFiatToI128(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new ValidationError("Invalid fiat amount");
   }
-  return String(Math.round(amount * DECIMALS_7));
+  return decimalToContractAmount(new Decimal(amount.toString()));
 }
 
 function isTrustlineMissing(error: unknown): boolean {
@@ -316,13 +316,14 @@ export async function simulateOnRamp(
       currency,
       fiatAmount: fiatAmountI128,
     });
-    const acbuNum = Number(result.acbuAmount) / DECIMALS_7;
+    const acbuDecimal = contractNumberToDecimal(result.acbuAmount);
+    const acbuNum = acbuDecimal.toNumber();
 
     await prisma.transaction.update({
       where: { id: tx.id },
       data: {
         status: "completed",
-        acbuAmount: new Decimal(acbuNum),
+        acbuAmount: acbuDecimal,
         blockchainTxHash: result.transactionHash,
         completedAt: new Date(),
       },
@@ -403,7 +404,7 @@ export async function simulateOffRamp(
       throw new Error("No Stellar source account (STELLAR_SECRET_KEY)");
     }
 
-    const acbuAmount7 = Math.round(acbuAmount * DECIMALS_7).toString();
+    const acbuAmount7 = decimalToContractAmount(new Decimal(acbuAmount.toString()));
 
     const result = await acbuBurningService.redeemSingle({
       user: sourceAccount,

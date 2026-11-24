@@ -12,6 +12,12 @@ Decimal.set({
   toExpPos: 21,
 });
 
+const TOKEN_DECIMALS: Record<string, number> = {
+  ACBU: 7,
+  XLM: 7,
+  USDC: 7,
+};
+
 /**
  * Parse a string to Decimal with validation for monetary amounts
  * @param value - String value to parse
@@ -46,10 +52,10 @@ export function parseMonetaryString(value: string, fieldName = "amount"): Decima
 }
 
 /**
- * Convert Decimal to number for Soroban contract calls with explicit rounding
+ * Convert Decimal to an exact integer string for Soroban contract calls.
  * @param decimal - Decimal value
  * @param decimals - Number of decimal places for the contract (default 7)
- * @returns Number formatted for contract
+ * @returns Integer amount in the contract's smallest unit
  */
 export function decimalToContractNumber(decimal: Decimal, decimals: number = 7): number {
   if (!decimal.isFinite() || decimal.isNegative()) {
@@ -69,13 +75,49 @@ export function decimalToContractNumber(decimal: Decimal, decimals: number = 7):
 }
 
 /**
- * Convert contract number back to Decimal
- * @param contractNumber - Number from contract
+ * Convert a contract integer amount back to Decimal.
+ * @param contractAmount - Integer amount from contract
  * @param decimals - Number of decimal places the contract uses (default 7)
  * @returns Decimal instance
  */
-export function contractNumberToDecimal(contractNumber: number, decimals: number = 7): Decimal {
-  return new Decimal(contractNumber).div(new Decimal(10).pow(decimals));
+export function contractNumberToDecimal(
+  contractAmount: string | number | bigint,
+  decimals: number = 7,
+): Decimal {
+  return new Decimal(contractAmount.toString()).div(new Decimal(10).pow(decimals));
+}
+
+/**
+ * Convert a monetary amount to the currency's smallest indivisible unit.
+ * Soroban assets use seven decimals; fiat currencies use their ISO 4217 scale.
+ */
+export function currencyAmountToSmallestUnit(amount: string | number, currency: string): number {
+  const normalizedCurrency = currency.trim().toUpperCase();
+  const tokenDecimals = TOKEN_DECIMALS[normalizedCurrency];
+  let decimals: number;
+
+  if (tokenDecimals !== undefined) {
+    decimals = tokenDecimals;
+  } else {
+    let fractionDigits: number | undefined;
+    try {
+      fractionDigits = new Intl.NumberFormat("en", {
+        style: "currency",
+        currency: normalizedCurrency,
+      }).resolvedOptions().maximumFractionDigits;
+    } catch {
+      throw new Error(`Unsupported currency code: ${currency}`);
+    }
+    if (fractionDigits === undefined) {
+      throw new Error(`No fraction digit configuration for currency: ${currency}`);
+    }
+    decimals = fractionDigits;
+  }
+
+  return new Decimal(amount.toString())
+    .mul(new Decimal(10).pow(decimals))
+    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+    .toNumber();
 }
 
 /**

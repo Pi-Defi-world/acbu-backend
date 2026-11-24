@@ -37,7 +37,7 @@ import { assertUserWalletAddress } from "../services/wallet/walletService";
 import { logger } from "../config/logger";
 import {
   parseMonetaryString,
-  decimalToContractNumber,
+  decimalToContractAmount,
   contractNumberToDecimal,
   calculateFee,
 } from "../utils/decimalUtils";
@@ -175,7 +175,7 @@ export async function mintFromUsdcInternal(
 ): Promise<{ transactionId: string; acbuAmount: string }> {
   const usdcDecimal = new Decimal(usdcAmount);
   const feeUsdcDecimal = calculateFee(usdcDecimal, MINT_FEE_BPS);
-  const usdcAmount7 = decimalToContractNumber(usdcDecimal).toString();
+  const usdcAmount7 = decimalToContractAmount(usdcDecimal);
   const tx = await prisma.transaction.create({
     data: {
       userId: userId ?? undefined,
@@ -222,7 +222,7 @@ export async function mintFromUsdcInternal(
       usdcAmount: usdcAmount7,
       recipient: walletAddress,
     });
-    const acbuDecimal = contractNumberToDecimal(Number(result.acbuAmount));
+    const acbuDecimal = contractNumberToDecimal(result.acbuAmount);
 
     try {
       await prisma.transaction.update({
@@ -553,9 +553,9 @@ export async function depositFromBasketCurrency(
         txId: tx.id,
         user: sourceAccount,
         recipient: wallet_address,
-        acbuAmount: decimalToContractNumber(acbuAmountInfo.acbuEquivalent).toString(),
+        acbuAmount: decimalToContractAmount(acbuAmountInfo.acbuEquivalent),
       });
-      const acbuNum = contractNumberToDecimal(Number(mintResult.acbuAmount));
+      const acbuNum = contractNumberToDecimal(mintResult.acbuAmount);
 
       await prisma.transaction.update({
         where: { id: tx.id },
