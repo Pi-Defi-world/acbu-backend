@@ -8,219 +8,24 @@ useDefault = true
 description = "Generated output, lockfiles, public Stellar identifiers, and confirmed fake fixtures"
 regexTarget = "secret"
 regexes = [
-  '''^[GC][A-Z2-7]{55}
+  '''^[GC][A-Z2-7]{55}$''',
+]
+paths = [
   '''(^|/)node_modules/''',
   '''(^|/)(build|target|dist|\.next)/''',
   '''(^|/)([^/]+\.(lock|lockb)|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock)$''',
-  # Test files contain deterministic fake keys, JWTs, and credential examples.
   '''(^|/)src/services/stellar/client\.test\.ts$''',
   '''(^|/)tests/(downloadGateScanStatus|errorHandler\.sanitize|env|limits|logger\.duplicate-imports|swapRace|usdcConversionReserveLedger|usdcConvertRetry)\.test\.ts$''',
   '''(^|/)frontend/hooks/__tests__/use-wallet-setup\.test\.ts$''',
   '''(^|/)frontend/lib/__tests__/(env-safety|wallet-storage)\.test\.ts$''',
   '''(^|/)contracts/frontend/zk-comply-frontend/src/lib/api\.auth-headers\.contract\.test\.ts$''',
-  # These CI values are fixed test-only JWT placeholders, not deploy credentials.
   '''(^|/)\.github/workflows/(ci|env-contract-validation)\.yml$''',
-  # Historical local bootstrap examples use malformed (checksum-invalid) seed placeholders.
   '''(^|/)contracts/scripts/(init_temp\.sh|initOracle\.cmd)$''',
-  # This is a public WASM artifact digest, not a credential.
   '''(^|/)contracts/scripts/verify_deployment\.sh$''',
-]
-
-[[rules]]
-id = "stellar-secret-seed"
-description = "Stellar secret seed"
-regex = '''\bS[A-Z2-7]{55}\b'''
-secretGroup = 0
-keywords = ["S"]
-
-[[rules]]
-id = "soroban-hardcoded-key-material"
-description = "Hardcoded Soroban mnemonic or private key material"
-regex = '''(?i)(?:mnemonic|seed(?:[_-]?phrase)?|secret[_-]?key|private[_-]?key)\s*[:=]\s*["'][a-z]{2,}(?:\s+[a-z]{2,}){11,23}["']'''
-secretGroup = 0
-paths = ['''(^|/)contracts/.*''']
-
-[[rules]]
-id = "soroban-hardcoded-keypair"
-description = "Hardcoded secret passed to a Soroban or Stellar keypair constructor"
-regex = '''(?i)(?:Keypair|SecretKey|SigningKey|PrivateKey)::(?:from_secret|from_seed|from_bytes|from_str)\s*\(\s*b?["'][A-Za-z0-9_./+=-]{16,}["']'''
-secretGroup = 0
-paths = ['''(^|/)contracts/.*''']
-
-[[rules]]
-id = "frontend-public-env-private-credential"
-description = "Private credential exposed through a public frontend environment variable"
-regex = '''(?i)\b(?:NEXT_PUBLIC|VITE)_[A-Z0-9_]*(?:PRIVATE(?:_KEY)?|SECRET|TOKEN|API[_-]?KEY|SERVICE[_-]?(?:ROLE|SECRET|KEY)|ACCESS[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*["'][^"'\s]{8,}["']'''
-secretGroup = 0
-keywords = ["NEXT_PUBLIC_", "VITE_"]
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-
-[[rules]]
-id = "frontend-hardcoded-api-credential"
-description = "Hardcoded API key or service credential in frontend code"
-regex = '''(?i)\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|service[_-]?(?:key|token|secret)|private[_-]?key)\b\s*[:=]\s*["'][A-Za-z0-9_./+=-]{16,}["']'''
-secretGroup = 0
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-
-[[rules]]
-id = "frontend-jwt"
-description = "JWT token in frontend code"
-regex = '''\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b'''
-secretGroup = 0
-keywords = ["eyJ"]
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-'',
 ]
 # Confirmed historical dummy token in a test-only script (commit-scoped).
 commits = [
-  "63bfe18d8e0567abcd72d542641723afd79b056c"
-]
-paths = [
-  '''(^|/)node_modules/''',
-  '''(^|/)(build|target|dist|\.next)/''',
-  '''(^|/)([^/]+\.(lock|lockb)|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock)$''',
-  # Test files contain deterministic fake keys, JWTs, and credential examples.
-  '''(^|/)src/services/stellar/client\.test\.ts$''',
-  '''(^|/)tests/(downloadGateScanStatus|errorHandler\.sanitize|env|limits|logger\.duplicate-imports|swapRace|usdcConversionReserveLedger|usdcConvertRetry)\.test\.ts$''',
-  '''(^|/)frontend/hooks/__tests__/use-wallet-setup\.test\.ts$''',
-  '''(^|/)frontend/lib/__tests__/(env-safety|wallet-storage)\.test\.ts$''',
-  '''(^|/)contracts/frontend/zk-comply-frontend/src/lib/api\.auth-headers\.contract\.test\.ts$''',
-  # These CI values are fixed test-only JWT placeholders, not deploy credentials.
-  '''(^|/)\.github/workflows/(ci|env-contract-validation)\.yml$''',
-  # Historical local bootstrap examples use malformed (checksum-invalid) seed placeholders.
-  '''(^|/)contracts/scripts/(init_temp\.sh|initOracle\.cmd)$''',
-  # This is a public WASM artifact digest, not a credential.
-  '''(^|/)contracts/scripts/verify_deployment\.sh$''',
-]
-
-[[rules]]
-id = "stellar-secret-seed"
-description = "Stellar secret seed"
-regex = '''\bS[A-Z2-7]{55}\b'''
-secretGroup = 0
-keywords = ["S"]
-
-[[rules]]
-id = "soroban-hardcoded-key-material"
-description = "Hardcoded Soroban mnemonic or private key material"
-regex = '''(?i)(?:mnemonic|seed(?:[_-]?phrase)?|secret[_-]?key|private[_-]?key)\s*[:=]\s*["'][a-z]{2,}(?:\s+[a-z]{2,}){11,23}["']'''
-secretGroup = 0
-paths = ['''(^|/)contracts/.*''']
-
-[[rules]]
-id = "soroban-hardcoded-keypair"
-description = "Hardcoded secret passed to a Soroban or Stellar keypair constructor"
-regex = '''(?i)(?:Keypair|SecretKey|SigningKey|PrivateKey)::(?:from_secret|from_seed|from_bytes|from_str)\s*\(\s*b?["'][A-Za-z0-9_./+=-]{16,}["']'''
-secretGroup = 0
-paths = ['''(^|/)contracts/.*''']
-
-[[rules]]
-id = "frontend-public-env-private-credential"
-description = "Private credential exposed through a public frontend environment variable"
-regex = '''(?i)\b(?:NEXT_PUBLIC|VITE)_[A-Z0-9_]*(?:PRIVATE(?:_KEY)?|SECRET|TOKEN|API[_-]?KEY|SERVICE[_-]?(?:ROLE|SECRET|KEY)|ACCESS[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*["'][^"'\s]{8,}["']'''
-secretGroup = 0
-keywords = ["NEXT_PUBLIC_", "VITE_"]
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-
-[[rules]]
-id = "frontend-hardcoded-api-credential"
-description = "Hardcoded API key or service credential in frontend code"
-regex = '''(?i)\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|service[_-]?(?:key|token|secret)|private[_-]?key)\b\s*[:=]\s*["'][A-Za-z0-9_./+=-]{16,}["']'''
-secretGroup = 0
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-
-[[rules]]
-id = "frontend-jwt"
-description = "JWT token in frontend code"
-regex = '''\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b'''
-secretGroup = 0
-keywords = ["eyJ"]
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-''
-]
-paths = [
-  '''(^|/)node_modules/''',
-  '''(^|/)(build|target|dist|\.next)/''',
-  '''(^|/)([^/]+\.(lock|lockb)|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock)$''',
-  # Test files contain deterministic fake keys, JWTs, and credential examples.
-  '''(^|/)src/services/stellar/client\.test\.ts$''',
-  '''(^|/)tests/(downloadGateScanStatus|errorHandler\.sanitize|env|limits|logger\.duplicate-imports|swapRace|usdcConversionReserveLedger|usdcConvertRetry)\.test\.ts$''',
-  '''(^|/)frontend/hooks/__tests__/use-wallet-setup\.test\.ts$''',
-  '''(^|/)frontend/lib/__tests__/(env-safety|wallet-storage)\.test\.ts$''',
-  '''(^|/)contracts/frontend/zk-comply-frontend/src/lib/api\.auth-headers\.contract\.test\.ts$''',
-  # These CI values are fixed test-only JWT placeholders, not deploy credentials.
-  '''(^|/)\.github/workflows/(ci|env-contract-validation)\.yml$''',
-  # Historical local bootstrap examples use malformed (checksum-invalid) seed placeholders.
-  '''(^|/)contracts/scripts/(init_temp\.sh|initOracle\.cmd)$''',
-  # This is a public WASM artifact digest, not a credential.
-  '''(^|/)contracts/scripts/verify_deployment\.sh$''',
-]
-
-[[rules]]
-id = "stellar-secret-seed"
-description = "Stellar secret seed"
-regex = '''\bS[A-Z2-7]{55}\b'''
-secretGroup = 0
-keywords = ["S"]
-
-[[rules]]
-id = "soroban-hardcoded-key-material"
-description = "Hardcoded Soroban mnemonic or private key material"
-regex = '''(?i)(?:mnemonic|seed(?:[_-]?phrase)?|secret[_-]?key|private[_-]?key)\s*[:=]\s*["'][a-z]{2,}(?:\s+[a-z]{2,}){11,23}["']'''
-secretGroup = 0
-paths = ['''(^|/)contracts/.*''']
-
-[[rules]]
-id = "soroban-hardcoded-keypair"
-description = "Hardcoded secret passed to a Soroban or Stellar keypair constructor"
-regex = '''(?i)(?:Keypair|SecretKey|SigningKey|PrivateKey)::(?:from_secret|from_seed|from_bytes|from_str)\s*\(\s*b?["'][A-Za-z0-9_./+=-]{16,}["']'''
-secretGroup = 0
-paths = ['''(^|/)contracts/.*''']
-
-[[rules]]
-id = "frontend-public-env-private-credential"
-description = "Private credential exposed through a public frontend environment variable"
-regex = '''(?i)\b(?:NEXT_PUBLIC|VITE)_[A-Z0-9_]*(?:PRIVATE(?:_KEY)?|SECRET|TOKEN|API[_-]?KEY|SERVICE[_-]?(?:ROLE|SECRET|KEY)|ACCESS[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*["'][^"'\s]{8,}["']'''
-secretGroup = 0
-keywords = ["NEXT_PUBLIC_", "VITE_"]
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-
-[[rules]]
-id = "frontend-hardcoded-api-credential"
-description = "Hardcoded API key or service credential in frontend code"
-regex = '''(?i)\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|service[_-]?(?:key|token|secret)|private[_-]?key)\b\s*[:=]\s*["'][A-Za-z0-9_./+=-]{16,}["']'''
-secretGroup = 0
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-
-[[rules]]
-id = "frontend-jwt"
-description = "JWT token in frontend code"
-regex = '''\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b'''
-secretGroup = 0
-keywords = ["eyJ"]
-paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
-'',
-]
-# Confirmed historical dummy token in a test-only script (commit-scoped).
-commits = [
-  "63bfe18d8e0567abcd72d542641723afd79b056c"
-]
-paths = [
-  '''(^|/)node_modules/''',
-  '''(^|/)(build|target|dist|\.next)/''',
-  '''(^|/)([^/]+\.(lock|lockb)|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock)$''',
-  # Test files contain deterministic fake keys, JWTs, and credential examples.
-  '''(^|/)src/services/stellar/client\.test\.ts$''',
-  '''(^|/)tests/(downloadGateScanStatus|errorHandler\.sanitize|env|limits|logger\.duplicate-imports|swapRace|usdcConversionReserveLedger|usdcConvertRetry)\.test\.ts$''',
-  '''(^|/)frontend/hooks/__tests__/use-wallet-setup\.test\.ts$''',
-  '''(^|/)frontend/lib/__tests__/(env-safety|wallet-storage)\.test\.ts$''',
-  '''(^|/)contracts/frontend/zk-comply-frontend/src/lib/api\.auth-headers\.contract\.test\.ts$''',
-  # These CI values are fixed test-only JWT placeholders, not deploy credentials.
-  '''(^|/)\.github/workflows/(ci|env-contract-validation)\.yml$''',
-  # Historical local bootstrap examples use malformed (checksum-invalid) seed placeholders.
-  '''(^|/)contracts/scripts/(init_temp\.sh|initOracle\.cmd)$''',
-  # This is a public WASM artifact digest, not a credential.
-  '''(^|/)contracts/scripts/verify_deployment\.sh$''',
+  "63bfe18d8e0567abcd72d542641723afd79b056c",
 ]
 
 [[rules]]
