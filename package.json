@@ -168,19 +168,23 @@
       "fast-uri": ">=3.1.8",
       "ip-address": ">=10.3.1",
       "qs": ">=6.16.0",
-      "body-parser": ">=1.20.6 <2.0.0",
+      "body-parser": ">=1.20.9 <2.0.0",
       "@grpc/grpc-js": ">=1.14.5",
       "@babel/core": ">=7.29.6 <8.0.0",
-      "follow-redirects": ">=1.16.0",
+      "follow-redirects": ">=1.16.2",
       "picomatch@^2.3.1": "2.3.2",
       "js-yaml@^3": "3.15.2",
       "js-yaml@^4": "4.3.2",
-      "toml": ">=4.2.0",
-      "nodemailer": ">=9.1.0",
+      "toml": ">=5.0.1",
+      "nodemailer": ">=10.0.13",
       "deepmerge-ts": ">=8.0.0",
       "moment": ">=2.31.0",
       "proxy-addr": ">=2.0.8",
-      "compression": ">=1.8.2"
+      "compression": ">=1.8.2",
+      "systeminformation": ">=5.33.16",
+      "effect": ">=3.22.1",
+      "glob": ">=14.0.2",
+      "minimatch": ">=11.0.1"
     }
   }
 }
