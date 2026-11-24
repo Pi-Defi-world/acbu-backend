@@ -73,7 +73,7 @@ paths = ['''(^|/)(frontend|acbu-frontend)/.*''']
 ]
 # Confirmed historical dummy token in a test-only script (commit-scoped).
 commits = [
-  "63bfe18d8e0567abcd72d542641723afd79b056c",
+  "63bfe18d8e0567abcd72d542641723afd79b056c"
 ]
 paths = [
   '''(^|/)node_modules/''',
