@@ -2,6 +2,7 @@ import { Horizon } from "@stellar/stellar-sdk";
 import { prisma } from "../../config/database";
 import { AppError } from "../../middleware/errorHandler";
 import { assertIfMatchHeaderPresent } from "../../utils/walletConcurrency";
+import { getAcbuAssetConfig } from "../../config/acbuAsset";
 
 export type WalletBalanceSnapshot = {
   balance: string;
@@ -122,18 +123,13 @@ export async function fetchWalletBalance(userId: string): Promise<{
     };
   }
 
-  const horizonUrl =
-    process.env.STELLAR_HORIZON_URL || "https://horizon-testnet.stellar.org";
-  const assetCode = process.env.STELLAR_ACBU_ASSET_CODE || "ACBU";
-  const assetIssuer = process.env.STELLAR_ACBU_ASSET_ISSUER || "";
+  const horizonUrl = process.env.STELLAR_HORIZON_URL || "https://horizon-testnet.stellar.org";
+  // Single source of truth for the ACBU code + issuer (see config/acbuAsset.ts).
+  const { code: assetCode, issuer: assetIssuer } = getAcbuAssetConfig();
   const cacheKey = [userId, horizonUrl, assetCode, assetIssuer].join("|");
   const cached = balanceCache.get(cacheKey);
 
-  if (
-    cached &&
-    cached.expiresAt > Date.now() &&
-    cached.walletVersion === user.walletVersion
-  ) {
+  if (cached && cached.expiresAt > Date.now() && cached.walletVersion === user.walletVersion) {
     return { snapshot: cached.value, walletVersion: user.walletVersion };
   }
 

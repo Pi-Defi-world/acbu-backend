@@ -104,9 +104,7 @@ export class SimulatedBillsPartner implements BillsPartnerAdapter {
     }));
   }
 
-  async payBill(
-    request: PartnerBillPaymentRequest,
-  ): Promise<PartnerBillPaymentResponse> {
+  async payBill(request: PartnerBillPaymentRequest): Promise<PartnerBillPaymentResponse> {
     const providerReference = `bill_${crypto.randomUUID()}`;
     return {
       provider: this.providerId,
@@ -137,9 +135,7 @@ export class SimulatedBillsPartner implements BillsPartnerAdapter {
     };
   }
 
-  async refundBill(
-    request: PartnerBillRefundRequest,
-  ): Promise<PartnerBillRefundResponse> {
+  async refundBill(request: PartnerBillRefundRequest): Promise<PartnerBillRefundResponse> {
     return {
       provider: this.providerId,
       providerReference: request.providerReference,

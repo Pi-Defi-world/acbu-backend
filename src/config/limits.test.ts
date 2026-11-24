@@ -54,12 +54,8 @@ describe("runtime limits config", () => {
 
   it("refreshes from DB after cache expiry without module reload", async () => {
     mockFindMany
-      .mockResolvedValueOnce([
-        { scope: "retail", values: { depositDailyUsd: 1000 } },
-      ])
-      .mockResolvedValueOnce([
-        { scope: "retail", values: { depositDailyUsd: 3000 } },
-      ]);
+      .mockResolvedValueOnce([{ scope: "retail", values: { depositDailyUsd: 1000 } }])
+      .mockResolvedValueOnce([{ scope: "retail", values: { depositDailyUsd: 3000 } }]);
 
     await expect(getLimitConfig("retail")).resolves.toMatchObject({
       depositDailyUsd: 1000,
@@ -89,9 +85,7 @@ describe("runtime limits config", () => {
 
   it("serves stale cached limits when refresh fails", async () => {
     mockFindMany
-      .mockResolvedValueOnce([
-        { scope: "retail", values: { depositDailyUsd: 1200 } },
-      ])
+      .mockResolvedValueOnce([{ scope: "retail", values: { depositDailyUsd: 1200 } }])
       .mockRejectedValueOnce(new Error("pool exhausted"));
 
     await expect(getLimitConfig("retail")).resolves.toMatchObject({
@@ -104,9 +98,7 @@ describe("runtime limits config", () => {
 
   it("shares one DB refresh across concurrent cache misses", async () => {
     process.env.LIMIT_CONFIG_CACHE_TTL_MS = "60000";
-    mockFindMany.mockResolvedValueOnce([
-      { scope: "retail", values: { depositDailyUsd: 1800 } },
-    ]);
+    mockFindMany.mockResolvedValueOnce([{ scope: "retail", values: { depositDailyUsd: 1800 } }]);
 
     const [first, second, third] = await Promise.all([
       getLimitConfig("retail"),

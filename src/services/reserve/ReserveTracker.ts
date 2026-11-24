@@ -9,6 +9,7 @@ import { acbuReserveTrackerService } from "../contracts";
 import { basketService } from "../basket";
 import { getRabbitMQChannel } from "../../config/rabbitmq";
 import { QUEUES } from "../../config/rabbitmq";
+import { getAcbuAssetConfig } from "../../config/acbuAsset";
 import { Decimal } from "@prisma/client/runtime/library";
 import { stellarClient } from "../stellar/client";
 import { contractClient, ContractClient } from "../stellar/contractClient";
@@ -91,17 +92,17 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
 
 export interface ReserveStatus {
   currency: string;
-  targetWeight: number;
-  actualWeight: number;
-  reserveAmount: number;
-  reserveValueUsd: number;
-  weightDrift: number;
+  targetWeight: Decimal;
+  actualWeight: Decimal;
+  reserveAmount: Decimal;
+  reserveValueUsd: Decimal;
+  weightDrift: Decimal;
 }
 
 export interface ReserveHealth {
   totalAcbuSupply: number;
-  totalReserveValueUsd: number;
-  overcollateralizationRatio: number;
+  totalReserveValueUsd: Decimal;
+  overcollateralizationRatio: Decimal;
   health: "healthy" | "warning" | "critical";
   currencies: ReserveStatus[];
 }
@@ -129,8 +130,8 @@ export class ReserveTracker {
           // the minting contract + oracle rate. Fintech partner balances are 0 in
           // the simulated provider and would incorrectly wipe the on-chain reserves
           // (causing is_reserve_sufficient -> false on the next mint).
-          let balance = 0;
-          let reserveValueUsd = 0;
+          let balance = new Decimal(0);
+          let reserveValueUsd = new Decimal(0);
           let onChainAmountAtomic: bigint | null = null;
           let onChainValueUsdAtomic: bigint | null = null;
 
@@ -160,11 +161,10 @@ export class ReserveTracker {
               async () => (await fintechRouter.getProvider(currency)).getBalance(currency),
               `getBalance(${currency})`,
             );
-            const rate = await withRetry(
-              () => this.getCurrencyRate(currency),
-              `getCurrencyRate(${currency})`,
+            const rate = new Decimal(
+              await withRetry(() => this.getCurrencyRate(currency), `getCurrencyRate(${currency})`),
             );
-            reserveValueUsd = balance * rate;
+            reserveValueUsd = balance.mul(rate);
           }
 
           const targetWeight = await basketService.getTargetWeight(currency);
@@ -178,9 +178,9 @@ export class ReserveTracker {
               currency,
               segment: "transactions",
               targetWeight: new Decimal(targetWeight),
-              actualWeight: new Decimal(actualWeight),
-              reserveAmount: new Decimal(balance),
-              reserveValueUsd: new Decimal(reserveValueUsd),
+              actualWeight,
+              reserveAmount: balance,
+              reserveValueUsd,
             },
           });
 
@@ -266,7 +266,7 @@ export class ReserveTracker {
     const totalAcbuSupply = await this.getTotalAcbuSupply();
     const totalReserveValue = await this.getTotalReserveValue(segment);
     const overcollateralizationRatio =
-      totalAcbuSupply > 0 ? (totalReserveValue / totalAcbuSupply) * 100 : 0;
+      totalAcbuSupply > 0 ? totalReserveValue.div(totalAcbuSupply).mul(100) : new Decimal(0);
 
     const currencies = await basketService.getCurrencies();
     const currencyStatuses: ReserveStatus[] = [];
@@ -290,12 +290,13 @@ export class ReserveTracker {
       }
     }
 
-    const health: "healthy" | "warning" | "critical" =
-      overcollateralizationRatio >= config.reserve.targetRatio * 100
-        ? "healthy"
-        : overcollateralizationRatio >= config.reserve.alertThreshold * 100
-          ? "warning"
-          : "critical";
+    const health: "healthy" | "warning" | "critical" = overcollateralizationRatio.gte(
+      config.reserve.targetRatio * 100,
+    )
+      ? "healthy"
+      : overcollateralizationRatio.gte(config.reserve.alertThreshold * 100)
+        ? "warning"
+        : "critical";
 
     return {
       totalAcbuSupply,
@@ -319,7 +320,7 @@ export class ReserveTracker {
       return 0;
     }
 
-    return totalReserveValue / totalAcbuSupply;
+    return totalReserveValue.div(totalAcbuSupply).toNumber();
   }
 
   /**
@@ -327,7 +328,7 @@ export class ReserveTracker {
    */
   private async checkReserveHealth(): Promise<ReserveHealth> {
     const status = await this.getReserveStatus();
-    const ratio = status.overcollateralizationRatio / 100;
+    const ratio = status.overcollateralizationRatio.div(100).toNumber();
 
     if (ratio < config.reserve.alertThreshold) {
       logger.warn("Reserve health critical", {
@@ -350,8 +351,8 @@ export class ReserveTracker {
   private async triggerAlert(health: ReserveHealth): Promise<void> {
     logger.error("Reserve alert triggered", {
       totalAcbuSupply: health.totalAcbuSupply,
-      totalReserveValueUsd: health.totalReserveValueUsd,
-      overcollateralizationRatio: health.overcollateralizationRatio,
+      totalReserveValueUsd: health.totalReserveValueUsd.toNumber(),
+      overcollateralizationRatio: health.overcollateralizationRatio.toNumber(),
       health: health.health,
     });
     try {
@@ -364,8 +365,8 @@ export class ReserveTracker {
             type: "reserve_alert",
             health: health.health,
             totalAcbuSupply: health.totalAcbuSupply,
-            totalReserveValueUsd: health.totalReserveValueUsd,
-            overcollateralizationRatio: health.overcollateralizationRatio,
+            totalReserveValueUsd: health.totalReserveValueUsd.toNumber(),
+            overcollateralizationRatio: health.overcollateralizationRatio.toNumber(),
             timestamp: new Date().toISOString(),
           }),
         ),
@@ -388,8 +389,10 @@ export class ReserveTracker {
       _sum: { acbuAmountBurned: true },
     });
 
-    const totalMinted = minted._sum.acbuAmount?.toNumber() || 0;
-    const totalBurned = burned._sum.acbuAmountBurned?.toNumber() || 0;
+    const totalMinted = minted._sum.acbuAmount ? Number(minted._sum.acbuAmount.toString()) : 0;
+    const totalBurned = burned._sum.acbuAmountBurned
+      ? Number(burned._sum.acbuAmountBurned.toString())
+      : 0;
 
     return Math.max(0, totalMinted - totalBurned);
   }
@@ -404,8 +407,8 @@ export class ReserveTracker {
   private async getTotalAcbuSupply(): Promise<number> {
     const ledgerSupply = await this.getTotalAcbuSupplyFromLedger();
 
-    const issuer = process.env.STELLAR_ACBU_ASSET_ISSUER;
-    const assetCode = process.env.STELLAR_ACBU_ASSET_CODE || "ACBU";
+    // Single source of truth for the ACBU code + issuer (see config/acbuAsset.ts).
+    const { code, issuer } = getAcbuAssetConfig();
 
     if (!issuer) {
       logger.warn("ACBU issuer not configured. Using ledger supply.");
@@ -446,9 +449,9 @@ export class ReserveTracker {
    */
   private async getTotalReserveValue(
     segment: string = ReserveTracker.SEGMENT_TRANSACTIONS,
-  ): Promise<number> {
+  ): Promise<Decimal> {
     const currencies = await basketService.getCurrencies();
-    let total = 0;
+    let total = new Decimal(0);
 
     for (const currency of currencies) {
       const latest = await prisma.reserve.findFirst({
@@ -457,7 +460,7 @@ export class ReserveTracker {
       });
 
       if (latest) {
-        total += latest.reserveValueUsd.toNumber();
+        total = total.add(latest.reserveValueUsd);
       }
     }
 

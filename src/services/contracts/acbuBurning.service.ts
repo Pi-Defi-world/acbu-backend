@@ -1,18 +1,21 @@
 import { contractClient, ContractClient } from "../stellar/contractClient";
 import { stellarClient } from "../stellar/client";
 import { logger } from "../../config/logger";
+import { assertValidRecipientAccount } from "../../utils/stellar";
 
 export interface RedeemSingleParams {
   user: string;
   recipient: string;
   acbuAmount: string; // Amount in smallest unit (7 decimals)
   currency: string; // Currency code (NGN, KES, RWF)
+  idempotencyKey: string;
 }
 
 export interface RedeemBasketParams {
   user: string;
   recipient: string;
   acbuAmount: string;
+  idempotencyKey: string;
 }
 
 export class BurningService {
@@ -24,30 +27,35 @@ export class BurningService {
     this.contractClient = contractClient;
   }
 
-  /**
-   * Redeem ACBU for single currency
-   */
+  private extractIdempotencyKey(params: any): string {
+    if (!params?.idempotencyKey || typeof params?.idempotencyKey !== "string") {
+      throw new Error("Idempotency key is required");
+    }
+    return params.idempotencyKey;
+  }
+
   async redeemSingle(params: RedeemSingleParams): Promise<{
     transactionHash: string;
     localAmount: string;
   }> {
     try {
       logger.info("Redeeming ACBU for single currency", params);
+      assertValidRecipientAccount(params.recipient);
 
+      const idempotencyKey = this.extractIdempotencyKey(params);
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
         throw new Error("No source account available");
       }
 
-      // Build function arguments: [user, recipient, acbu_amount, currency]
       const args = [
         ContractClient.toScVal(params.user),
         ContractClient.toScVal(params.recipient),
         ContractClient.toScVal(BigInt(params.acbuAmount)),
         ContractClient.toScVal(params.currency),
+        ContractClient.toScVal(idempotencyKey),
       ];
 
-      // Invoke contract
       const result = await this.contractClient.invokeContract({
         contractId: this.contractId,
         functionName: "redeem_single",
@@ -55,7 +63,6 @@ export class BurningService {
         sourceAccount,
       });
 
-      // Parse result (local currency amount)
       const localAmount = ContractClient.fromScVal(result.result);
 
       logger.info("Redemption successful", {
@@ -73,29 +80,27 @@ export class BurningService {
     }
   }
 
-  /**
-   * Redeem ACBU for proportional basket
-   */
   async redeemBasket(params: RedeemBasketParams): Promise<{
     transactionHash: string;
     localAmounts: string[];
   }> {
     try {
       logger.info("Redeeming ACBU for basket", params);
+      assertValidRecipientAccount(params.recipient);
 
+      const idempotencyKey = this.extractIdempotencyKey(params);
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
         throw new Error("No source account available");
       }
 
-      // Build function arguments: [user, recipient, acbu_amount]
       const args = [
         ContractClient.toScVal(params.user),
         ContractClient.toScVal(params.recipient),
         ContractClient.toScVal(BigInt(params.acbuAmount)),
+        ContractClient.toScVal(idempotencyKey),
       ];
 
-      // Invoke contract
       const result = await this.contractClient.invokeContract({
         contractId: this.contractId,
         functionName: "redeem_basket",
@@ -103,14 +108,11 @@ export class BurningService {
         sourceAccount,
       });
 
-      // Parse result (array of local amounts)
       const parsedResult = ContractClient.fromScVal(result.result);
       if (!Array.isArray(parsedResult)) {
         throw new Error("Invalid redeem_basket result: expected array");
       }
-      const localAmounts = parsedResult.map((amount: unknown) =>
-        String(amount),
-      );
+      const localAmounts = parsedResult.map((amount: unknown) => String(amount));
 
       logger.info("Basket redemption successful", {
         transactionHash: result.transactionHash,
@@ -127,16 +129,9 @@ export class BurningService {
     }
   }
 
-  /**
-   * Get current fee rate
-   */
   async getFeeRate(): Promise<number> {
     try {
-      const result = await this.contractClient.readContract(
-        this.contractId,
-        "get_fee_rate",
-        [],
-      );
+      const result = await this.contractClient.readContract(this.contractId, "get_fee_rate", []);
 
       const feeRate = ContractClient.fromScVal(result);
       return Number(feeRate);
@@ -146,16 +141,9 @@ export class BurningService {
     }
   }
 
-  /**
-   * Check if contract is paused
-   */
   async isPaused(): Promise<boolean> {
     try {
-      const result = await this.contractClient.readContract(
-        this.contractId,
-        "is_paused",
-        [],
-      );
+      const result = await this.contractClient.readContract(this.contractId, "is_paused", []);
 
       return ContractClient.fromScVal(result) as boolean;
     } catch (error) {

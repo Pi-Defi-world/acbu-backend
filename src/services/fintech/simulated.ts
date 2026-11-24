@@ -1,3 +1,5 @@
+import crypto from "crypto";
+import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../../config/database";
 import { logger } from "../../config/logger";
 import type {
@@ -37,22 +39,26 @@ export class SimulatedFintechProvider implements FintechProvider {
         orderBy: { timestamp: "desc" },
       });
 
-      const fromRate = fromRateRow?.rateUsd.toNumber();
-      const toRate = toRateRow?.rateUsd.toNumber();
+      if (fromRateRow?.rateUsd == null || toRateRow?.rateUsd == null) {
+        throw new Error(`Missing rates for conversion: ${fromCurrency} or ${toCurrency}`);
+      }
 
-      if (!fromRate || !toRate) {
-        throw new Error(
-          `Missing rates for conversion: ${fromCurrency} or ${toCurrency}`,
-        );
+      // Use high-precision Decimal arithmetic to avoid the precision-loss that
+      // .toNumber() reintroduces (fixes #1172 / W10-R-003).
+      const fromRateDecimal = new Decimal(fromRateRow.rateUsd.toString());
+      const toRateDecimal = new Decimal(toRateRow.rateUsd.toString());
+
+      if (fromRateDecimal.isZero() || toRateDecimal.isZero()) {
+        throw new Error(`Invalid zero rate for conversion: ${fromCurrency} or ${toCurrency}`);
       }
 
       // amount * (USD/from) / (USD/to) = amount * (to/from)
-      const rate = fromRate / toRate;
-      const resultAmount = amount * rate;
+      const rateDecimal = fromRateDecimal.div(toRateDecimal);
+      const resultDecimal = new Decimal(amount).mul(rateDecimal);
 
       return {
-        amount: resultAmount,
-        rate: rate,
+        amount: resultDecimal.toNumber(),
+        rate: rateDecimal.toNumber(),
       };
     } catch (error: any) {
       logger.error("Simulated conversion failed", {
@@ -85,7 +91,7 @@ export class SimulatedFintechProvider implements FintechProvider {
     // For now, we'll just return a success result.
 
     return {
-      transactionId: `sim_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      transactionId: `sim_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
       status: "completed",
     };
   }

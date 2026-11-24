@@ -1,11 +1,15 @@
 process.env.DATABASE_URL = "postgresql://test:test@localhost/test";
 process.env.MONGODB_URI = "mongodb://localhost/test";
 process.env.RABBITMQ_URL = "amqp://localhost";
-process.env.JWT_SECRET = "test-secret";
+process.env.JWT_SECRET = "test-secret-at-least-32-characters-long";
 
+import { readFileSync } from "fs";
+import { join } from "path";
 import {
   assertValidTransition,
   isTerminalStatus,
+  isTransactionStatus,
+  TRANSACTION_STATUSES,
   TransactionStatus,
 } from "../src/utils/transactionStateMachine";
 
@@ -104,5 +108,33 @@ describe("B-073 — Transaction status machine", () => {
     it("marks processing as non-terminal", () => {
       expect(isTerminalStatus("processing")).toBe(false);
     });
+
+    it("marks refunded as terminal", () => {
+      expect(isTerminalStatus("refunded")).toBe(true);
+    });
+  });
+});
+
+describe("AB-023 — Transaction status constraint", () => {
+  const migrationSql = readFileSync(
+    join(
+      __dirname,
+      "../prisma/migrations/20260924000000_constrain_transaction_status/migration.sql",
+    ),
+    "utf8",
+  );
+
+  it("CHECK constraint allows exactly TRANSACTION_STATUSES", () => {
+    const check = migrationSql.match(/CHECK \("status" IN \(([^)]*)\)\)/);
+    expect(check).not.toBeNull();
+    const allowed = [...check![1].matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
+    expect(allowed).toEqual([...TRANSACTION_STATUSES].sort());
+  });
+
+  it("isTransactionStatus accepts only lower-case known values", () => {
+    for (const s of TRANSACTION_STATUSES) expect(isTransactionStatus(s)).toBe(true);
+    for (const s of ["FAILED", "success", "pending_convert", "", null, 1]) {
+      expect(isTransactionStatus(s)).toBe(false);
+    }
   });
 });

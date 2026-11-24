@@ -1,6 +1,1 @@
-export {
-  getSpreadBps,
-  getMintFeeBps,
-  getBurnFeeBps,
-  applySpread,
-} from "./feePolicyService";
+export { getSpreadBps, getMintFeeBps, getBurnFeeBps, applySpread } from "./feePolicyService";

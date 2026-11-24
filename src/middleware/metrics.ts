@@ -28,9 +28,7 @@ class LatencyHistogram {
   sumMs = 0;
 
   constructor() {
-    this.bucketCounts = new Array(LATENCY_BUCKET_BOUNDARIES_MS.length + 1).fill(
-      0,
-    );
+    this.bucketCounts = new Array(LATENCY_BUCKET_BOUNDARIES_MS.length + 1).fill(0);
   }
 
   record(durationMs: number): void {
@@ -44,8 +42,7 @@ class LatencyHistogram {
     const bucketIndex = LATENCY_BUCKET_BOUNDARIES_MS.findIndex(
       (boundary) => durationMs <= boundary,
     );
-    const idx =
-      bucketIndex === -1 ? LATENCY_BUCKET_BOUNDARIES_MS.length : bucketIndex;
+    const idx = bucketIndex === -1 ? LATENCY_BUCKET_BOUNDARIES_MS.length : bucketIndex;
     this.bucketCounts[idx] += 1;
   }
 
@@ -93,13 +90,10 @@ class LatencyHistogram {
 const histogramsByEndpoint = new Map<string, LatencyHistogram>();
 
 const meter = metrics.getMeter("acbu-backend");
-const otelResponseTimeHistogram = meter.createHistogram(
-  "http.server.request.duration",
-  {
-    description: "HTTP request duration by endpoint",
-    unit: "ms",
-  },
-);
+const otelResponseTimeHistogram = meter.createHistogram("http.server.request.duration", {
+  description: "HTTP request duration by endpoint",
+  unit: "ms",
+});
 
 function getOrCreateHistogram(endpoint: string): LatencyHistogram {
   let histogram = histogramsByEndpoint.get(endpoint);
@@ -132,11 +126,7 @@ export function recordResponseTime(
   });
 }
 
-export function requestMetricsMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
+export function requestMetricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const start = process.hrtime.bigint();
 
   res.on("finish", () => {

@@ -27,9 +27,7 @@ async function getOnChainTotalMinted(): Promise<string> {
   return acbuMintingService.getTotalSupply();
 }
 
-export async function validateRewardAmount(
-  acbuAmount: string,
-): Promise<KycRewardValidationResult> {
+export async function validateRewardAmount(acbuAmount: string): Promise<KycRewardValidationResult> {
   const rewardAmount = BigInt(acbuAmount);
   const onChainTotalRaw = await getOnChainTotalMinted();
   const onChainTotal = BigInt(onChainTotalRaw);
@@ -65,8 +63,7 @@ export async function validateRewardAmount(
     };
   }
 
-  const maxRewardBasedOnMinted =
-    (onChainTotal * MAX_REWARD_PCT_OF_MINTED) / 100n;
+  const maxRewardBasedOnMinted = (onChainTotal * MAX_REWARD_PCT_OF_MINTED) / 100n;
   if (rewardAmount > maxRewardBasedOnMinted) {
     return {
       valid: false,
@@ -85,9 +82,7 @@ export async function validateRewardAmount(
   };
 }
 
-export async function createValidatorReward(
-  params: CreateRewardParams,
-): Promise<{
+export async function createValidatorReward(params: CreateRewardParams): Promise<{
   id: string;
   acbuAmount: string;
   status: string;
@@ -132,9 +127,7 @@ export async function createValidatorReward(
 
 export async function getValidatorRewards(
   validatorId: string,
-): Promise<
-  Array<{ id: string; acbuAmount: string; status: string; createdAt: Date }>
-> {
+): Promise<Array<{ id: string; acbuAmount: string; status: string; createdAt: Date }>> {
   const rewards = await prisma.kycValidatorReward.findMany({
     where: { validatorId },
     orderBy: { createdAt: "desc" },

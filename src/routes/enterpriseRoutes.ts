@@ -1,16 +1,10 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { validateApiKey } from "../middleware/auth";
-import {
-  requireMinTier,
-  requireSegmentScope,
-} from "../middleware/segmentGuard";
+import { requireMinTier, requireSegmentScope } from "../middleware/segmentGuard";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";
 import { AppError } from "../middleware/errorHandler";
 import { config } from "../config/env";
-import {
-  postBulkTransfer,
-  getTreasury,
-} from "../controllers/enterpriseController";
+import { postBulkTransfer, getTreasury } from "../controllers/enterpriseController";
 
 const router: IRouter = Router();
 const MAX_UPLOAD_SIZE_BYTES = config.bulkTransfer.maxFileSizeBytes;
@@ -46,7 +40,7 @@ function parseMultipartCsv(body: Buffer, boundary: string): UploadFile | null {
       .split("\r\n")
       .find((line) => line.toLowerCase().includes("content-disposition"));
 
-    if (!dispositionLine || !dispositionLine.toLowerCase().includes('filename=')) {
+    if (!dispositionLine || !dispositionLine.toLowerCase().includes("filename=")) {
       continue;
     }
 

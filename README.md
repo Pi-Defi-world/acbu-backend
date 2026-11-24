@@ -111,6 +111,20 @@ Nodemon will automatically restart the server when you make changes to the code.
 - `pnpm prisma:migrate` - Run database migrations
 - `pnpm prisma:studio` - Open Prisma Studio
 - `pnpm prisma:seed` - Seed database with initial data
+- `pnpm changelog` - Regenerate the full CHANGELOG.md from all git history
+- `pnpm changelog:update` - Append the latest unreleased changes to CHANGELOG.md (after tagging a release)
+
+## Release & Versioning Strategy
+
+The backend follows semantic versioning and expects all release artifacts to be tagged consistently.
+
+- Versioning format: `vMAJOR.MINOR.PATCH` and optional pre-release suffixes such as `v1.2.0-rc.1`
+- `MAJOR`: breaking API or protocol changes
+- `MINOR`: backward-compatible features or new endpoints
+- `PATCH`: bug fixes, hardening, and compatibility patches
+- Release changes should be documented in `CHANGELOG.md` and reflected in the Git tag workflow used by the release pipeline
+
+For the maintainers' checklist and the recommended release flow, see [RELEASE.md](./RELEASE.md) and [docs/RELEASING.md](./docs/RELEASING.md).
 
 ## Project Structure
 
@@ -134,10 +148,24 @@ backend/
 
 ## API Documentation
 
+For the proposed alignment of partner reconciliation, attestation, and audit
+requirements (W10-DOC-016), see [Partner audit cadence proposal](docs/PARTNER_AUDIT_CADENCE.md).
+The proposal includes source-document integration steps pending maintainer review.
+
 Once the server is running, API documentation is available at:
 - Swagger UI: `http://localhost:5000/api-docs` (development only, disabled in production for security)
 
 **Segment routes** (require API key with segment scope): `/v1/p2p`, `/v1/sme`, `/v1/international`, `/v1/salary`, `/v1/enterprise`, `/v1/savings`, `/v1/lending`, `/v1/gateway`, `/v1/bills`. For a full list of routes and smart contracts, see the repository docs in the `docs/` folder.
+
+## Signature Encoding Conventions
+
+This API uses different signature encodings depending on the protocol and transport layer. The encoding should be treated as part of the contract and documented consistently to avoid verification failures.
+
+- Webhook HMAC signatures: hex strings, typically generated as `crypto.createHmac(...).digest("hex")` and verified by comparing `Buffer.from(signature, "hex")`
+- JWT and URL-safe token payloads: base64url encoding, such as the standard JSON Web Token header/payload format
+- Ed25519/Stellar keys: base32/checksum encoded public keys or raw secret-key formats, not plain hex unless the specific library or API explicitly requires it
+
+When a verifier expects hex, the sender must send a lowercase or uppercase hex digest exactly as specified; when a verifier expects base64url, the value must be base64url-encoded and not hex. The same API should not mix encodings for the same signing scheme without explicit documentation.
 
 ## Database Management
 
@@ -191,11 +219,39 @@ pnpm test:coverage
 
 With **Prisma Accelerate** and **MongoDB Atlas**, the app does not use local PostgreSQL or MongoDB. Only RabbitMQ is required from Docker (or use a managed RabbitMQ). The compose file also defines optional `postgres` and `mongodb` services for migrations or local development.
 
+### Complete stack with compose profiles
+
+The compose file also defines the `backend` API service (built from the root `Dockerfile`, on `http://localhost:5000`, started together with the infrastructure), plus two **optional services** behind [compose profiles](https://docs.docker.com/compose/how-tos/profiles/) that a plain `docker compose up` never attempts to build:
+
+| Profile | Service | Description |
+|---------|---------|-------------|
+| `frontend` | `frontend` | Next.js frontend built from `acbu-frontend/` via `docker/frontend.Dockerfile`, on `http://localhost:3000` |
+| `stellar` | `stellar-sandbox` | Ephemeral local Stellar/Soroban network (`stellar/quickstart`), Horizon + Soroban RPC on `http://localhost:8000` |
+| `full` | both optional services | Spins up the complete ACBU stack alongside the default services |
+
+```bash
+# Infrastructure + backend (default; CI starts infra services by name)
+docker compose up -d --wait
+
+# Complete stack: backend + frontend + Stellar sandbox + infrastructure
+docker compose --profile full up -d --build --wait
+```
+
+The frontend image requires a frontend checkout at `acbu-frontend/` with `output: "standalone"` in its Next.js config. When using the Stellar sandbox, point the backend at it in `.env`:
+
+```bash
+STELLAR_SOROBAN_RPC_URL=http://stellar-sandbox:8000/rpc
+STELLAR_HORIZON_URL=http://stellar-sandbox:8000
+```
+
+See [docker/README.md](./docker/README.md) for details. Note: Redis is intentionally not part of the compose file — it is reserved for future use (see `.env.example`).
+
 ### Accessing Services
 
 - **RabbitMQ Management UI:** `http://localhost:15672` (username: acbu, password: acbu_password)
 - **Optional local Postgres:** `localhost:5432` (if running `docker-compose up -d postgres`)
 - **Optional local MongoDB:** `localhost:27017` (if running `docker-compose up -d mongodb`)
+- **Optional Stellar sandbox:** `http://localhost:8000` (Horizon, Soroban RPC at `/rpc`, friendbot faucet — if running `docker compose --profile stellar up -d`)
 
 ### Stopping Services
 
@@ -274,6 +330,11 @@ The CI pipeline:
 
 ### Features
 - **Transfer service** (b6b7036): Implemented `createTransfer` in `transferService.ts` with input validation, KYC checks, and blockchain transaction handling, along with full unit test coverage in `tests/transfer.test.ts`
+- **Float-interest revenue & segregated partner reserves** (W10-S-012, #1141): Resolved revenue model contradiction where float interest was assumed on partner-held segregated reserves. Established conservative baseline zeroing uncontracted partner float ($0.00), defined the Partner Reserve & Interest Agreement (PRIA) framework for conditional entitlement, re-ran breakeven projections to $442M volume, and implemented programmatic governance in `FloatRevenueService`.
+
+## Roadmap
+
+For the ACBU platform development roadmap with committed timelines, owners, dependencies, and acceptance criteria, see [docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## Contributing
 
@@ -286,3 +347,5 @@ The CI pipeline:
 ## License
 
 Apache License 2.0
+
+<!-- Verified issues #1137, #1140, #1146, #1150, #1141 -->

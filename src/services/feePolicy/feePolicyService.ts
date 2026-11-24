@@ -1,24 +1,33 @@
 /**
  * Fee policy: dynamic fees based on reserve levels (and optional demand).
  * Spread: buy/sell spread for rates/quote (0.2–0.3%).
- * 
+ *
+ * FEE DESTINATION:
+ * ================
+ * ALL FEES (mint and burn) are retained in protocol reserves.
+ * - When user deposits $100, reserve receives $100 but only $99.70 of ACBU is minted
+ * - This creates over-collateralization (~100.3% from each mint)
+ * - Fees accumulate to reach and maintain the 103-105% reserve ratio target
+ * - Fees are NOT passed through to fintech partners
+ *
  * FEE TIER SPECIFICATION:
  * ========================
  * Mint Fees (based on reserve ratio):
  * - Normal: 30 BPS (0.30%) when ratio >= minRatio (1.02)
  * - Stressed: 50 BPS (0.50%) when ratio < minRatio
  * - Max cap: 100 BPS (1.00%)
- * 
+ *
  * Burn Fees (based on currency reserve weight vs target):
  * - Low Reserve (<85% of target): 200 BPS (2.00%) - discourage burns
- * - Normal (85-115% of target): 10 BPS (0.10%) - standard fee
+ * - Normal (85-115% of target): 30 BPS (0.30%) - standard fee
  * - High Reserve (>115% of target): 5 BPS (0.05%) - encourage burns
- * 
+ *
  * Spread:
  * - Default: 25 BPS (0.25%)
  */
 import { config } from "../../config/env";
 import { reserveTracker, ReserveTracker } from "../reserve/ReserveTracker";
+import { Decimal } from "@prisma/client/runtime/library";
 
 /** Default spread in basis points (0.25% = 25 bps). */
 const DEFAULT_SPREAD_BPS = Number(process.env.SPREAD_BPS || "25");
@@ -30,8 +39,8 @@ const STRESSED_MINT_FEE_BPS = 50;
 /** Maximum mint fee cap (1.0% = 100). */
 const MAX_MINT_FEE_BPS = 100;
 
-/** Base burn fee BPS for normal reserves (0.1% = 10). */
-const BASE_BURN_FEE_BPS = 10;
+/** Base burn fee BPS for normal reserves (0.3% = 30). */
+const BASE_BURN_FEE_BPS = 30;
 /** Low reserve burn fee BPS - discourage burns when reserves are low (2% = 200). */
 const LOW_RESERVE_BURN_FEE_BPS = 200;
 /** High reserve burn fee BPS - encourage burns when reserves are high (0.05% = 5). */
@@ -56,7 +65,7 @@ const MAX_SANITY_FEE_BPS = 500;
 function validateFeeSanity(feeBps: number, context: string): void {
   if (feeBps < MIN_SANITY_FEE_BPS || feeBps > MAX_SANITY_FEE_BPS) {
     throw new Error(
-      `Fee sanity check failed for ${context}: ${feeBps} BPS is outside acceptable range [${MIN_SANITY_FEE_BPS}, ${MAX_SANITY_FEE_BPS}]`
+      `Fee sanity check failed for ${context}: ${feeBps} BPS is outside acceptable range [${MIN_SANITY_FEE_BPS}, ${MAX_SANITY_FEE_BPS}]`,
     );
   }
 }
@@ -70,66 +79,60 @@ export function getSpreadBps(): number {
 
 /**
  * Get fee in basis points for mint. Fee increases when reserve ratio is low.
- * 
+ *
  * Fee Structure:
  * - ratio >= minRatio (1.02): BASE_MINT_FEE_BPS (30 BPS)
  * - ratio < minRatio: STRESSED_MINT_FEE_BPS (50 BPS)
  * - Capped at MAX_MINT_FEE_BPS (100 BPS)
  */
 export async function getMintFeeBps(_currency?: string): Promise<number> {
-  const ratio = await reserveTracker.calculateReserveRatio(
-    ReserveTracker.SEGMENT_TRANSACTIONS,
-  );
-  
+  const ratio = await reserveTracker.calculateReserveRatio(ReserveTracker.SEGMENT_TRANSACTIONS);
+
   let feeBps: number;
   if (ratio < config.reserve.minRatio) {
     feeBps = STRESSED_MINT_FEE_BPS;
   } else {
     feeBps = BASE_MINT_FEE_BPS;
   }
-  
+
   // Apply cap
   feeBps = Math.min(feeBps, MAX_MINT_FEE_BPS);
-  
+
   // Sanity check
   validateFeeSanity(feeBps, `mint (ratio: ${ratio.toFixed(4)})`);
-  
+
   return feeBps;
 }
 
 /**
  * Get fee in basis points for burn (single-currency). Uses reserve weight vs target:
  * - Currency reserve < 85% of target → 200 BPS (discourage burns)
- * - Currency reserve 85-115% of target → 10 BPS (normal)
+ * - Currency reserve 85-115% of target → 30 BPS (normal)
  * - Currency reserve > 115% of target → 5 BPS (encourage burns)
- * 
+ *
  * This creates the correct economic incentive: when a currency is scarce in reserves,
  * we charge higher fees to discourage withdrawals. When abundant, we charge lower fees
  * to encourage rebalancing.
  */
 export async function getBurnFeeBps(currency: string): Promise<number> {
-  const status = await reserveTracker.getReserveStatus(
-    ReserveTracker.SEGMENT_TRANSACTIONS,
-  );
+  const status = await reserveTracker.getReserveStatus(ReserveTracker.SEGMENT_TRANSACTIONS);
   const curr = status.currencies.find((c) => c.currency === currency);
-  
+
   if (!curr) {
+    throw new Error(`Currency ${currency} not found in reserve status. Cannot calculate burn fee.`);
+  }
+
+  const targetWeight = new Decimal(curr.targetWeight);
+  const actualWeight = new Decimal(curr.actualWeight);
+
+  if (targetWeight.lte(0)) {
     throw new Error(
-      `Currency ${currency} not found in reserve status. Cannot calculate burn fee.`
+      `Invalid target weight for ${currency}: ${targetWeight}. Cannot calculate burn fee.`,
     );
   }
-  
-  const targetWeight = curr.targetWeight;
-  const actualWeight = curr.actualWeight;
-  
-  if (targetWeight <= 0) {
-    throw new Error(
-      `Invalid target weight for ${currency}: ${targetWeight}. Cannot calculate burn fee.`
-    );
-  }
-  
-  const pctOfTarget = (actualWeight / targetWeight) * 100;
-  
+
+  const pctOfTarget = actualWeight.div(targetWeight).mul(100).toNumber();
+
   let feeBps: number;
   if (pctOfTarget < LOW_RESERVE_THRESHOLD_PCT - RESERVE_THRESHOLD_EPSILON) {
     // Low reserves: discourage burns with high fee
@@ -141,13 +144,13 @@ export async function getBurnFeeBps(currency: string): Promise<number> {
     // Normal reserves: standard fee
     feeBps = BASE_BURN_FEE_BPS;
   }
-  
+
   // Sanity check
   validateFeeSanity(
     feeBps,
-    `burn ${currency} (actual: ${actualWeight.toFixed(2)}%, target: ${targetWeight.toFixed(2)}%, ratio: ${pctOfTarget.toFixed(2)}%)`
+    `burn ${currency} (actual: ${actualWeight.toFixed(2)}%, target: ${targetWeight.toFixed(2)}%, ratio: ${pctOfTarget.toFixed(2)}%)`,
   );
-  
+
   return feeBps;
 }
 

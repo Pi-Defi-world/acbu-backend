@@ -26,9 +26,7 @@ export function isReadonlyError(error: unknown): boolean {
  * During Sentinel failover a promoted replica can briefly return READONLY.
  * Reconnect and resend the failed command so writes recover automatically.
  */
-export function createReconnectOnError(): NonNullable<
-  RedisOptions["reconnectOnError"]
-> {
+export function createReconnectOnError(): NonNullable<RedisOptions["reconnectOnError"]> {
   return (error: Error) => {
     if (isReadonlyError(error)) {
       failoverMetrics.reconnects += 1;
@@ -84,9 +82,7 @@ export class RedisService {
   getClient(): Redis {
     if (!this.client) {
       const options = buildRedisOptions();
-      this.client = config.redis.url
-        ? new Redis(config.redis.url, options)
-        : new Redis(options);
+      this.client = config.redis.url ? new Redis(config.redis.url, options) : new Redis(options);
       this.client.on("reconnecting", () => {
         failoverMetrics.reconnects += 1;
         logger.info("Redis client reconnecting after failover");
@@ -146,17 +142,27 @@ export class RedisService {
     });
   }
 
-  async set(
-    key: string,
-    value: string,
-    ttlSeconds?: number,
-  ): Promise<"OK" | null> {
+  async set(key: string, value: string, ttlSeconds?: number): Promise<"OK" | null> {
     return this.executeWithReadonlyRetry(async () => {
       if (ttlSeconds) {
         return this.getClient().set(key, value, "EX", ttlSeconds);
       }
 
       return this.getClient().set(key, value);
+    });
+  }
+
+  /**
+   * Atomically set `key` only when it does not already exist (`SET ... NX EX`).
+   *
+   * Returns true when this call created the key (the caller won the claim) and
+   * false when the key was already present. Used for cross-instance
+   * single-use/deny-list semantics, e.g. the 2FA challenge JTI store (#984).
+   */
+  async setNx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    return this.executeWithReadonlyRetry(async () => {
+      const result = await this.getClient().set(key, value, "EX", ttlSeconds, "NX");
+      return result === "OK";
     });
   }
 

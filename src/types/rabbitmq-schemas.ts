@@ -1,4 +1,7 @@
-import { z } from 'zod';
+import { z } from "zod";
+import { QUEUES } from "../config/rabbitmq";
+
+const STELLAR_TX_HASH_REGEX = /^[a-f0-9]{64}$/i;
 
 // ===================== SHARED BASE SCHEMAS =====================
 
@@ -6,7 +9,11 @@ export const BaseEventSchema = z.object({
   contractId: z.string(),
   type: z.string(),
   data: z.record(z.unknown()),
-  ledger: z.number(),
+  // Coerce to number so that a non-numeric string is caught as a parse error
+  // rather than silently producing NaN.  Pure z.number() would reject strings
+  // outright too, but z.coerce.number() converts "123" → 123 while still
+  // rejecting "abc" (coercion produces NaN, which fails the number check).
+  ledger: z.coerce.number().int().nonnegative(),
   timestamp: z.string().datetime(),
 });
 
@@ -15,16 +22,18 @@ export type BaseEvent = z.infer<typeof BaseEventSchema>;
 // ===================== ESCROW EVENT SCHEMA =====================
 
 export const EscrowEventSchema = BaseEventSchema.extend({
-  type: z.enum(['contract_credited', 'contract_debited', 'contract_effect']),
-  data: z.object({
-    amount: z.string().optional(),
-    account: z.string().optional(),
-    recipient: z.string().optional(),
-    to: z.string().optional(),
-    transaction_hash: z.string().optional(),
-    transaction_id: z.string().optional(),
-    tx_hash: z.string().optional(),
-  }).passthrough(),
+  type: z.enum(["contract_credited", "contract_debited", "contract_effect"]),
+  data: z
+    .object({
+      amount: z.string().optional(),
+      account: z.string().optional(),
+      recipient: z.string().optional(),
+      to: z.string().optional(),
+      transaction_hash: z.string().optional(),
+      transaction_id: z.string().optional(),
+      tx_hash: z.string().optional(),
+    })
+    .passthrough(),
 });
 
 export type EscrowEvent = z.infer<typeof EscrowEventSchema>;
@@ -32,14 +41,16 @@ export type EscrowEvent = z.infer<typeof EscrowEventSchema>;
 // ===================== LENDING POOL EVENT SCHEMA =====================
 
 export const LendingPoolEventSchema = BaseEventSchema.extend({
-  type: z.enum(['contract_credited', 'contract_debited', 'contract_effect']),
-  data: z.object({
-    amount: z.string().optional(),
-    account: z.string().optional(),
-    recipient: z.string().optional(),
-    to: z.string().optional(),
-    transaction_hash: z.string().optional(),
-  }).passthrough(),
+  type: z.enum(["contract_credited", "contract_debited", "contract_effect"]),
+  data: z
+    .object({
+      amount: z.string().optional(),
+      account: z.string().optional(),
+      recipient: z.string().optional(),
+      to: z.string().optional(),
+      transaction_hash: z.string().optional(),
+    })
+    .passthrough(),
 });
 
 export type LendingPoolEvent = z.infer<typeof LendingPoolEventSchema>;
@@ -47,14 +58,16 @@ export type LendingPoolEvent = z.infer<typeof LendingPoolEventSchema>;
 // ===================== SAVINGS VAULT EVENT SCHEMA =====================
 
 export const SavingsVaultEventSchema = BaseEventSchema.extend({
-  type: z.enum(['contract_credited', 'contract_debited', 'contract_effect']),
-  data: z.object({
-    amount: z.string().optional(),
-    account: z.string().optional(),
-    recipient: z.string().optional(),
-    to: z.string().optional(),
-    transaction_hash: z.string().optional(),
-  }).passthrough(),
+  type: z.enum(["contract_credited", "contract_debited", "contract_effect"]),
+  data: z
+    .object({
+      amount: z.string().optional(),
+      account: z.string().optional(),
+      recipient: z.string().optional(),
+      to: z.string().optional(),
+      transaction_hash: z.string().optional(),
+    })
+    .passthrough(),
 });
 
 export type SavingsVaultEvent = z.infer<typeof SavingsVaultEventSchema>;
@@ -63,7 +76,7 @@ export type SavingsVaultEvent = z.infer<typeof SavingsVaultEventSchema>;
 
 export const BurnEventSchema = z.object({
   transactionId: z.string().optional(),
-  txHash: z.string().min(64).max(64),
+  txHash: z.string().regex(STELLAR_TX_HASH_REGEX),
 });
 
 export type BurnEvent = z.infer<typeof BurnEventSchema>;
@@ -73,7 +86,7 @@ export type BurnEvent = z.infer<typeof BurnEventSchema>;
 export const MintEventSchema = z.object({
   usdcAmount: z.string().regex(/^\d+(\.\d+)?$/),
   recipient: z.string().min(56).max(56),
-  txHash: z.string().min(64).max(64).optional(),
+  txHash: z.string().regex(STELLAR_TX_HASH_REGEX).optional(),
   transactionId: z.string().optional(),
 });
 
@@ -101,16 +114,42 @@ export type AuditLog = z.infer<typeof AuditLogSchema>;
 // ===================== NOTIFICATION SCHEMAS =====================
 
 export const OtpSendSchema = z.object({
-  channel: z.enum(['email', 'sms']),
+  channel: z.enum(["email", "sms"]),
   to: z.string().min(1),
   code: z.string().min(1),
 });
 
 export type OtpSend = z.infer<typeof OtpSendSchema>;
 
-export const NotificationSchema = z.object({
-  type: z.enum(['reserve_alert', 'withdrawal_status', 'investment_withdrawal_ready']),
-}).passthrough();
+const ReserveAlertSchema = z.object({
+  type: z.literal("reserve_alert"),
+  health: z.string(),
+  // Coerce so a stringified numeric value is caught rather than masking the type mistake.
+  overcollateralizationRatio: z.coerce.number().nonnegative(),
+});
+
+const WithdrawalStatusSchema = z.object({
+  type: z.literal("withdrawal_status"),
+  userId: z.string().nullable(),
+  status: z.string(),
+  currency: z.string(),
+  amount: z.coerce.number().nonnegative(),
+  channel: z.array(z.string()).default(["email"]),
+});
+
+const InvestmentWithdrawalReadySchema = z.object({
+  type: z.literal("investment_withdrawal_ready"),
+  userId: z.string().nullable().optional(),
+  organizationId: z.string().nullable().optional(),
+  amountAcbu: z.coerce.number().nonnegative().default(0),
+  timestamp: z.string().datetime().optional(),
+});
+
+export const NotificationSchema = z.discriminatedUnion("type", [
+  ReserveAlertSchema,
+  WithdrawalStatusSchema,
+  InvestmentWithdrawalReadySchema,
+]);
 
 export type Notification = z.infer<typeof NotificationSchema>;
 
@@ -121,6 +160,51 @@ export const WebhookJobSchema = z.object({
 });
 
 export type WebhookJob = z.infer<typeof WebhookJobSchema>;
+
+// ===================== QUEUE-SPECIFIC PAYLOAD SCHEMAS =====================
+
+export const RebalancingInstructionSchema = z.object({
+  fromCurrency: z.string().min(1),
+  toCurrency: z.string().min(1),
+  amountUsd: z.number().nonnegative(),
+  rateFromUsd: z.number().positive(),
+  rateToUsd: z.number().positive(),
+  amountFrom: z.number().nonnegative(),
+  amountTo: z.number().nonnegative(),
+});
+
+export const RebalancingPayloadSchema = z.object({
+  eventId: z.string().min(1),
+  instructions: z.array(RebalancingInstructionSchema).default([]),
+  totalReserveValueUsd: z.number().nonnegative(),
+});
+
+export type RebalancingPayload = z.infer<typeof RebalancingPayloadSchema>;
+
+export const XlmToAcbuPayloadSchema = z.object({
+  onRampSwapId: z.string().min(1),
+  userId: z.string().min(1),
+  stellarAddress: z.string().min(1),
+  xlmAmount: z.string().min(1),
+  usdcEquivalent: z.string().min(1).optional(),
+});
+
+export type XlmToAcbuPayload = z.infer<typeof XlmToAcbuPayloadSchema>;
+
+export const UsdcConvertAndMintPayloadSchema = z.object({
+  onRampSwapId: z.string().min(1),
+});
+
+export type UsdcConvertAndMintPayload = z.infer<typeof UsdcConvertAndMintPayloadSchema>;
+
+export const StellarEventFailureSchema = z
+  .object({
+    reason: z.enum(["parse_failure", "handler_failure"]),
+    capturedAt: z.string().datetime(),
+  })
+  .passthrough();
+
+export type StellarEventFailure = z.infer<typeof StellarEventFailureSchema>;
 
 // ===================== MESSAGE VERSIONING =====================
 
@@ -141,11 +225,15 @@ export const QUEUE_SCHEMAS = {
   [QUEUES.ACBU_LENDING_POOL_EVENTS]: LendingPoolEventSchema,
   [QUEUES.ACBU_SAVINGS_VAULT_EVENTS]: SavingsVaultEventSchema,
   [QUEUES.AUDIT_LOGS]: AuditLogSchema,
-  [QUEUES.OTP_SEND]: OtpSendSchema,
   [QUEUES.NOTIFICATIONS]: NotificationSchema,
+  [QUEUES.OTP_SEND]: OtpSendSchema,
+  [QUEUES.REBALANCING]: RebalancingPayloadSchema,
+  [QUEUES.STELLAR_EVENT_FAILURES]: StellarEventFailureSchema,
+  [QUEUES.USDC_CONVERSION]: MintEventSchema,
+  [QUEUES.USDC_CONVERT_AND_MINT]: UsdcConvertAndMintPayloadSchema,
   [QUEUES.WEBHOOKS]: WebhookJobSchema,
   [QUEUES.WITHDRAWAL_PROCESSING]: BurnEventSchema,
-  [QUEUES.USDC_CONVERSION]: MintEventSchema,
+  [QUEUES.XLM_TO_ACBU]: XlmToAcbuPayloadSchema,
 } as const;
 
 export type QueueName = keyof typeof QUEUE_SCHEMAS;

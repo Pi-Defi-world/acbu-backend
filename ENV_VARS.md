@@ -60,7 +60,8 @@ This file documents the environment variables required by the ACBU backend and t
 - `JWT_EXPIRES_IN` - defaults to `7d`
 - `JWT_CLOCK_TOLERANCE_SECONDS` - defaults to `30`
 - `API_KEY_SALT` - defaults to empty string
-- `ADMIN_API_KEY`
+- `ADMIN_API_KEY` - Single admin key (legacy support)
+- `ADMIN_API_KEYS` - Comma-separated list of admin keys or `adminId:key` pairs for multi-admin authentication and attribution
 - `LOG_LEVEL` - defaults to `info`
 - `LOG_FILE` - defaults to `logs/app.log`
 
@@ -70,6 +71,8 @@ This file documents the environment variables required by the ACBU backend and t
 - `RATE_LIMIT_MAX_REQUESTS` - defaults to `100`
 - `AUTH_RATE_LIMIT_WINDOW_MS` - defaults to `900000`
 - `AUTH_RATE_LIMIT_MAX_REQUESTS` - defaults to `10`
+- `ADMIN_RATE_LIMIT_WINDOW_MS` - defaults to `60000`
+- `ADMIN_RATE_LIMIT_MAX_REQUESTS` - defaults to `30`
 - `RATE_LIMIT_FALLBACK_MAX_REQUESTS` - defaults to `20`
 - `RATE_LIMIT_CIRCUIT_BREAKER_THRESHOLD` - defaults to `5`
 - `RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN_MS` - defaults to `60000`
@@ -119,11 +122,21 @@ This file documents the environment variables required by the ACBU backend and t
 - `STELLAR_NATIVE_ASSET_CODE`
 - `WALLET_ACTIVATION_STRATEGY` - defaults to `create_account_native`
 - `TESTNET_CUSTODIAL_BOOTSTRAP`
+  - Deployment / runbook label identifying the Stellar testnet bootstrap profile.
+  - Used for diagnostics and log context only; it does **not** affect `nativeAssetCode` (that is always `XLM` unless `STELLAR_NATIVE_ASSET_CODE` is set).
+  - **Pi Network bridge variables were removed; activation is Stellar-only.** See [docs/ACTIVATION_SCOPE.md](./docs/ACTIVATION_SCOPE.md) for the scope decision record (W10-P-007).
 - `WALLET_ACTIVATION_AMOUNT` / `WALLET_ACTIVATION_NATIVE` / `WALLET_ACTIVATION_XLM` / `STELLAR_MIN_BALANCE`
 - `STELLAR_BASE_FEE_STROOPS` - defaults to `100`
-- `STELLAR_USE_DYNAMIC_FEES`
+- `STELLAR_USE_DYNAMIC_FEES` - defaults to `false`; when `true`, reads the live
+  base fee from Horizon for each payment instead of trusting `STELLAR_BASE_FEE_STROOPS`
 - `STELLAR_SOROBAN_MIN_FEE_STROOPS` - defaults to `5000`
 - `STELLAR_SOROBAN_MAX_FEE_STROOPS` - defaults to `10000000`
+- `STELLAR_FEE_SURGE_BUFFER_BPS` - defaults to `2000` (20%); buffer added on top of
+  the live base fee for classic payments, `0`–`10000` bps. See AB-052.
+- `STELLAR_MAX_PAYMENT_FEE_STROOPS` - defaults to `1000000`; hard ceiling on the
+  fee of a single classic payment. If the live base fee plus buffer exceeds this,
+  the payment fails with a `STELLAR_FEE_SURGE` (HTTP 503) instead of paying an
+  unbounded fee. See AB-052.
 - `USDC_ISSUER_TESTNET`
 - `USDC_ISSUER_MAINNET`
 - `USDC_ASSET_CODE_TESTNET` - defaults to `USDC`
@@ -132,6 +145,7 @@ This file documents the environment variables required by the ACBU backend and t
 
 ### Oracle
 
+- `ORACLE_VALIDATOR_ADDRESSES` - required by oracle initialization scripts; five unique Stellar account public keys, comma-separated. The contract is initialized with a 3-of-5 minimum.
 - `ORACLE_UPDATE_INTERVAL_HOURS` - defaults to `6`
 - `ORACLE_EMERGENCY_THRESHOLD` - defaults to `0.05`
 - `ORACLE_MAX_DEVIATION_PER_UPDATE` - defaults to `0.05`
@@ -146,6 +160,11 @@ This file documents the environment variables required by the ACBU backend and t
 - `RESERVE_TARGET_RATIO` - defaults to `1.05`
 - `RESERVE_ALERT_THRESHOLD` - defaults to `1.02`
 
+### Monitoring (W10-I-013)
+
+- `RESERVE_METRICS_INTERVAL_MS` - Interval for reserve metrics update job (default: 300000, i.e., 5 minutes)
+- `ENABLE_OBSERVABILITY` - Enable observability features (metrics, tracing). Defaults to `true`
+
 ### Notifications
 
 - `NOTIFICATION_EMAIL_PROVIDER` - defaults to `log`
@@ -154,6 +173,12 @@ This file documents the environment variables required by the ACBU backend and t
 - `AWS_SES_REGION`
 - `NOTIFICATION_SMS_PROVIDER` - defaults to `log`
 - `NOTIFICATION_ALERT_EMAIL`
+  - Optional. Comma-separated list of email addresses that receive reserve-alert
+    emails and the weekly weight-drift audit report
+    (`src/jobs/weightDriftAuditJob.ts`, read as `config.notification.alertEmail`).
+  - Example: `ops@example.com` or `ops@example.com,admin@example.com`
+  - When absent or empty, the audit job still runs and persists the audit
+    record — it simply skips sending the email notification.
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_FROM_NUMBER`
@@ -170,11 +195,45 @@ This file documents the environment variables required by the ACBU backend and t
 - `OPENAI_API_KEY`
 - `OPENAI_ORG_MONTHLY_BUDGET_USD` - defaults to `50`
 - `OPENAI_MAX_TOKENS_PER_REQUEST` - defaults to `2000`
+- `OPENAI_FAIL_OPEN_ENABLED` - defaults to `false` (fail-closed for security/KYC compliance; set to `true` to fail open during service degradation)
+- `OPENAI_FAIL_OPEN_TIMEOUT_MS` - defaults to `2000` (timeout per request attempt in ms)
+- `OPENAI_FAIL_OPEN_MAX_RETRIES` - defaults to `2` (retry attempts on transient errors)
+- `OPENAI_FAIL_OPEN_RETRY_BASE_MS` - defaults to `500` (exponential backoff base in ms)
 
 ### CORS
 
 - `CORS_ORIGIN`
   - Comma-separated list of allowed origins.
+
+### Frontend (`acbu-frontend` submodule)
+
+The root `.env.example` is the canonical local setup template for both the
+backend and the checked-out frontend. Copy it to `.env`, then expose the
+frontend values to the frontend process as `.env.local` when running the
+submodule independently. Do not commit either runtime file.
+
+- `NEXT_PUBLIC_API_BASE_URL` - browser API base URL, normally `http://localhost:5000/api/v1` locally.
+- `NEXT_PUBLIC_API_URL` - legacy frontend alias used only when the base URL is unset.
+- `NEXT_PUBLIC_API_TIMEOUT` - browser request timeout in milliseconds.
+- `NEXT_PUBLIC_BILLS_ENABLED` - enables the bills experience (`true`/`false`).
+- `NEXT_PUBLIC_STELLAR_NETWORK` - `TESTNET` or `PUBLIC`.
+- `NEXT_PUBLIC_STELLAR_HORIZON_URL` - Horizon endpoint used by the browser.
+- `NEXT_PUBLIC_SOROBAN_RPC_URL` - optional Soroban RPC endpoint.
+- `NEXT_PUBLIC_SUPPORT_INTAKE_URL` / `SUPPORT_INTAKE_URL` - optional support form/API endpoints.
+- `NEXT_PUBLIC_ACBU_ASSET_CODE` / `NEXT_PUBLIC_ACBU_ASSET_ISSUER` - optional ACBU asset display configuration.
+
+### Smart-contract deployment
+
+Contract addresses belong in the same root template so backend, frontend, and
+deployment tooling can be configured together:
+
+- `CONTRACT_ORACLE`
+- `CONTRACT_RESERVE_TRACKER`
+- `CONTRACT_MINTING`
+- `CONTRACT_BURNING`
+- `CONTRACT_SAVINGS_VAULT`
+- `CONTRACT_LENDING_POOL`
+- `CONTRACT_ESCROW`
 
 ## Notes
 

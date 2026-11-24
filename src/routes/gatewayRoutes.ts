@@ -2,10 +2,7 @@ import { Router, type IRouter } from "express";
 import { validateApiKey } from "../middleware/auth";
 import { requireMinTier, requireSegmentScope } from "../middleware/segmentGuard";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";
-import {
-  postGatewayCharge,
-  postGatewayConfirm,
-} from "../controllers/gatewayController";
+import { postGatewayCharge, postGatewayConfirm } from "../controllers/gatewayController";
 
 const router: IRouter = Router();
 

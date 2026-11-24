@@ -177,11 +177,11 @@ function validateFeeSanity(feeBps: number, context: string): void {
 Run tests with:
 ```bash
 # Standard unit tests
-npm test -- feePolicyService.test.ts
+pnpm test -- feePolicyService.test.ts
 
 # Property-based tests (requires fast-check)
-npm install --save-dev fast-check
-npm test -- feePolicyService.pbt.test.ts
+pnpm add -D fast-check
+pnpm test -- feePolicyService.pbt.test.ts
 ```
 
 Expected output:
@@ -227,9 +227,9 @@ Expected output:
 - [x] Unit tests updated and passing
 - [x] Property-based tests implemented
 - [x] Documentation created
-- [ ] Install fast-check: `npm install --save-dev fast-check`
-- [ ] Run full test suite: `npm test`
-- [ ] Run property-based tests: `npm test -- feePolicyService.pbt.test.ts`
+- [ ] Install fast-check: `pnpm add -D fast-check`
+- [ ] Run full test suite: `pnpm test`
+- [ ] Run property-based tests: `pnpm test -- feePolicyService.pbt.test.ts`
 - [ ] Code review by senior engineer
 - [ ] Financial team review of fee changes
 - [ ] Compliance team approval

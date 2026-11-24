@@ -15,6 +15,24 @@ function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY_PATTERN.test(key);
 }
 
+/**
+ * Winston structured fields that must never be redacted.
+ * - level:     log level string (e.g. "info") — not user data
+ * - timestamp: added by winston.format.timestamp() — not user data
+ * - message:   the human-readable log message — redacting it would destroy
+ *              log readability; sensitive data in messages should use meta
+ */
+const STRUCTURED_FIELDS = new Set(["level", "timestamp", "message"]);
+
+/**
+ * Redact PII from an Error stack trace string.
+ * Stack frames may contain file paths or serialised arguments that include
+ * card numbers or other PII patterns captured by redactPii().
+ */
+function redactStack(stack: string): string {
+  return redactPii(stack);
+}
+
 /** Recursively redact sensitive keys and card-like numbers from log values. */
 export function redactLogValue(
   value: unknown,
@@ -23,6 +41,10 @@ export function redactLogValue(
 ): unknown {
   if (key !== undefined && isSensitiveKey(key)) {
     return REDACTED;
+  }
+  // Redact PII embedded in stack traces (e.g. serialised card numbers in frames)
+  if (key === "stack" && typeof value === "string") {
+    return redactStack(value);
   }
   if (typeof value === "string") {
     return redactPii(value);
@@ -50,7 +72,9 @@ export function redactLogValue(
 export const redactFormat = winston.format((info) => {
   const seen = new WeakSet<object>();
   for (const key of Object.keys(info)) {
-    if (key === "level") continue;
+    // Skip Winston structured fields — they are not user-supplied data and
+    // redacting them would corrupt log readability or Winston's own metadata.
+    if (STRUCTURED_FIELDS.has(key)) continue;
     (info as Record<string, unknown>)[key] = redactLogValue(
       (info as Record<string, unknown>)[key],
       key,

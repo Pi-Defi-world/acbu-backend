@@ -20,8 +20,7 @@ const options: swaggerJsdoc.Options = {
     info: {
       title: "ACBU API",
       version: "1.0.0",
-      description:
-        "API documentation for ACBU (African Currency Basket Unit) platform",
+      description: "API documentation for ACBU (African Currency Basket Unit) platform",
       contact: {
         name: "ACBU Support",
       },
@@ -72,7 +71,6 @@ const options: swaggerJsdoc.Options = {
           required: ["error"],
         },
       },
-
     },
     security: [
       {

@@ -19,6 +19,35 @@ import {
   PolicyViolationError,
 } from "../src/services/investment";
 
+// ── In-memory database mock ───────────────────────────────────────────────────
+// Simulates investmentStrategy table operations without a real database.
+// Must be defined before jest.mock() factory so the factory can use the same
+// store reference (jest.mock factories are hoisted before const declarations,
+// so we declare `db` here and reference it via closure inside the factory).
+
+// Use a mutable container so the closure inside jest.mock captures the reference
+// correctly even though it's populated after hoisting.
+type StrategyRow = {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  policyLimitUsd: Decimal;
+  deployedNotionalUsd: Decimal;
+  targetApyBps?: number | null;
+  riskTier?: string | null;
+};
+
+const db: { strategies: Map<string, StrategyRow> } = {
+  strategies: new Map(),
+};
+let _idCounter = 0;
+
+function nextId(): string {
+  _idCounter += 1;
+  return `strategy-${_idCounter}`;
+}
+
 // Mock the reserve tracker
 jest.mock("../src/services/reserve/ReserveTracker", () => ({
   reserveTracker: {
@@ -28,6 +57,84 @@ jest.mock("../src/services/reserve/ReserveTracker", () => ({
     SEGMENT_INVESTMENT_SAVINGS: "investment_savings",
   },
 }));
+
+jest.mock("../src/config/database", () => {
+  // Build mock inside factory – cannot reference outer const/let via TDZ.
+  // We reach the `db` container through the module-level object defined above
+  // by using a lazy getter that reads it at call time (after hoisting).
+  return {
+    prisma: {
+      investmentStrategy: {
+        deleteMany: jest.fn(async () => {
+          db.strategies.clear();
+          return { count: 0 };
+        }),
+        create: jest.fn(async ({ data }: any) => {
+          const row: StrategyRow = {
+            id: nextId(),
+            name: data.name,
+            description: data.description ?? null,
+            status: data.status ?? "active",
+            policyLimitUsd: new Decimal(data.policyLimitUsd),
+            deployedNotionalUsd: new Decimal(data.deployedNotionalUsd ?? "0"),
+            targetApyBps: data.targetApyBps ?? null,
+            riskTier: data.riskTier ?? null,
+          };
+          db.strategies.set(row.id, row);
+          return row;
+        }),
+        update: jest.fn(async ({ where, data }: any) => {
+          const row = db.strategies.get(where.id);
+          if (!row) throw new Error(`Strategy ${where.id} not found`);
+          if (data.deployedNotionalUsd !== undefined) {
+            row.deployedNotionalUsd = new Decimal(data.deployedNotionalUsd);
+          }
+          if (data.status !== undefined) row.status = data.status;
+          db.strategies.set(row.id, row);
+          return row;
+        }),
+        findUnique: jest.fn(async ({ where }: any) => {
+          return db.strategies.get(where.id) ?? null;
+        }),
+        aggregate: jest.fn(async ({ where, _sum }: any) => {
+          const rows = Array.from(db.strategies.values()).filter((r) => {
+            if (where?.status) return r.status === where.status;
+            return true;
+          });
+          let sumDeployed = new Decimal(0);
+          for (const r of rows) {
+            if (_sum?.deployedNotionalUsd) sumDeployed = sumDeployed.add(r.deployedNotionalUsd);
+          }
+          return {
+            _sum: {
+              deployedNotionalUsd: _sum?.deployedNotionalUsd ? sumDeployed : null,
+            },
+          };
+        }),
+      },
+      $transaction: jest.fn(async (fn: (tx: any) => any) => {
+        // Build a transaction client that proxies to the same in-memory store
+        const tx = {
+          investmentStrategy: {
+            findUnique: async ({ where }: any) => db.strategies.get(where.id) ?? null,
+            update: async ({ where, data }: any) => {
+              const row = db.strategies.get(where.id);
+              if (!row) throw new Error(`Strategy ${where.id} not found`);
+              if (data.deployedNotionalUsd !== undefined) {
+                row.deployedNotionalUsd = new Decimal(data.deployedNotionalUsd);
+              }
+              if (data.status !== undefined) row.status = data.status;
+              db.strategies.set(row.id, row);
+              return row;
+            },
+          },
+        };
+        return fn(tx);
+      }),
+      $disconnect: jest.fn().mockResolvedValue(undefined),
+    },
+  };
+});
 
 import { reserveTracker } from "../src/services/reserve/ReserveTracker";
 

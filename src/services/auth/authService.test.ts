@@ -4,7 +4,11 @@ import {
   listPrivilegedKeys,
   requestAdminMfaChallenge,
   revokePrivilegedKey,
+  signin,
+  verifyCaptcha,
 } from "./authService";
+import axios from "axios";
+import { config } from "../../config/env";
 import { prisma } from "../../config/database";
 import { generateApiKey } from "../../middleware/auth";
 import { verifyChallengeToken, signChallengeToken } from "../../utils/jwt";
@@ -12,6 +16,8 @@ import { logAudit } from "../audit";
 import bcrypt from "bcrypt";
 import { totp } from "otplib";
 import { getRabbitMQChannel, QUEUES } from "../../config/rabbitmq";
+import { generateSecureOtp } from "../../utils/secureOtp";
+import { authBruteGuard } from "../../utils/authBruteGuard";
 
 jest.mock("../../config/database", () => ({
   prisma: {
@@ -52,7 +58,9 @@ jest.mock("../../config/logger", () => ({
 }));
 
 jest.mock("../wallet/walletService", () => ({
-  ensureWalletForUser: jest.fn().mockResolvedValue({ wallet_created: false }),
+  getWalletEnrollmentStatus: jest
+    .fn()
+    .mockResolvedValue({ enrolled: false, stellar_address: null }),
 }));
 
 jest.mock("../audit", () => ({
@@ -70,11 +78,17 @@ jest.mock("otplib", () => ({
   },
 }));
 
+jest.mock("axios");
+
 jest.mock("../../config/rabbitmq", () => ({
   getRabbitMQChannel: jest.fn(),
   QUEUES: {
     OTP_SEND: "otp_send",
   },
+}));
+
+jest.mock("../../utils/secureOtp", () => ({
+  generateSecureOtp: jest.fn().mockReturnValue("123456"),
 }));
 
 describe("authService privileged key coverage", () => {
@@ -109,6 +123,7 @@ describe("authService privileged key coverage", () => {
 
     expect(out).toEqual({ challenge_token: "challenge-token", method: "sms" });
     expect(prisma.otpChallenge.create).toHaveBeenCalled();
+    expect(generateSecureOtp).toHaveBeenCalledTimes(1);
     expect(mqChannel.assertQueue).toHaveBeenCalledWith(QUEUES.OTP_SEND, { durable: true });
     expect(mqChannel.sendToQueue).toHaveBeenCalled();
     expect(logAudit).toHaveBeenCalledWith(
@@ -280,5 +295,71 @@ describe("authService privileged key coverage", () => {
         reason: "Session ended",
       }),
     );
+  });
+});
+
+describe("verifyCaptcha", () => {
+  const originalSecret = config.auth.captchaSecret;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    config.auth.captchaSecret = "turnstile-secret";
+  });
+  afterAll(() => {
+    config.auth.captchaSecret = originalSecret;
+  });
+
+  it("returns true when Turnstile reports success", async () => {
+    (axios.post as jest.Mock).mockResolvedValue({ data: { success: true } });
+    await expect(verifyCaptcha("tok", "1.2.3.4")).resolves.toBe(true);
+    const body = (axios.post as jest.Mock).mock.calls[0][1] as URLSearchParams;
+    expect(body.get("secret")).toBe("turnstile-secret");
+    expect(body.get("response")).toBe("tok");
+    expect(body.get("remoteip")).toBe("1.2.3.4");
+  });
+
+  it("returns false when Turnstile rejects the token", async () => {
+    (axios.post as jest.Mock).mockResolvedValue({ data: { success: false } });
+    await expect(verifyCaptcha("bad")).resolves.toBe(false);
+  });
+
+  it("fails closed when the request errors", async () => {
+    (axios.post as jest.Mock).mockRejectedValue(new Error("network"));
+    await expect(verifyCaptcha("tok")).resolves.toBe(false);
+  });
+
+  it("fails closed without calling Turnstile when secret is unset", async () => {
+    config.auth.captchaSecret = "";
+    await expect(verifyCaptcha("tok")).resolves.toBe(false);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+});
+
+describe("signin captcha enforcement", () => {
+  const originalSecret = config.auth.captchaSecret;
+
+  afterAll(() => {
+    config.auth.captchaSecret = originalSecret;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("rejects signin when a supplied captcha token is invalid", async () => {
+    config.auth.captchaSecret = "turnstile-secret";
+    jest.spyOn(authBruteGuard, "getStatus").mockResolvedValue({
+      attempts: 3,
+      locked: false,
+      requiresCaptcha: true,
+    });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { success: false } });
+
+    await expect(
+      signin({ identifier: "user-1", passcode: "passcode", ip: "1.2.3.4", captchaToken: "bad" }),
+    ).rejects.toThrow("CAPTCHA required");
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 });

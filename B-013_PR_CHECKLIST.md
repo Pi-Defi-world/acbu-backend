@@ -83,8 +83,6 @@ npx prisma migrate deploy
 
 ### 3. Build Check
 ```bash
-npm run build
-# or
 pnpm run build
 ```
 
@@ -106,8 +104,8 @@ npx prisma migrate deploy
 
 ### Step 3: Deploy Application
 ```bash
-npm run build
-npm start
+pnpm run build
+pnpm start
 # or your deployment method
 ```
 

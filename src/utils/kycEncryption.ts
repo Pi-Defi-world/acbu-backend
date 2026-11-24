@@ -15,9 +15,7 @@ export function encryptKycPayload(payload: unknown): string | null {
   if (payload == null) return null;
   const key = getKey();
   if (!key) {
-    throw new Error(
-      "PII_ENCRYPTION_KEY not configured — refusing to store plaintext KYC payload",
-    );
+    throw new Error("PII_ENCRYPTION_KEY not configured — refusing to store plaintext KYC payload");
   }
   return encryptJson(payload, key);
 }
@@ -33,9 +31,7 @@ export function decryptKycPayload(encrypted: string | null): unknown {
   }
   const key = getKey();
   if (!key) {
-    throw new Error(
-      "PII_ENCRYPTION_KEY not configured — cannot decrypt KYC payload",
-    );
+    throw new Error("PII_ENCRYPTION_KEY not configured — cannot decrypt KYC payload");
   }
   return decryptJson(encrypted, key);
 }

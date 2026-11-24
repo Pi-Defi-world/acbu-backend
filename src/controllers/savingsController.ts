@@ -3,11 +3,7 @@ import { acbuSavingsVaultService } from "../services/contracts";
 import { getContractAddresses } from "../config/contracts";
 import type { AuthRequest } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
-import {
-  isSavingsLockDate,
-  getNextSavingsWithdrawalDate,
-  getApyForTerm,
-} from "../config/savings";
+import { isSavingsLockDate, getNextSavingsWithdrawalDate, getApyForTerm } from "../config/savings";
 import {
   savingsDepositSchema,
   savingsWithdrawSchema,

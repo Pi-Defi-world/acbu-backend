@@ -2,6 +2,7 @@
  * Consumes OTP_SEND and NOTIFICATIONS queues; sends email/SMS via NotificationService.
  */
 import type { ConsumeMessage } from "amqplib";
+import type { User } from "@prisma/client";
 import { connectRabbitMQ, QUEUES, assertQueueWithDLQ } from "../config/rabbitmq";
 import { getQueueMaxRetries } from "./queueConfig";
 import { logger } from "../config/logger";
@@ -15,10 +16,16 @@ import {
   renderReserveAlertTemplate,
   renderInvestmentWithdrawalReadyTemplate,
 } from "../services/notification";
-import { parseIncomingMessage, deadLetterMessage, MessageValidationError } from "../utils/rabbitmq-validation";
+import {
+  parseQueueMessage,
+  deadLetterMessage,
+  MessageValidationError,
+} from "../utils/rabbitmq-validation";
 import type { OtpSend, Notification } from "../types/rabbitmq-schemas";
 
-async function processOtpSend(payload: OtpSend): Promise<void> {
+type UserNotificationContact = Pick<User, "email" | "phoneE164">;
+
+export async function processOtpSend(payload: OtpSend): Promise<void> {
   const { channel, to, code } = payload;
   const body = renderOtpTemplate(code);
   if (channel === "email") {
@@ -30,14 +37,10 @@ async function processOtpSend(payload: OtpSend): Promise<void> {
   }
 }
 
-async function processNotification(
-  payload: Notification,
-): Promise<void> {
+export async function processNotification(payload: Notification): Promise<void> {
   const { type } = payload;
   if (type === "reserve_alert") {
-    const health = payload.health as string;
-    const overcollateralizationRatio =
-      (payload.overcollateralizationRatio as number) ?? 0;
+    const { health, overcollateralizationRatio } = payload;
     const body = renderReserveAlertTemplate(health, overcollateralizationRatio);
     const adminEmail = process.env.NOTIFICATION_ALERT_EMAIL;
     if (adminEmail) await sendEmail(adminEmail, "ACBU Reserve Alert", body);
@@ -45,53 +48,44 @@ async function processNotification(
     return;
   }
   if (type === "withdrawal_status") {
-    const userId = payload.userId as string | null;
-    const status = payload.status as string;
-    const currency = payload.currency as string;
-    const amount = payload.amount as number;
-    const channels = (payload.channel as string[]) ?? ["email"];
+    const { userId, status, currency, amount, channel: channels } = payload;
     const body = renderWithdrawalStatusTemplate(status, currency, amount);
     if (userId) {
-      const user = await prisma.user.findUnique({
+      const user: UserNotificationContact | null = await prisma.user.findUnique({
         where: { id: userId },
         select: { email: true, phoneE164: true },
       });
       if (channels.includes("email") && user?.email)
         await sendEmail(user.email, "ACBU Withdrawal Update", body);
-      if (channels.includes("sms") && user?.phoneE164)
-        await sendSms(user.phoneE164, body);
+      if (channels.includes("sms") && user?.phoneE164) await sendSms(user.phoneE164, body);
     }
     return;
   }
   if (type === "investment_withdrawal_ready") {
-    const userId = payload.userId as string | null;
-    const organizationId = payload.organizationId as string | null;
-    const amountAcbu = (payload.amountAcbu as number) ?? 0;
+    const { userId = null, organizationId = null, amountAcbu } = payload;
     const body = renderInvestmentWithdrawalReadyTemplate(amountAcbu);
 
     if (userId) {
-      const user = await prisma.user.findUnique({
+      const user: UserNotificationContact | null = await prisma.user.findUnique({
         where: { id: userId },
         select: { email: true, phoneE164: true },
       });
-      if (user?.email)
-        await sendEmail(
-          user.email,
-          "Your investment withdrawal is ready",
-          body,
-        );
+      if (user?.email) await sendEmail(user.email, "Your investment withdrawal is ready", body);
       if (user?.phoneE164) await sendSms(user.phoneE164, body);
     }
 
     if (organizationId) {
-      const orgUsers = await prisma.user.findMany({
+      const orgUsers: UserNotificationContact[] = await prisma.user.findMany({
         where: { organizationId },
         select: { email: true, phoneE164: true },
       });
       const emailBatch = orgUsers
-        .filter((user) => user.email)
-        .map((user) => ({
-          to: user.email as string,
+        .filter(
+          (user: UserNotificationContact): user is UserNotificationContact & { email: string } =>
+            Boolean(user.email),
+        )
+        .map((user: UserNotificationContact & { email: string }) => ({
+          to: user.email,
           subject: "Organization investment withdrawal is ready",
           body,
         }));
@@ -106,9 +100,14 @@ async function processNotification(
     }
     return;
   }
-  logger.debug("Notification type not handled", { type });
-}
 
+  // Exhaustiveness check: every member of the Notification union is handled
+  // above, so `type` narrows to `never` here. Assigning it to a `never` binding
+  // turns "a new notification type was added to NotificationSchema but not to
+  // this consumer" into a compile-time error instead of a silent drop.
+  const unhandledType: never = type;
+  logger.debug("Notification type not handled", { type: unhandledType });
+}
 
 export async function startNotificationConsumer(): Promise<void> {
   const ch = await connectRabbitMQ();
@@ -121,10 +120,10 @@ export async function startNotificationConsumer(): Promise<void> {
       if (!msg) return;
       const headers = msg.properties.headers ?? {};
       const retries = typeof headers["x-retries"] === "number" ? headers["x-retries"] : 0;
-      
+
       try {
         // Validate OTP send message
-        const validatedPayload = parseIncomingMessage<OtpSend>(QUEUES.OTP_SEND, msg.content);
+        const validatedPayload = parseIncomingMessage(QUEUES.OTP_SEND, msg.content);
         await processOtpSend(validatedPayload);
         ch.ack(msg);
       } catch (e) {
@@ -161,10 +160,11 @@ export async function startNotificationConsumer(): Promise<void> {
       if (!msg) return;
       const headers = msg.properties.headers ?? {};
       const retries = typeof headers["x-retries"] === "number" ? headers["x-retries"] : 0;
-      
+
       try {
-        // Validate notification message
-        const validatedPayload = parseIncomingMessage<Notification>(QUEUES.NOTIFICATIONS, msg.content);
+        // Validate notification message; the payload type is inferred from the
+        // queue constant (Notification) rather than asserted by the caller.
+        const validatedPayload = parseIncomingMessage(QUEUES.NOTIFICATIONS, msg.content);
         await processNotification(validatedPayload);
         ch.ack(msg);
       } catch (e) {
@@ -172,7 +172,11 @@ export async function startNotificationConsumer(): Promise<void> {
           logger.error("NOTIFICATIONS validation failed, sending to DLQ", {
             errors: e.validationErrors,
           });
-          await deadLetterMessage(QUEUES.NOTIFICATIONS, msg.content, `Validation failed: ${e.message}`);
+          await deadLetterMessage(
+            QUEUES.NOTIFICATIONS,
+            msg.content,
+            `Validation failed: ${e.message}`,
+          );
           ch.ack(msg);
           return;
         }

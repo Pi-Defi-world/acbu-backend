@@ -1,9 +1,4 @@
-export {
-  getBillsCatalog,
-  payBill,
-  reconcileBillsWebhook,
-  refundBillPayment,
-} from "./billsService";
+export { getBillsCatalog, payBill, reconcileBillsWebhook, refundBillPayment } from "./billsService";
 export type {
   BillPaymentRequest,
   BillPaymentResult,

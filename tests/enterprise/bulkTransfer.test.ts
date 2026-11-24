@@ -58,6 +58,9 @@ jest.mock("../../src/config/database", () => ({
         return transaction;
       }),
     },
+    user: {
+      findUnique: jest.fn(async ({ where }: any) => ({ id: where.id })),
+    },
     $transaction: jest.fn(async (fn: any) => fn()),
   },
 }));
@@ -96,6 +99,7 @@ const applyDefaultPrismaMocks = () => {
     }
     const transaction = {
       id: `tx-${++txCounter}`,
+      organizationId: data.organizationId,
       status: data.status,
       recipientAddress: data.recipientAddress,
       acbuAmount: data.acbuAmount,
@@ -161,6 +165,11 @@ describe("bulk transfer service", () => {
     expect(result.skippedCount).toBe(0);
     expect(result.failureReport).toHaveLength(0);
     expect(mockPrisma.transaction.create).toHaveBeenCalledTimes(10);
+    expect(mockPrisma.transaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ organizationId: "org-1" }),
+      }),
+    );
   });
 
   it("processes 100 rows in chunked batches", async () => {
@@ -385,7 +394,7 @@ describe("bulk transfer service", () => {
         senderUserId: "user-1",
         fileContent: Buffer.from(csv),
       },
-      { chunkSize: 250 },
+      { chunkSize: 250, maxRows: 10000 },
     );
     const elapsed = Date.now() - startedAt;
 

@@ -6,8 +6,11 @@ import { connectRabbitMQ, QUEUES } from "../config/rabbitmq";
 import { getQueueMaxRetries } from "./queueConfig";
 import { logger } from "../config/logger";
 import { deliverWebhook } from "../services/webhook";
-import { parseIncomingMessage, deadLetterMessage, MessageValidationError } from "../utils/rabbitmq-validation";
-import type { WebhookJob } from "../types/rabbitmq-schemas";
+import {
+  parseIncomingMessage,
+  deadLetterMessage,
+  MessageValidationError,
+} from "../utils/rabbitmq-validation";
 
 const MAX_RETRIES = getQueueMaxRetries(QUEUES.WEBHOOKS);
 
@@ -32,12 +35,12 @@ export async function startWebhookConsumer(): Promise<void> {
       if (!msg) return;
 
       const headers = msg.properties.headers ?? {};
-      const retries =
-        typeof headers["x-retries"] === "number" ? headers["x-retries"] : 0;
+      const retries = typeof headers["x-retries"] === "number" ? headers["x-retries"] : 0;
 
       try {
-        // Validate webhook message
-        const validatedPayload = parseIncomingMessage<WebhookJob>(QUEUES.WEBHOOKS, msg.content);
+        // Validate webhook message; the payload type is inferred from the queue
+        // constant (WebhookJob) rather than asserted by the caller.
+        const validatedPayload = parseIncomingMessage(QUEUES.WEBHOOKS, msg.content);
         const { webhookId } = validatedPayload;
 
         if (!webhookId) {
@@ -76,7 +79,11 @@ export async function startWebhookConsumer(): Promise<void> {
           logger.error("Webhook validation failed, sending to DLQ", {
             errors: error.validationErrors,
           });
-          await deadLetterMessage(QUEUES.WEBHOOKS, msg.content, `Validation failed: ${error.message}`);
+          await deadLetterMessage(
+            QUEUES.WEBHOOKS,
+            msg.content,
+            `Validation failed: ${error.message}`,
+          );
           ch.ack(msg);
           return;
         }

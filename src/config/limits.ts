@@ -22,12 +22,7 @@ type LimitsSnapshot = {
   circuitBreaker: CircuitBreakerLimitConfig;
 };
 
-const LIMIT_CONFIG_SCOPES = [
-  "retail",
-  "business",
-  "government",
-  "circuit_breaker",
-] as const;
+const LIMIT_CONFIG_SCOPES = ["retail", "business", "government", "circuit_breaker"] as const;
 
 let cachedSnapshot: LimitsSnapshot | null = null;
 let cacheExpiresAt = 0;
@@ -43,14 +38,8 @@ function envLimits(): LimitsSnapshot {
     audiences: {
       retail: {
         depositDailyUsd: readNumber("LIMIT_RETAIL_DEPOSIT_DAILY_USD", 5000),
-        depositMonthlyUsd: readNumber(
-          "LIMIT_RETAIL_DEPOSIT_MONTHLY_USD",
-          50000,
-        ),
-        withdrawalSingleCurrencyDailyUsd: readNumber(
-          "LIMIT_RETAIL_WITHDRAWAL_DAILY_USD",
-          10000,
-        ),
+        depositMonthlyUsd: readNumber("LIMIT_RETAIL_DEPOSIT_MONTHLY_USD", 50000),
+        withdrawalSingleCurrencyDailyUsd: readNumber("LIMIT_RETAIL_WITHDRAWAL_DAILY_USD", 10000),
         withdrawalSingleCurrencyMonthlyUsd: readNumber(
           "LIMIT_RETAIL_WITHDRAWAL_MONTHLY_USD",
           80000,
@@ -58,14 +47,8 @@ function envLimits(): LimitsSnapshot {
       },
       business: {
         depositDailyUsd: readNumber("LIMIT_BUSINESS_DEPOSIT_DAILY_USD", 50000),
-        depositMonthlyUsd: readNumber(
-          "LIMIT_BUSINESS_DEPOSIT_MONTHLY_USD",
-          500000,
-        ),
-        withdrawalSingleCurrencyDailyUsd: readNumber(
-          "LIMIT_BUSINESS_WITHDRAWAL_DAILY_USD",
-          100000,
-        ),
+        depositMonthlyUsd: readNumber("LIMIT_BUSINESS_DEPOSIT_MONTHLY_USD", 500000),
+        withdrawalSingleCurrencyDailyUsd: readNumber("LIMIT_BUSINESS_WITHDRAWAL_DAILY_USD", 100000),
         withdrawalSingleCurrencyMonthlyUsd: readNumber(
           "LIMIT_BUSINESS_WITHDRAWAL_MONTHLY_USD",
           800000,
@@ -74,21 +57,12 @@ function envLimits(): LimitsSnapshot {
       government: {
         depositDailyUsd: readNumber("LIMIT_GOV_DEPOSIT_DAILY_USD", 500000),
         depositMonthlyUsd: readNumber("LIMIT_GOV_DEPOSIT_MONTHLY_USD", 5000000),
-        withdrawalSingleCurrencyDailyUsd: readNumber(
-          "LIMIT_GOV_WITHDRAWAL_DAILY_USD",
-          500000,
-        ),
-        withdrawalSingleCurrencyMonthlyUsd: readNumber(
-          "LIMIT_GOV_WITHDRAWAL_MONTHLY_USD",
-          4000000,
-        ),
+        withdrawalSingleCurrencyDailyUsd: readNumber("LIMIT_GOV_WITHDRAWAL_DAILY_USD", 500000),
+        withdrawalSingleCurrencyMonthlyUsd: readNumber("LIMIT_GOV_WITHDRAWAL_MONTHLY_USD", 4000000),
       },
     },
     circuitBreaker: {
-      reserveWeightThresholdPct: readNumber(
-        "LIMIT_CIRCUIT_BREAKER_RESERVE_WEIGHT_PCT",
-        10,
-      ),
+      reserveWeightThresholdPct: readNumber("LIMIT_CIRCUIT_BREAKER_RESERVE_WEIGHT_PCT", 10),
       minReserveRatio: readNumber("LIMIT_CIRCUIT_BREAKER_MIN_RATIO", 1.02),
     },
   };
@@ -114,10 +88,8 @@ function applyLimitOverrides(
   overrides: Record<string, unknown>,
 ): LimitConfig {
   return {
-    depositDailyUsd:
-      numberFromJson(overrides.depositDailyUsd) ?? current.depositDailyUsd,
-    depositMonthlyUsd:
-      numberFromJson(overrides.depositMonthlyUsd) ?? current.depositMonthlyUsd,
+    depositDailyUsd: numberFromJson(overrides.depositDailyUsd) ?? current.depositDailyUsd,
+    depositMonthlyUsd: numberFromJson(overrides.depositMonthlyUsd) ?? current.depositMonthlyUsd,
     withdrawalSingleCurrencyDailyUsd:
       numberFromJson(overrides.withdrawalSingleCurrencyDailyUsd) ??
       current.withdrawalSingleCurrencyDailyUsd,
@@ -133,10 +105,8 @@ function applyCircuitBreakerOverrides(
 ): CircuitBreakerLimitConfig {
   return {
     reserveWeightThresholdPct:
-      numberFromJson(overrides.reserveWeightThresholdPct) ??
-      current.reserveWeightThresholdPct,
-    minReserveRatio:
-      numberFromJson(overrides.minReserveRatio) ?? current.minReserveRatio,
+      numberFromJson(overrides.reserveWeightThresholdPct) ?? current.reserveWeightThresholdPct,
+    minReserveRatio: numberFromJson(overrides.minReserveRatio) ?? current.minReserveRatio,
   };
 }
 
@@ -145,9 +115,7 @@ async function loadLimitsSnapshot(): Promise<LimitsSnapshot> {
   const delegate = (
     prisma as unknown as {
       limitConfig?: {
-        findMany: (
-          args: unknown,
-        ) => Promise<Array<{ scope: string; values: unknown }>>;
+        findMany: (args: unknown) => Promise<Array<{ scope: string; values: unknown }>>;
       };
     }
   ).limitConfig;
@@ -164,22 +132,12 @@ async function loadLimitsSnapshot(): Promise<LimitsSnapshot> {
       const values = row.values as Record<string, unknown>;
 
       if (row.scope === "circuit_breaker") {
-        snapshot.circuitBreaker = applyCircuitBreakerOverrides(
-          snapshot.circuitBreaker,
-          values,
-        );
+        snapshot.circuitBreaker = applyCircuitBreakerOverrides(snapshot.circuitBreaker, values);
         continue;
       }
 
-      if (
-        row.scope === "retail" ||
-        row.scope === "business" ||
-        row.scope === "government"
-      ) {
-        snapshot.audiences[row.scope] = applyLimitOverrides(
-          snapshot.audiences[row.scope],
-          values,
-        );
+      if (row.scope === "retail" || row.scope === "business" || row.scope === "government") {
+        snapshot.audiences[row.scope] = applyLimitOverrides(snapshot.audiences[row.scope], values);
       }
     }
   } catch {

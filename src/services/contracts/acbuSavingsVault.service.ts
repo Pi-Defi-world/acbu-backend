@@ -22,9 +22,7 @@ export class SavingsVaultService {
     this.contractClient = contractClient;
   }
 
-  async deposit(
-    params: DepositParams,
-  ): Promise<{ transactionHash: string; newBalance: string }> {
+  async deposit(params: DepositParams): Promise<{ transactionHash: string; newBalance: string }> {
     const sourceAccount = stellarClient.getKeypair()?.publicKey();
     if (!sourceAccount) throw new Error("No source account available");
 
@@ -65,21 +63,16 @@ export class SavingsVaultService {
   }
 
   async getBalance(user: string, termSeconds: number): Promise<string> {
-    const result = await this.contractClient.readContract(
-      this.contractId,
-      "get_balance",
-      [ContractClient.toScVal(user), ContractClient.toScVal(termSeconds)],
-    );
+    const result = await this.contractClient.readContract(this.contractId, "get_balance", [
+      ContractClient.toScVal(user),
+      ContractClient.toScVal(termSeconds),
+    ]);
     const balance = ContractClient.fromScVal(result);
     return balance.toString();
   }
 
   async isPaused(): Promise<boolean> {
-    const result = await this.contractClient.readContract(
-      this.contractId,
-      "is_paused",
-      [],
-    );
+    const result = await this.contractClient.readContract(this.contractId, "is_paused", []);
     return ContractClient.fromScVal(result) as boolean;
   }
 }

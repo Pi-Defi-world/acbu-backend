@@ -10,9 +10,7 @@ import {
 const createRewardSchema = z.object({
   validator_id: z.string().uuid(),
   application_id: z.string().uuid(),
-  acbu_amount: z
-    .string()
-    .regex(/^[1-9]\d*$/, "Must be a positive integer string"),
+  acbu_amount: z.string().regex(/^[1-9]\d*$/, "Must be a positive integer string"),
   tx_hash: z.string().optional(),
 });
 

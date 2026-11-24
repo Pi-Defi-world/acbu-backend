@@ -5,9 +5,7 @@ import { processBulkTransfer } from "../services/enterpriseService";
 
 function getUploadedFile(
   req: Request,
-):
-  | { buffer: Buffer; originalname?: string; mimetype?: string; size?: number }
-  | undefined {
+): { buffer: Buffer; originalname?: string; mimetype?: string; size?: number } | undefined {
   const anyReq = req as Request & {
     file?: {
       buffer?: Buffer;
@@ -36,10 +34,7 @@ function getUploadedFile(
   };
 }
 
-function isCsvUpload(file: {
-  originalname?: string;
-  mimetype?: string;
-}): boolean {
+function isCsvUpload(file: { originalname?: string; mimetype?: string }): boolean {
   const name = file.originalname?.toLowerCase() ?? "";
   const mimetype = file.mimetype?.toLowerCase() ?? "";
   const hasCsvExtension = name.endsWith(".csv");

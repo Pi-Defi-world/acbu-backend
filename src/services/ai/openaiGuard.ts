@@ -52,9 +52,7 @@ export interface GuardedChatResult {
 
 function getOpenAIClient(): OpenAI {
   if (!config.openai.apiKey) {
-    throw new Error(
-      "OpenAI is not configured. Set OPENAI_API_KEY in your environment.",
-    );
+    throw new Error("OpenAI is not configured. Set OPENAI_API_KEY in your environment.");
   }
   return new OpenAI({ apiKey: config.openai.apiKey });
 }
@@ -69,10 +67,10 @@ function assertPromptSafe(messages: ChatCompletionMessageParam[]): void {
     const text = typeof msg.content === "string" ? msg.content : "";
     for (const pattern of DISALLOWED_PROMPT_PATTERNS) {
       if (pattern.test(text)) {
-        throw Object.assign(
-          new Error("Prompt rejected: contains disallowed content."),
-          { statusCode: 400, isOperational: true },
-        );
+        throw Object.assign(new Error("Prompt rejected: contains disallowed content."), {
+          statusCode: 400,
+          isOperational: true,
+        });
       }
     }
   }
@@ -93,9 +91,7 @@ async function getMonthlySpend(orgId: string): Promise<number> {
   const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 
   const doc = await db
-    .collection<{ orgId: string; monthKey: string; totalUsd: number }>(
-      SPEND_COLLECTION,
-    )
+    .collection<{ orgId: string; monthKey: string; totalUsd: number }>(SPEND_COLLECTION)
     .findOne({ orgId, monthKey });
 
   return doc?.totalUsd ?? 0;
@@ -105,11 +101,7 @@ async function getMonthlySpend(orgId: string): Promise<number> {
  * Estimates USD cost from token usage.
  * Uses gpt-4o-mini pricing as a conservative default; override for other models.
  */
-function estimateCostUsd(
-  promptTokens: number,
-  completionTokens: number,
-  model: string,
-): number {
+function estimateCostUsd(promptTokens: number, completionTokens: number, model: string): number {
   // Prices per 1M tokens (USD) — update when OpenAI changes pricing.
   const pricing: Record<string, { input: number; output: number }> = {
     "gpt-4o": { input: 2.5, output: 10.0 },
@@ -153,9 +145,7 @@ async function recordSpend(orgId: string, costUsd: number): Promise<void> {
  * The single entry point for all OpenAI chat calls within the platform.
  * Enforces auth context, budget cap, and prompt safety before calling the API.
  */
-export async function guardedChat(
-  params: GuardedChatParams,
-): Promise<GuardedChatResult> {
+export async function guardedChat(params: GuardedChatParams): Promise<GuardedChatResult> {
   const {
     orgId,
     userId,
@@ -193,6 +183,7 @@ export async function guardedChat(
   logger.debug("[openaiGuard] Sending request", { orgId, userId, model });
 
   // Wrapper that applies timeout, retries, and optionally fails-open.
+  // AB-025: Defaults to fail-closed (failOpen === false) so unverified requests are rejected during degradation.
   const timeoutMs = config.openai.failOpenTimeoutMs ?? 2000;
   const maxRetries = config.openai.failOpenMaxRetries ?? 2;
   const retryBaseMs = config.openai.failOpenRetryBaseMs ?? 500;
@@ -205,7 +196,8 @@ export async function guardedChat(
     if (status === 429) return true;
     if (typeof status === "number" && status >= 500 && status < 600) return true;
     const msg = String(err.message || err.toString()).toLowerCase();
-    if (msg.includes("timeout") || msg.includes("network") || msg.includes("econnrefused")) return true;
+    if (msg.includes("timeout") || msg.includes("network") || msg.includes("econnrefused"))
+      return true;
     return false;
   }
 
@@ -227,7 +219,13 @@ export async function guardedChat(
         return res;
       } catch (err) {
         lastErr = err;
-        logger.warn("[openaiGuard] OpenAI request failed", { orgId, userId, model, attempt, err: String(err) });
+        logger.warn("[openaiGuard] OpenAI request failed", {
+          orgId,
+          userId,
+          model,
+          attempt,
+          err: String(err),
+        });
         if (attempt < maxRetries && isRetryableError(err)) {
           const backoff = retryBaseMs * Math.pow(2, attempt);
           const jitter = Math.floor(Math.random() * 100);
@@ -246,7 +244,11 @@ export async function guardedChat(
   } catch (err) {
     // If configured to fail-open, log and return a safe default allowing callers to continue.
     if (failOpen && isRetryableError(err)) {
-      logger.warn("[openaiGuard] Failing open due to OpenAI degradation", { orgId, userId, err: String(err) });
+      logger.warn("[openaiGuard] Failing open due to OpenAI degradation", {
+        orgId,
+        userId,
+        err: String(err),
+      });
       return {
         content: "",
         usage: {
@@ -269,11 +271,7 @@ export async function guardedChat(
     total_tokens: 0,
   };
 
-  const estimatedCostUsd = estimateCostUsd(
-    usage.prompt_tokens,
-    usage.completion_tokens,
-    model,
-  );
+  const estimatedCostUsd = estimateCostUsd(usage.prompt_tokens, usage.completion_tokens, model);
 
   await recordSpend(orgId, estimatedCostUsd);
 

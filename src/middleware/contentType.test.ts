@@ -37,9 +37,7 @@ describe("requireJsonContentType", () => {
       .expect(415)
       .expect((res) => {
         expect(res.body.error.code).toBe("INVALID_CONTENT_TYPE");
-        expect(res.body.error.message).toBe(
-          "Content-Type must be application/json",
-        );
+        expect(res.body.error.message).toBe("Content-Type must be application/json");
       });
   });
 

@@ -28,7 +28,7 @@ const makeNext = (): jest.MockedFunction<(err?: unknown) => void> =>
   jest.fn() as jest.MockedFunction<(err?: unknown) => void>;
 
 const makeReq = (query: Record<string, unknown> = {}, apiKey?: any) =>
-  ({ query, apiKey: apiKey ?? { userId: "user-1" } } as unknown as Request & { apiKey?: any });
+  ({ query, apiKey: apiKey ?? { userId: "user-1" } }) as unknown as Request & { apiKey?: any };
 
 describe("reportController", () => {
   beforeEach(() => {
@@ -95,7 +95,7 @@ describe("reportController", () => {
     expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "text/csv; charset=utf-8");
     expect(res.setHeader).toHaveBeenCalledWith(
       "Content-Disposition",
-      expect.stringContaining("attachment; filename=\"acbu_statement_"),
+      expect.stringContaining('attachment; filename="acbu_statement_'),
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("transaction_id,type,status"));
@@ -105,11 +105,7 @@ describe("reportController", () => {
     const res = makeRes();
     const next = makeNext();
 
-    await exportTransactionReport(
-      makeReq({ format: "xml" }),
-      res as unknown as Response,
-      next,
-    );
+    await exportTransactionReport(makeReq({ format: "xml" }), res as unknown as Response, next);
 
     expect(next).toHaveBeenCalled();
     const error = next.mock.calls[0][0] as Error;

@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import { AppError } from "./errorHandler";
 import { logger } from "../config/logger";
 import { EXPECTED_JWT_TYP } from "./authMiddleware";
+import { requireAdminApiKey } from "./adminAuth";
 import { PermissionScopeEnum, PermissionScope } from "../types/permissions";
 
 export type Audience = "retail" | "business" | "government";
@@ -30,6 +31,7 @@ export interface AuthRequest extends Request {
     permissions: PermissionScope[];
     rateLimit: number;
   };
+  adminId?: string;
   /** Set by audience-specific routes (e.g. /retail, /business, /government) for limits and behaviour. */
   audience?: Audience;
   /** Optional user tier populated by upstream middleware/services for authorization checks. */
@@ -37,17 +39,29 @@ export interface AuthRequest extends Request {
 }
 
 /**
- * Validate and parse permissions from Prisma JSON field
+ * Validate and parse permissions from Prisma JSON field.
+ *
+ * Fail-closed behaviour (W10-BE-016): if the stored value is not an array the
+ * key is **rejected** rather than silently downgraded to an empty-permission
+ * key.  An empty array `[]` stored in the database is a legitimate "no
+ * permissions" state and is allowed through; any non-array type (object,
+ * string, null, etc.) is treated as data corruption and throws so that the
+ * caller denies access.
+ *
  * @param permissions - Raw permissions from database (Json type)
- * @returns Array of validated permission strings, or empty array if invalid
+ * @returns Array of validated permission strings
+ * @throws {AppError} 403 if the stored value is present but not an array
  */
 function validatePermissions(permissions: unknown): PermissionScope[] {
   if (!Array.isArray(permissions)) {
     if (permissions != null) {
-      logger.warn("Invalid permissions in API key record (not an array)", {
+      // Non-null, non-array value means the record is malformed — fail closed.
+      logger.error("Malformed permissions in API key record (not an array) — key rejected", {
         raw: permissions,
       });
+      throw new AppError("API key has malformed permissions and cannot be used", 403);
     }
+    // null / undefined means the column was never set — treat as empty array.
     return [];
   }
   const valid: PermissionScope[] = [];
@@ -65,9 +79,7 @@ function validatePermissions(permissions: unknown): PermissionScope[] {
   return valid;
 }
 
-function parseApiKey(
-  rawApiKey: string,
-): { lookupKey: string; secret: string } | null {
+function parseApiKey(rawApiKey: string): { lookupKey: string; secret: string } | null {
   const match = rawApiKey.trim().match(API_KEY_FORMAT);
   if (!match) {
     return null;
@@ -100,10 +112,7 @@ function rejectIfJwtToken(token: string): void {
         // Check if this is a challenge token (has 2fa_challenge audience)
         if (decoded.aud === "2fa_challenge" && decoded.iss === "acbu/auth") {
           logger.error("Attempted to use 2FA challenge token for API access");
-          throw new AppError(
-            "Challenge tokens cannot be used for API access",
-            401,
-          );
+          throw new AppError("Challenge tokens cannot be used for API access", 401);
         }
         // Reject any JWT-like token that isn't a standard API key
         logger.warn("Non-API-key JWT token rejected for API access");
@@ -125,9 +134,7 @@ export const validateApiKey = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const apiKey =
-      req.headers["x-api-key"] ||
-      req.headers["authorization"]?.replace("Bearer ", "");
+    const apiKey = req.headers["x-api-key"] || req.headers["authorization"]?.replace("Bearer ", "");
 
     if (!apiKey || typeof apiKey !== "string") {
       throw new AppError("API key is required", 401);
@@ -168,11 +175,26 @@ export const validateApiKey = async (
       throw new AppError("Invalid API key", 401);
     }
 
+    // Reject API keys whose associated user is disabled or deleted
+    if (apiKeyRecord.userId && apiKeyRecord.user) {
+      if (apiKeyRecord.user.deletedAt !== null) {
+        logger.warn("API key validation rejected: user account deleted", {
+          userId: apiKeyRecord.userId,
+          apiKeyId: apiKeyRecord.id,
+        });
+        throw new AppError("Invalid API key", 401);
+      }
+      if ((apiKeyRecord.user as any).isDisabled === true) {
+        logger.warn("API key validation rejected: user account disabled", {
+          userId: apiKeyRecord.userId,
+          apiKeyId: apiKeyRecord.id,
+        });
+        throw new AppError("Invalid API key", 401);
+      }
+    }
+
     // Single bcrypt verification.
-    const isValid = await bcrypt.compare(
-      parsedApiKey.secret,
-      apiKeyRecord.keyHash,
-    );
+    const isValid = await bcrypt.compare(parsedApiKey.secret, apiKeyRecord.keyHash);
     if (!isValid) {
       throw new AppError("Invalid API key", 401);
     }
@@ -183,9 +205,7 @@ export const validateApiKey = async (
         where: { id: apiKeyRecord.id },
         data: { lastUsedAt: new Date() },
       })
-      .catch((e: any) =>
-        logger.error("Failed to update API key lastUsedAt", { e }),
-      );
+      .catch((e: any) => logger.error("Failed to update API key lastUsedAt", { e }));
 
     req.apiKey = {
       id: apiKeyRecord.id,
@@ -202,6 +222,47 @@ export const validateApiKey = async (
     if (apiKeyRecord.user?.tier) {
       req.userTier = apiKeyRecord.user.tier as UserTier;
     }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const ADMIN_KEY_TYPES: ApiKeyType[] = ["ADMIN_KEY", "BREAK_GLASS_KEY"];
+
+/**
+ * Middleware to validate admin API key
+ * Requires a valid API key with ADMIN_KEY or BREAK_GLASS_KEY type.
+ * Sets req.adminId for downstream route handlers / audit trails.
+ */
+export const validateAdminKey = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.apiKey) {
+      await new Promise<void>((resolve, reject) => {
+        validateApiKey(req, res, (err?: unknown) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+
+    if (!req.apiKey) {
+      throw new AppError("API key is required", 401);
+    }
+
+    if (!ADMIN_KEY_TYPES.includes(req.apiKey.keyType)) {
+      throw new AppError("Admin key required for this operation", 403);
+    }
+
+    req.adminId = req.apiKey.userId ?? req.apiKey.createdByUserId ?? req.apiKey.id;
 
     next();
   } catch (error) {

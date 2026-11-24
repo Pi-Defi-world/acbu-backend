@@ -59,9 +59,7 @@ function formatStatementsAsCsv(statements: StatementRow[]): string {
     statement.completedAt,
   ]);
 
-  return [header, ...rows]
-    .map((row) => row.map(sanitizeCsvValue).join(","))
-    .join("\r\n");
+  return [header, ...rows].map((row) => row.map(sanitizeCsvValue).join(",")).join("\r\n");
 }
 
 function getStatementFilename(): string {
@@ -139,10 +137,7 @@ export async function exportTransactionReport(
 
       const filename = getStatementFilename();
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${filename}"`,
-      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.status(200).send(csv);
       return;
     }

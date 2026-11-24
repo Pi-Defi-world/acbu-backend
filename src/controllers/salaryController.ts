@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AuthRequest } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import * as salaryService from "../services/salary/salaryService";
+import { parseOffsetPagination } from "../utils/pagination";
 
 export const salaryItemSchema = z.object({
   recipient_id: z.string().uuid().optional(),
@@ -38,8 +39,7 @@ export async function postSalaryDisburse(
     const body = postSalaryDisburseSchema.parse(req.body);
     const result = await salaryService.createSalaryBatch({
       userId,
-      organizationId:
-        body.organization_id || req.apiKey?.organizationId || undefined,
+      organizationId: body.organization_id || req.apiKey?.organizationId || undefined,
       totalAmount: body.total_amount,
       currency: body.currency,
       idempotencyKey: body.idempotency_key,
@@ -57,9 +57,7 @@ export async function postSalaryDisburse(
     });
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return next(
-        new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten()),
-      );
+      return next(new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten()));
     }
     next(e);
   }
@@ -82,8 +80,9 @@ export async function getSalaryBatches(
       throw new AppError("Authentication required", 401);
     }
 
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = parseInt(req.query.offset as string) || 0;
+    // W10-BE-017: clamp `limit` (max 100) and normalise `offset` instead of
+    // passing raw query values through to the database.
+    const { limit, offset } = parseOffsetPagination(req.query);
 
     const batches = await salaryService.getSalaryBatches({
       userId: userId || undefined,
@@ -101,6 +100,7 @@ export async function getSalaryBatches(
         created_at: b.createdAt.toISOString(),
         item_count: b._count.items,
       })),
+      pagination: { limit, offset },
     });
   } catch (e) {
     next(e);
@@ -112,9 +112,7 @@ export const postSalaryScheduleSchema = z.object({
   name: z.string().min(1, "Name is required"),
   cron: z.string().min(1, "Cron expression is required"),
   currency: z.string().default("ACBU"),
-  amount_config: z
-    .array(salaryItemSchema)
-    .min(1, "At least one item is required"),
+  amount_config: z.array(salaryItemSchema).min(1, "At least one item is required"),
 });
 
 /**
@@ -135,8 +133,7 @@ export async function postSalarySchedule(
     const body = postSalaryScheduleSchema.parse(req.body);
     const schedule = await salaryService.createSalarySchedule({
       userId,
-      organizationId:
-        body.organization_id || req.apiKey?.organizationId || undefined,
+      organizationId: body.organization_id || req.apiKey?.organizationId || undefined,
       name: body.name,
       cron: body.cron,
       currency: body.currency,
@@ -150,9 +147,7 @@ export async function postSalarySchedule(
     });
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return next(
-        new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten()),
-      );
+      return next(new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten()));
     }
     next(e);
   }
@@ -171,9 +166,15 @@ export async function getSalarySchedules(
     const userId = req.apiKey?.userId;
     const organizationId = req.apiKey?.organizationId;
 
+    // W10-BE-017: schedules were unbounded; apply the same pagination contract
+    // as the batches endpoint.
+    const { limit, offset } = parseOffsetPagination(req.query);
+
     const schedules = await salaryService.getSalarySchedules({
       userId: userId || undefined,
       organizationId: organizationId || undefined,
+      limit: parseInt(req.query.limit as string) || 50,
+      offset: parseInt(req.query.offset as string) || 0,
     });
 
     res.status(200).json({
@@ -184,6 +185,7 @@ export async function getSalarySchedules(
         status: s.status,
         next_run_at: s.nextRunAt?.toISOString(),
       })),
+      pagination: { limit, offset },
     });
   } catch (e) {
     next(e);

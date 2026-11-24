@@ -4,10 +4,7 @@
  * Requires government segment scope; delegates to shared mint/burn with audience = 'government'.
  */
 import { Router, type IRouter } from "express";
-import {
-  mintFromUsdc,
-  depositFromBasketCurrency,
-} from "../controllers/mintController";
+import { mintFromUsdc, depositFromBasketCurrency } from "../controllers/mintController";
 import { burnAcbu } from "../controllers/burnController";
 import {
   getGovernmentTreasury,

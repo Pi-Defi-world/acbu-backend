@@ -40,10 +40,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 async function checkPostgres(): Promise<HealthDetail> {
   try {
-    await withTimeout(
-      prisma.$queryRaw(Prisma.sql`SELECT 1`),
-      TIMEOUT_MS
-    );
+    await withTimeout(prisma.$queryRaw(Prisma.sql`SELECT 1`), TIMEOUT_MS);
     return { status: "up" };
   } catch (err) {
     const message = (err as Error).message;
@@ -78,10 +75,7 @@ async function checkRabbitMQ(): Promise<HealthDetail> {
 
 async function checkStellarHorizon(): Promise<HealthDetail> {
   try {
-    await withTimeout(
-      stellarClient.getServer().root(),
-      TIMEOUT_MS
-    );
+    await withTimeout(stellarClient.getServer().root(), TIMEOUT_MS);
     return { status: "up" };
   } catch (err) {
     const message = (err as Error).message;

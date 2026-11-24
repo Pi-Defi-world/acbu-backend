@@ -9,6 +9,7 @@ import { logger } from "../../config/logger";
 import { getFintechRouter } from "../fintech";
 import { reserveTracker } from "./ReserveTracker";
 import type { ReserveHealth, ReserveStatus } from "./ReserveTracker";
+import { Decimal } from "@prisma/client/runtime/library";
 
 // #627: Read from config so the threshold can be tuned via RESERVE_DRIFT_THRESHOLD_PCT
 // without a code change or redeploy of the full service.
@@ -47,51 +48,40 @@ export class RebalancingEngine {
    */
   async generateInstructions(
     driftSnapshot: ReserveStatus[],
-    totalReserveUsd: number,
+    totalReserveUsd: Decimal,
   ): Promise<RebalanceInstruction[]> {
     const instructions: RebalanceInstruction[] = [];
-    const overweight = driftSnapshot.filter(
-      (c) => c.weightDrift > DRIFT_THRESHOLD_PCT,
-    );
-    const underweight = driftSnapshot.filter(
-      (c) => c.weightDrift < -DRIFT_THRESHOLD_PCT,
-    );
-    if (overweight.length === 0 || underweight.length === 0)
-      return instructions;
+    const overweight = driftSnapshot.filter((c) => c.weightDrift.gt(DRIFT_THRESHOLD_PCT));
+    const underweight = driftSnapshot.filter((c) => c.weightDrift.lt(-DRIFT_THRESHOLD_PCT));
+    if (overweight.length === 0 || underweight.length === 0) return instructions;
 
     const router = getFintechRouter();
     for (const over of overweight) {
       const excessPct = over.weightDrift;
-      const excessUsd = (totalReserveUsd * excessPct) / 100;
-      if (excessUsd <= 0) continue;
+      const excessUsd = totalReserveUsd.mul(excessPct).div(100);
+      if (excessUsd.lte(0)) continue;
       try {
         const providerFrom = await router.getProvider(over.currency);
-        const rateFrom = await providerFrom.convertCurrency(
-          1,
-          over.currency,
-          "USD",
-        );
+        const rateFrom = await providerFrom.convertCurrency(1, over.currency, "USD");
         const rateFromUsd = rateFrom.rate;
         for (const under of underweight) {
-          const deficitPct = -under.weightDrift;
-          const shareOfExcess =
-            (deficitPct / underweight.reduce((s, u) => s + -u.weightDrift, 0)) *
-            excessUsd;
-          if (shareOfExcess <= 0) continue;
+          const deficitPct = under.weightDrift.neg();
+          const totalDeficitPct = underweight.reduce(
+            (s, u) => s.add(u.weightDrift.neg()),
+            new Decimal(0),
+          );
+          const shareOfExcess = deficitPct.div(totalDeficitPct).mul(excessUsd);
+          if (shareOfExcess.lte(0)) continue;
           try {
             const providerTo = await router.getProvider(under.currency);
-            const rateTo = await providerTo.convertCurrency(
-              1,
-              under.currency,
-              "USD",
-            );
+            const rateTo = await providerTo.convertCurrency(1, under.currency, "USD");
             const rateToUsd = rateTo.rate;
-            const amountFrom = shareOfExcess / rateFromUsd;
-            const amountTo = shareOfExcess / rateToUsd;
+            const amountFrom = shareOfExcess.div(rateFromUsd).toNumber();
+            const amountTo = shareOfExcess.div(rateToUsd).toNumber();
             instructions.push({
               fromCurrency: over.currency,
               toCurrency: under.currency,
-              amountUsd: shareOfExcess,
+              amountUsd: shareOfExcess.toNumber(),
               rateFromUsd,
               rateToUsd,
               amountFrom,
@@ -127,10 +117,7 @@ export class RebalancingEngine {
     const driftSnapshot = health.currencies;
     const totalReserveUsd = health.totalReserveValueUsd;
 
-    const instructions = await this.generateInstructions(
-      driftSnapshot,
-      totalReserveUsd,
-    );
+    const instructions = await this.generateInstructions(driftSnapshot, totalReserveUsd);
 
     const event = await prisma.rebalancingEvent.create({
       data: {
@@ -146,7 +133,7 @@ export class RebalancingEngine {
               reserveValueUsd: c.reserveValueUsd,
             })),
             instructions,
-            totalReserveValueUsd: totalReserveUsd,
+            totalReserveValueUsd: totalReserveUsd.toString(),
             startedAt: startedAt.toISOString(),
           }),
         ),
@@ -164,7 +151,7 @@ export class RebalancingEngine {
       return {
         eventId: event.id,
         status: "completed",
-        totalReserveValueUsd: totalReserveUsd,
+        totalReserveValueUsd: totalReserveUsd.toNumber(),
         driftSnapshot,
         instructions: [],
       };
@@ -177,7 +164,7 @@ export class RebalancingEngine {
     return {
       eventId: event.id,
       status: "pending",
-      totalReserveValueUsd: totalReserveUsd,
+      totalReserveValueUsd: totalReserveUsd.toNumber(),
       driftSnapshot,
       instructions,
     };

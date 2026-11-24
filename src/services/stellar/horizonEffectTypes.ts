@@ -9,9 +9,7 @@
  */
 
 /** Horizon contract effect type names ACBU currently consumes */
-export type HorizonContractEffectType =
-  | "contract_credited"
-  | "contract_debited";
+export type HorizonContractEffectType = "contract_credited" | "contract_debited";
 
 /**
  * Live Horizon JSON shape for contract_credited / contract_debited.

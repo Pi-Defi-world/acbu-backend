@@ -159,7 +159,7 @@ ADMIN_NOTIFICATION_EMAIL=ops@acbu.com       # Email list for alerts
 **Unit Tests:** [tests/weightDriftAudit.test.ts](../tests/weightDriftAudit.test.ts)
 
 ```bash
-npm test -- tests/weightDriftAudit.test.ts
+pnpm test -- tests/weightDriftAudit.test.ts
 ```
 
 **Coverage:**

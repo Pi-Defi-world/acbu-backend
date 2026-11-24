@@ -98,7 +98,9 @@ export async function authenticateWsUpgrade(req: IncomingMessage): Promise<WsAut
   }
 
   if (!rawKey) {
-    throw new WsAuthError("WebSocket upgrade requires an API key in x-api-key or Authorization header");
+    throw new WsAuthError(
+      "WebSocket upgrade requires an API key in x-api-key or Authorization header",
+    );
   }
 
   const parsed = parseApiKey(rawKey);
@@ -113,10 +115,7 @@ export async function authenticateWsUpgrade(req: IncomingMessage): Promise<WsAut
       AND: [
         { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
         {
-          OR: [
-            { keyType: { not: "BREAK_GLASS_KEY" } },
-            { emergencyExpiresAt: { gt: new Date() } },
-          ],
+          OR: [{ keyType: { not: "BREAK_GLASS_KEY" } }, { emergencyExpiresAt: { gt: new Date() } }],
         },
       ],
     },

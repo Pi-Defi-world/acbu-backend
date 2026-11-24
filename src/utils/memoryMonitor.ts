@@ -52,8 +52,7 @@ function checkHeap(): void {
 
   if (usedPct >= CRITICAL_THRESHOLD_PCT) {
     const now = Date.now();
-    const dumpPath =
-      now - lastDumpAt > MIN_DUMP_INTERVAL_MS ? writeHeapSnapshot() : null;
+    const dumpPath = now - lastDumpAt > MIN_DUMP_INTERVAL_MS ? writeHeapSnapshot() : null;
     if (dumpPath) lastDumpAt = now;
 
     logger.error("CRITICAL: heap usage above threshold — possible memory leak", {

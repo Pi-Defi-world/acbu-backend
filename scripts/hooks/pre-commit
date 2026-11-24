@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Pre-commit guard to prevent accidental commits of .env.local or .env
+
+# Get a list of staged files
+staged_files=$(git diff --cached --name-only)
+
+# Check if .env.local or .env is in the staged files
+for file in $staged_files; do
+  if [[ "$file" == ".env.local" || "$file" == ".env" ]]; then
+    echo "🚨 ERROR: You are attempting to commit '$file'!"
+    echo "This file contains local secrets and must not be tracked in Git."
+    echo ""
+    echo "To fix this, unstage the file by running:"
+    echo "  git restore --staged $file"
+    echo ""
+    exit 1
+  fi
+done
+
+exit 0

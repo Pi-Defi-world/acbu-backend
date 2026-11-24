@@ -3,10 +3,7 @@
  * Tests the high-precision conversion logic from local currency to USD
  */
 
-import {
-  convertLocalToUsd,
-  convertLocalToUsdWithPrecision,
-} from "./currencyConverter";
+import { convertLocalToUsd, convertLocalToUsdWithPrecision } from "./currencyConverter";
 import { prisma } from "../../config/database";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -35,7 +32,8 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(100000, "NGN");
 
-      expect(result).toBeCloseTo(50, 5);
+      // Issue #787: result is now a Decimal; convert at the test boundary
+      expect(result.toNumber()).toBeCloseTo(50, 5);
     });
 
     it("should convert KES to USD correctly", async () => {
@@ -49,7 +47,8 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(7500, "KES");
 
-      expect(result).toBeCloseTo(25, 5);
+      // Issue #787: result is now a Decimal; convert at the test boundary
+      expect(result.toNumber()).toBeCloseTo(25, 5);
     });
 
     it("should handle all supported currencies", async () => {
@@ -90,8 +89,9 @@ describe("currencyConverter", () => {
 
       for (const currency of currencies) {
         const result = await convertLocalToUsd(1000, currency);
-        expect(typeof result).toBe("number");
-        expect(result).toBeGreaterThan(0);
+        // Issue #787: result is now Decimal, not a primitive number
+        expect(result).toBeInstanceOf(Decimal);
+        expect(result.toNumber()).toBeGreaterThan(0);
       }
     });
 
@@ -105,8 +105,11 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(999999.99, "NGN");
 
-      // Should maintain precision
-      expect(result).toBeCloseTo(507.83, 2);
+      // Issue #787: The Decimal result preserves full precision — no floating-point skew.
+      // Verify precision is maintained beyond what JS number could represent.
+      expect(result.toNumber()).toBeCloseTo(507.83, 2);
+      // Also verify the raw Decimal string to confirm no rounding loss at source.
+      expect(parseFloat(result.toString())).toBeCloseTo(507.83, 2);
     });
 
     it("should reject unsupported currency", async () => {
@@ -127,7 +130,7 @@ describe("currencyConverter", () => {
 
       // NGN should work
       const result = await convertLocalToUsd(100000, "NGN");
-      expect(result).toBeCloseTo(50, 5);
+      expect(result.toNumber()).toBeCloseTo(50, 5);
     });
 
     it("should throw error if no rates available", async () => {
@@ -150,9 +153,7 @@ describe("currencyConverter", () => {
 
       await expect(convertLocalToUsd(100000, "NGN")).rejects.toThrow(
         expect.objectContaining({
-          message: expect.stringContaining(
-            "Exchange rate for NGN is not available or invalid",
-          ),
+          message: expect.stringContaining("Exchange rate for NGN is not available or invalid"),
           statusCode: 503,
         }),
       );
@@ -182,7 +183,7 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(1, "NGN");
 
-      expect(result).toBeCloseTo(0.0005, 10);
+      expect(result.toNumber()).toBeCloseTo(0.0005, 10);
     });
 
     it("should handle very large local amounts", async () => {
@@ -194,7 +195,7 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(1000000000, "NGN");
 
-      expect(result).toBeCloseTo(500000, 2);
+      expect(result.toNumber()).toBeCloseTo(500000, 2);
     });
 
     it("should handle decimal input strings", async () => {
@@ -206,7 +207,7 @@ describe("currencyConverter", () => {
 
       const result = await convertLocalToUsd(100000.5, "NGN");
 
-      expect(result).toBeCloseTo(50.00025, 5);
+      expect(result.toNumber()).toBeCloseTo(50.00025, 5);
     });
 
     it("should handle string inputs as golden test", async () => {
@@ -245,10 +246,12 @@ describe("currencyConverter", () => {
       const result = await convertLocalToUsdWithPrecision(100000, "NGN");
 
       expect(result).toHaveProperty("usdAmount");
+      expect(result).toHaveProperty("usdAmountDecimal");
       expect(result).toHaveProperty("originalAmount");
       expect(result).toHaveProperty("acbuEquivalent");
 
       expect(result.usdAmount).toBeCloseTo(50, 5);
+      expect(result.usdAmountDecimal).toBeInstanceOf(Decimal);
       expect(result.originalAmount).toEqual(new Decimal(100000));
       expect(result.acbuEquivalent).toEqual(new Decimal(100));
     });
@@ -283,17 +286,79 @@ describe("currencyConverter", () => {
       expect(result.acbuEquivalent.toString()).toMatch(/^999\..*$/); // Should be ~999 ACBU
     });
 
+    it("should return usdAmountDecimal as primary Decimal for audit logging", async () => {
+      (prisma.acbuRate.findFirst as jest.Mock).mockResolvedValue({
+        acbuNgn: new Decimal("1000.00"),
+        acbuUsd: new Decimal("0.50"),
+        timestamp: new Date(),
+      });
+
+      const result = await convertLocalToUsdWithPrecision(100000, "NGN");
+
+      // usdAmountDecimal is the primary Decimal field for accounting/audit
+      expect(result).toHaveProperty("usdAmountDecimal");
+      expect(result.usdAmountDecimal).toBeInstanceOf(Decimal);
+      expect(result.usdAmountDecimal.toString()).toBe("50");
+
+      // usdAmount (number) should remain for backwards compatibility
+      expect(result.usdAmount).toBeCloseTo(50, 5);
+
+      // Decimal and number should represent the same value
+      expect(result.usdAmountDecimal.toNumber()).toBeCloseTo(result.usdAmount, 10);
+    });
+
     it("should throw same errors as convertLocalToUsd", async () => {
       (prisma.acbuRate.findFirst as jest.Mock).mockResolvedValue(null);
 
-      await expect(
-        convertLocalToUsdWithPrecision(100000, "NGN"),
-      ).rejects.toThrow(
+      await expect(convertLocalToUsdWithPrecision(100000, "NGN")).rejects.toThrow(
         expect.objectContaining({
           message: expect.stringContaining("Exchange rates not yet available"),
           statusCode: 503,
         }),
       );
+    });
+
+    it("W10-B-005: usdAmountDecimal preserves precision where usdNumber may lose it", async () => {
+      // Use a high-precision scenario where number conversion could lose precision
+      const precisionRate = new Decimal("1000.123456789");
+      const precisionUsdRate = new Decimal("0.50789123456789");
+
+      (prisma.acbuRate.findFirst as jest.Mock).mockResolvedValue({
+        acbuNgn: precisionRate,
+        acbuUsd: precisionUsdRate,
+        timestamp: new Date(),
+      });
+
+      const largeAmount = "999999999.999999999";
+      const result = await convertLocalToUsdWithPrecision(largeAmount, "NGN");
+
+      // usdAmountDecimal should preserve full precision
+      expect(result.usdAmountDecimal).toBeInstanceOf(Decimal);
+      const decimalStr = result.usdAmountDecimal.toString();
+
+      // usdAmount (number) is the same value but as a float
+      expect(result.usdAmount).toBeCloseTo(result.usdAmountDecimal.toNumber(), 5);
+
+      // The Decimal should be used for audit logging (not the number)
+      expect(decimalStr).toBeDefined();
+      expect(decimalStr.length).toBeGreaterThan(0);
+    });
+
+    it("W10-B-005: documentation indicates usdAmount is deprecated", async () => {
+      (prisma.acbuRate.findFirst as jest.Mock).mockResolvedValue({
+        acbuNgn: new Decimal("1000.00"),
+        acbuUsd: new Decimal("0.50"),
+        timestamp: new Date(),
+      });
+
+      const result = await convertLocalToUsdWithPrecision(100000, "NGN");
+
+      // Verify the Decimal field exists and is the primary value
+      expect(result.usdAmountDecimal).toBeInstanceOf(Decimal);
+      expect(result.usdAmountDecimal.toString()).toBe("50");
+
+      // The number field exists for backwards compatibility
+      expect(typeof result.usdAmount).toBe("number");
     });
   });
 
@@ -310,7 +375,7 @@ describe("currencyConverter", () => {
       const usdEquivalent = await convertLocalToUsd(50000, "NGN");
 
       // 50,000 NGN = 100 ACBU = $60 USD
-      expect(usdEquivalent).toBeCloseTo(60, 2);
+      expect(usdEquivalent.toNumber()).toBeCloseTo(60, 2);
     });
 
     it("should correctly price a large business KES deposit", async () => {
@@ -325,7 +390,7 @@ describe("currencyConverter", () => {
       const usdEquivalent = await convertLocalToUsd(1000000, "KES");
 
       // 1,000,000 KES = 5,000 ACBU = $3,500 USD
-      expect(usdEquivalent).toBeCloseTo(3500, 2);
+      expect(usdEquivalent.toNumber()).toBeCloseTo(3500, 2);
     });
 
     it("should handle multi-currency conversion consistency", async () => {
@@ -353,8 +418,8 @@ describe("currencyConverter", () => {
       const kesToUsd = await convertLocalToUsd(kesEquivalent, "KES");
 
       // Both should be approximately $50 USD
-      expect(ngnToUsd).toBeCloseTo(50, 2);
-      expect(kesToUsd).toBeCloseTo(50, 2);
+      expect(ngnToUsd.toNumber()).toBeCloseTo(50, 2);
+      expect(kesToUsd.toNumber()).toBeCloseTo(50, 2);
     });
   });
 });

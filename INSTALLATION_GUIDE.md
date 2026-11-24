@@ -2,39 +2,25 @@
 
 ## Prerequisites
 
-- Node.js v16+ installed
-- npm or pnpm package manager
-- PowerShell execution policy configured (or use Command Prompt)
+- Node.js v18+ installed
+- pnpm or npm package manager
 
 ## Installation Steps
 
-### Option 1: Using Command Prompt (Recommended for Windows)
+Open your terminal in the project root directory and run:
 
-Open Command Prompt (cmd.exe) and run:
-
-```cmd
-cd "C:\Users\machintosh\Documents\Fouth Wave\acbu-backend"
-npm install --save-dev fast-check
+```bash
+pnpm install
+# or
+npm install
 ```
 
-### Option 2: Using PowerShell with Execution Policy
+To install `fast-check` for property-based testing:
 
-If you prefer PowerShell, first enable script execution:
-
-```powershell
-# Run PowerShell as Administrator
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# Then install
-cd "C:\Users\machintosh\Documents\Fouth Wave\acbu-backend"
-npm install --save-dev fast-check
-```
-
-### Option 3: Using pnpm (if configured)
-
-```cmd
-cd "C:\Users\machintosh\Documents\Fouth Wave\acbu-backend"
+```bash
 pnpm add -D fast-check
+# or
+npm install --save-dev fast-check
 ```
 
 ## Verify Installation
@@ -55,7 +41,7 @@ Expected output:
 ### 1. Run Standard Unit Tests
 
 ```cmd
-npm test -- src/services/feePolicy/__tests__/feePolicyService.test.ts
+pnpm test -- src/services/feePolicy/__tests__/feePolicyService.test.ts
 ```
 
 Expected output:
@@ -65,7 +51,7 @@ PASS  src/services/feePolicy/__tests__/feePolicyService.test.ts
     Standard Unit Tests
       ✓ returns high burn fee (200 BPS) when reserve is below 85% of target
       ✓ returns low burn fee (5 BPS) when reserve is above 115% of target
-      ✓ returns base burn fee (10 BPS) when reserve is between 85% and 115%
+      ✓ returns base burn fee (30 BPS) when reserve is between 85% and 115%
       ✓ throws error when currency not found in reserve status
       ✓ throws error when target weight is zero or negative
     Boundary Tests
@@ -97,7 +83,7 @@ Tests:       19 passed, 19 total
 ### 2. Run Property-Based Tests
 
 ```cmd
-npm test -- src/services/feePolicy/__tests__/feePolicyService.pbt.test.ts
+pnpm test -- src/services/feePolicy/__tests__/feePolicyService.pbt.test.ts
 ```
 
 Expected output:
@@ -105,7 +91,7 @@ Expected output:
 PASS  src/services/feePolicy/__tests__/feePolicyService.pbt.test.ts
   Property-Based Tests: getBurnFeeBps
     ✓ PROPERTY: Fee is always within sanity bounds [1, 500] BPS (100 runs)
-    ✓ PROPERTY: Fee is one of exactly three valid values [5, 10, 200] (100 runs)
+    ✓ PROPERTY: Fee is one of exactly three valid values [5, 30, 200] (100 runs)
     ✓ PROPERTY: Monotonicity - fee decreases as reserve weight increases (100 runs)
     ✓ PROPERTY: Boundary consistency - fees at thresholds are deterministic (120 runs)
     ✓ PROPERTY: Fee calculation is deterministic for same inputs (50 runs)
@@ -125,13 +111,13 @@ Tests:       12 passed, 12 total
 ### 3. Run All Tests
 
 ```cmd
-npm test
+pnpm test
 ```
 
 ### 4. Run Tests with Coverage
 
 ```cmd
-npm run test:coverage
+pnpm run test:coverage
 ```
 
 Expected coverage for fee policy service:
@@ -147,12 +133,12 @@ feePolicyService.ts               |   95.83 |    91.67 |     100 |   95.65 |
 
 **Solution**: Ensure fast-check is installed:
 ```cmd
-npm list fast-check
+pnpm list fast-check
 ```
 
 If not installed, run:
 ```cmd
-npm install --save-dev fast-check
+pnpm add -D fast-check
 ```
 
 ### Issue: "Cannot find module 'fast-check'"
@@ -160,7 +146,7 @@ npm install --save-dev fast-check
 **Solution**: Clear node_modules and reinstall:
 ```cmd
 rmdir /s /q node_modules
-npm install
+pnpm install
 ```
 
 ### Issue: Tests fail with "mockResolvedValueOnce is not a function"

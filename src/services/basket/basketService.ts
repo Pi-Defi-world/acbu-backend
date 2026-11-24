@@ -36,8 +36,7 @@ export class BasketService {
 
     const latestEffectiveFrom = rows[0].effectiveFrom;
     const currentRows = rows.filter(
-      (r: (typeof rows)[0]) =>
-        r.effectiveFrom.getTime() === latestEffectiveFrom.getTime(),
+      (r: (typeof rows)[0]) => r.effectiveFrom.getTime() === latestEffectiveFrom.getTime(),
     );
 
     const sum = currentRows.reduce(
@@ -79,14 +78,10 @@ export class BasketService {
 
     const latestEffectiveFrom = rows[0].effectiveFrom;
     const asOfRows = rows.filter(
-      (r: (typeof rows)[0]) =>
-        r.effectiveFrom.getTime() === latestEffectiveFrom.getTime(),
+      (r: (typeof rows)[0]) => r.effectiveFrom.getTime() === latestEffectiveFrom.getTime(),
     );
 
-    const sum = asOfRows.reduce(
-      (s: number, r: (typeof asOfRows)[0]) => s + r.weight.toNumber(),
-      0,
-    );
+    const sum = asOfRows.reduce((s: number, r: (typeof asOfRows)[0]) => s + r.weight.toNumber(), 0);
 
     const sumBps = Math.round(sum * 100);
     if (sumBps !== BASKET_WEIGHT_BASIS_POINTS) {

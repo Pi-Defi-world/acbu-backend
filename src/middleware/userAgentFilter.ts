@@ -28,11 +28,11 @@ const DEFAULT_BLOCKED_PATTERNS: RegExp[] = [
   /python-requests/,
   /go-http-client/,
   /libwww-perl/,
-  /curl\/\d+(?:\.\d+)*/,   // bare curl (not curl wrapped in a real UA)
+  /curl\/\d+(?:\.\d+)*/, // bare curl (not curl wrapped in a real UA)
   /wget\//,
   /scrapy/,
-  /java\/\d+(?:\.\d+)*/,   // raw Java HttpURLConnection
-  /axios\/\d+(?:\.\d+)*/,  // raw axios without an app-level UA
+  /java\/\d+(?:\.\d+)*/, // raw Java HttpURLConnection
+  /axios\/\d+(?:\.\d+)*/, // raw axios without an app-level UA
 ];
 
 function buildBlockedPatterns(): RegExp[] {
@@ -53,11 +53,7 @@ function buildBlockedPatterns(): RegExp[] {
 
 const BLOCKED_PATTERNS = buildBlockedPatterns();
 
-export function userAgentFilter(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-): void {
+export function userAgentFilter(req: Request, _res: Response, next: NextFunction): void {
   const ua = (req.headers["user-agent"] ?? "").toLowerCase();
 
   if (!ua) {

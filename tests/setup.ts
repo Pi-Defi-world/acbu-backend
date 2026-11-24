@@ -31,3 +31,11 @@ process.env.USDC_ISSUER_TESTNET =
 process.env.USDC_ISSUER_MAINNET =
   process.env.USDC_ISSUER_MAINNET ||
   "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
+// Required by env.ts nativeAssetCode IIFE — prevents TypeError when
+// TESTNET_CUSTODIAL_BOOTSTRAP is not present in the test environment.
+process.env.TESTNET_CUSTODIAL_BOOTSTRAP =
+  process.env.TESTNET_CUSTODIAL_BOOTSTRAP || "xlm";
+process.env.STELLAR_HORIZON_URL =
+  process.env.STELLAR_HORIZON_URL || "https://horizon-testnet.stellar.org";
+process.env.STELLAR_NETWORK = process.env.STELLAR_NETWORK || "testnet";
+

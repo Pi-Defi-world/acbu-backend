@@ -1,10 +1,6 @@
 import type { Response, NextFunction } from "express";
 import type { AuthRequest } from "../middleware/auth";
-import {
-  getBillsCatalog,
-  postBillsPay,
-  postBillsRefund,
-} from "./billsController";
+import { getBillsCatalog, postBillsPay, postBillsRefund } from "./billsController";
 
 jest.mock("../services/bills", () => ({
   getBillsCatalog: jest.fn(),

@@ -23,7 +23,12 @@ const makeNext = () => jest.fn() as unknown as NextFunction;
 
 const makeFileReq = (overrides: Partial<AuthRequest> & { file?: any } = {}) =>
   ({
-    apiKey: { userId: "user-1", organizationId: "org-1", permissions: ["enterprise:write"], rateLimit: 100 },
+    apiKey: {
+      userId: "user-1",
+      organizationId: "org-1",
+      permissions: ["enterprise:write"],
+      rateLimit: 100,
+    },
     file: {
       buffer: Buffer.from("to,amount_acbu\nrecipient,1.0\n"),
       originalname: "bulk.csv",
@@ -67,9 +72,7 @@ describe("enterpriseController", () => {
 
     await postBulkTransfer(makeFileReq({ apiKey: undefined }), makeRes(), next);
 
-    expect(next).toHaveBeenCalledWith(
-      expect.objectContaining({ statusCode: 401 }),
-    );
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
   });
 
   it("rejects non-CSV file uploads", async () => {
@@ -88,9 +91,7 @@ describe("enterpriseController", () => {
       next,
     );
 
-    expect(next).toHaveBeenCalledWith(
-      expect.objectContaining({ statusCode: 400 }),
-    );
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
   });
 
   it("keeps the treasury endpoint stub intact", async () => {
@@ -113,7 +114,8 @@ describe("enterprise upload middleware", () => {
   });
 
   it("rejects files larger than the middleware limit", async () => {
-    const req = new EventEmitter() as unknown as AuthRequest & EventEmitter & { destroy: jest.Mock };
+    const req = new EventEmitter() as unknown as AuthRequest &
+      EventEmitter & { destroy: jest.Mock };
     req.headers = {
       "content-type": "text/csv",
       "x-filename": "bulk.csv",
@@ -126,9 +128,7 @@ describe("enterprise upload middleware", () => {
     req.emit("data", Buffer.alloc(10 * 1024 * 1024 + 1));
     req.emit("end");
 
-    expect(next).toHaveBeenCalledWith(
-      expect.objectContaining({ statusCode: 413 }),
-    );
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 413 }));
   });
 
   it("rejects users below enterprise tier", () => {
@@ -138,14 +138,17 @@ describe("enterprise upload middleware", () => {
     middleware(
       {
         userTier: "free",
-        apiKey: { userId: "user-1", organizationId: "org-1", permissions: ["enterprise:write"], rateLimit: 100 },
+        apiKey: {
+          userId: "user-1",
+          organizationId: "org-1",
+          permissions: ["enterprise:write"],
+          rateLimit: 100,
+        },
       } as AuthRequest,
       makeRes(),
       next,
     );
 
-    expect(next).toHaveBeenCalledWith(
-      expect.objectContaining({ statusCode: 403 }),
-    );
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
   });
 });

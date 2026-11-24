@@ -25,9 +25,7 @@ export interface DeviceVerificationResult {
 /**
  * Generate device fingerprint from request data
  */
-export function generateDeviceFingerprint(
-  fingerprint: DeviceFingerprint,
-): string {
+export function generateDeviceFingerprint(fingerprint: DeviceFingerprint): string {
   const data = JSON.stringify({
     userAgent: fingerprint.userAgent,
     acceptLanguage: fingerprint.acceptLanguage,

@@ -20,20 +20,22 @@ export interface AuditEntry {
   reason?: string;
 }
 
-function validateAdminAttribution(entry: AuditEntry): void {
+function getMissingAdminAttributionFields(entry: AuditEntry): string[] {
   if (entry.keyType !== "ADMIN_KEY" && entry.keyType !== "BREAK_GLASS_KEY") {
-    return;
+    return [];
   }
 
-  if (!entry.performedBy || !entry.actorType || !entry.organizationId || !entry.reason) {
-    throw new Error(
-      "Admin audit entries require performedBy, actorType, organizationId, and reason",
-    );
-  }
+  const missing: string[] = [];
+  if (!entry.performedBy) missing.push("performedBy");
+  if (!entry.actorType) missing.push("actorType");
+  if (!entry.organizationId) missing.push("organizationId");
+  if (!entry.reason) missing.push("reason");
+  return missing;
 }
 
 interface AuditPayload extends AuditEntry {
   timestamp: string;
+  attributionError?: string;
 }
 
 interface OutboxDocument extends AuditPayload {
@@ -58,11 +60,9 @@ async function publishWithRetry(payload: AuditPayload): Promise<void> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const channel = getRabbitMQChannel();
-      const sent = channel.sendToQueue(
-        QUEUES.AUDIT_LOGS,
-        Buffer.from(JSON.stringify(payload)),
-        { persistent: true },
-      );
+      const sent = channel.sendToQueue(QUEUES.AUDIT_LOGS, Buffer.from(JSON.stringify(payload)), {
+        persistent: true,
+      });
 
       if (!sent) {
         throw new Error("RabbitMQ sendToQueue returned false");
@@ -93,10 +93,7 @@ async function publishWithRetry(payload: AuditPayload): Promise<void> {
  * Save failed audit event to MongoDB outbox so it is never lost.
  * Falls back to local file if MongoDB is also unavailable.
  */
-async function saveToOutbox(
-  payload: AuditPayload,
-  failureReason: string,
-): Promise<void> {
+async function saveToOutbox(payload: AuditPayload, failureReason: string): Promise<void> {
   try {
     const db = getMongoDB();
     const doc: OutboxDocument = {
@@ -110,8 +107,7 @@ async function saveToOutbox(
       failureReason,
     });
   } catch (mongoErr) {
-    const mongoMessage =
-      mongoErr instanceof Error ? mongoErr.message : String(mongoErr);
+    const mongoMessage = mongoErr instanceof Error ? mongoErr.message : String(mongoErr);
     logger.error("CRITICAL: Audit outbox write failed — falling back to file", {
       eventType: payload.eventType,
       mongoError: mongoMessage,
@@ -121,10 +117,7 @@ async function saveToOutbox(
   }
 }
 
-function saveToFallbackFile(
-  payload: AuditPayload,
-  failureReason: string,
-): void {
+function saveToFallbackFile(payload: AuditPayload, failureReason: string): void {
   try {
     const logDir = path.dirname(config.logFile);
     if (!fs.existsSync(logDir)) {
@@ -162,23 +155,46 @@ function alertAdmin(payload: AuditPayload, failureReason: string): void {
 /**
  * logAudit: Publishes audit entry to RabbitMQ with retry.
  * On sustained failure saves to MongoDB outbox so events are never lost.
+ * Rejects after the recovery path so callers can observe that the primary
+ * audit transport was unavailable.
  */
 export async function logAudit(entry: AuditEntry): Promise<void> {
-  validateAdminAttribution(entry);
-
-  const payload: AuditPayload = {
-    ...entry,
-    timestamp: new Date().toISOString(),
-  };
-
   try {
-    await publishWithRetry(payload);
+    const missingAttributionFields = getMissingAdminAttributionFields(entry);
+    if (missingAttributionFields.length > 0) {
+      logger.error("Admin audit entry missing required attribution fields", {
+        eventType: entry.eventType,
+        action: entry.action,
+        keyType: entry.keyType,
+        missingFields: missingAttributionFields,
+      });
+    }
+
+    const payload: AuditPayload = {
+      ...entry,
+      timestamp: new Date().toISOString(),
+      ...(missingAttributionFields.length > 0
+        ? { attributionError: `Missing required fields: ${missingAttributionFields.join(", ")}` }
+        : {}),
+    };
+
+    try {
+      await publishWithRetry(payload);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`Audit publish failed after ${MAX_RETRIES} retries — saving to outbox`, {
+        eventType: entry.eventType,
+        error: reason,
+      });
+      await saveToOutbox(payload, reason);
+    }
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    logger.error(
-      `Audit publish failed after ${MAX_RETRIES} retries — saving to outbox`,
-      { eventType: entry.eventType, error: reason },
-    );
+    logger.error("logAudit failed unexpectedly — audit entry may not have been recorded", {
+      eventType: entry?.eventType,
+      action: entry?.action,
+      error: err instanceof Error ? err.message : String(err),
+    });
     await saveToOutbox(payload, reason);
+    throw err;
   }
 }

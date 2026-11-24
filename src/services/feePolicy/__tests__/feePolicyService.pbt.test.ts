@@ -1,11 +1,11 @@
 /**
  * Property-Based Tests for Fee Policy Service
- * 
+ *
  * These tests use fast-check to generate hundreds of random inputs
  * and verify mathematical properties that must always hold true.
- * 
- * To run: npm install --save-dev fast-check
- * Then: npm test -- feePolicyService.pbt.test.ts
+ *
+ * To run: pnpm add -D fast-check
+ * Then: pnpm test -- feePolicyService.pbt.test.ts
  */
 
 import * as fc from "fast-check";
@@ -58,17 +58,17 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
           });
 
           const fee = await getBurnFeeBps("NGN");
-          
+
           // Fee must be within sanity bounds
           expect(fee).toBeGreaterThanOrEqual(1);
           expect(fee).toBeLessThanOrEqual(500);
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
-  it("PROPERTY: Fee is one of exactly three valid values [5, 10, 200]", async () => {
+  it("PROPERTY: Fee is one of exactly three valid values [5, 30, 200]", async () => {
     await fc.assert(
       fc.asyncProperty(
         finiteDouble(0.01, 200),
@@ -85,12 +85,12 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
           });
 
           const fee = await getBurnFeeBps("NGN");
-          
+
           // Fee must be exactly one of the three tier values
-          expect([5, 10, 200]).toContain(fee);
-        }
+          expect([5, 30, 200]).toContain(fee);
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -133,19 +133,19 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
           if (actualWeight2 > actualWeight1) {
             expect(fee2).toBeLessThanOrEqual(fee1);
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
   it("PROPERTY: Boundary consistency - fees at thresholds are deterministic", async () => {
     const testCases = [
       { pctOfTarget: 84.99, expectedFee: 200 },
-      { pctOfTarget: 85.0, expectedFee: 10 },
-      { pctOfTarget: 85.01, expectedFee: 10 },
-      { pctOfTarget: 114.99, expectedFee: 10 },
-      { pctOfTarget: 115.0, expectedFee: 10 },
+      { pctOfTarget: 85.0, expectedFee: 30 },
+      { pctOfTarget: 85.01, expectedFee: 30 },
+      { pctOfTarget: 114.99, expectedFee: 30 },
+      { pctOfTarget: 115.0, expectedFee: 30 },
       { pctOfTarget: 115.01, expectedFee: 5 },
     ];
 
@@ -168,9 +168,9 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
 
             const fee = await getBurnFeeBps("NGN");
             expect(fee).toBe(expectedFee);
-          }
+          },
         ),
-        { numRuns: 20 }
+        { numRuns: 20 },
       );
     }
   });
@@ -208,9 +208,9 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
 
           // Same inputs must produce same output
           expect(fee1).toBe(fee2);
-        }
+        },
       ),
-      { numRuns: 50 }
+      { numRuns: 50 },
     );
   });
 
@@ -231,12 +231,12 @@ describe("Property-Based Tests: getBurnFeeBps", () => {
           });
 
           const fee = await getBurnFeeBps("NGN");
-          
+
           // Fee must never exceed 500 BPS (5%)
           expect(fee).toBeLessThanOrEqual(500);
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });
@@ -254,70 +254,60 @@ describe("Property-Based Tests: getMintFeeBps", () => {
           mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
 
           const fee = await getMintFeeBps();
-          
+
           // Fee must be within sanity bounds
           expect(fee).toBeGreaterThanOrEqual(1);
           expect(fee).toBeLessThanOrEqual(500);
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
   it("PROPERTY: Fee is one of exactly two valid values [30, 50]", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        finiteDouble(0.5, 2.0),
-        async (ratio) => {
-          mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
+      fc.asyncProperty(finiteDouble(0.5, 2.0), async (ratio) => {
+        mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
 
-          const fee = await getMintFeeBps();
-          
-          // Fee must be exactly one of the two tier values
-          expect([30, 50]).toContain(fee);
-        }
-      ),
-      { numRuns: 100 }
+        const fee = await getMintFeeBps();
+
+        // Fee must be exactly one of the two tier values
+        expect([30, 50]).toContain(fee);
+      }),
+      { numRuns: 100 },
     );
   });
 
   it("PROPERTY: Fee never exceeds maximum cap of 100 BPS", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        finiteDouble(0.1, 3.0),
-        async (ratio) => {
-          mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
+      fc.asyncProperty(finiteDouble(0.1, 3.0), async (ratio) => {
+        mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
 
-          const fee = await getMintFeeBps();
-          
-          // Fee must never exceed 100 BPS cap
-          expect(fee).toBeLessThanOrEqual(100);
-        }
-      ),
-      { numRuns: 100 }
+        const fee = await getMintFeeBps();
+
+        // Fee must never exceed 100 BPS cap
+        expect(fee).toBeLessThanOrEqual(100);
+      }),
+      { numRuns: 100 },
     );
   });
 
   it("PROPERTY: Monotonicity - fee decreases as reserve ratio increases", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        finiteDouble(0.5, 2.0),
-        finiteDouble(0.5, 2.0),
-        async (ratio1, ratio2) => {
-          mockCalculateReserveRatio.mockResolvedValueOnce(ratio1);
-          const fee1 = await getMintFeeBps();
+      fc.asyncProperty(finiteDouble(0.5, 2.0), finiteDouble(0.5, 2.0), async (ratio1, ratio2) => {
+        mockCalculateReserveRatio.mockResolvedValueOnce(ratio1);
+        const fee1 = await getMintFeeBps();
 
-          mockCalculateReserveRatio.mockResolvedValueOnce(ratio2);
-          const fee2 = await getMintFeeBps();
+        mockCalculateReserveRatio.mockResolvedValueOnce(ratio2);
+        const fee2 = await getMintFeeBps();
 
-          // If ratio2 > ratio1, then fee2 <= fee1
-          // (higher reserve ratio should have same or lower fees)
-          if (ratio2 > ratio1) {
-            expect(fee2).toBeLessThanOrEqual(fee1);
-          }
+        // If ratio2 > ratio1, then fee2 <= fee1
+        // (higher reserve ratio should have same or lower fees)
+        if (ratio2 > ratio1) {
+          expect(fee2).toBeLessThanOrEqual(fee1);
         }
-      ),
-      { numRuns: 100 }
+      }),
+      { numRuns: 100 },
     );
   });
 
@@ -340,21 +330,18 @@ describe("Property-Based Tests: getMintFeeBps", () => {
 
   it("PROPERTY: Fee calculation is deterministic for same inputs", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        finiteDouble(0.5, 2.0),
-        async (ratio) => {
-          // Call twice with same inputs
-          mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
-          const fee1 = await getMintFeeBps();
+      fc.asyncProperty(finiteDouble(0.5, 2.0), async (ratio) => {
+        // Call twice with same inputs
+        mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
+        const fee1 = await getMintFeeBps();
 
-          mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
-          const fee2 = await getMintFeeBps();
+        mockCalculateReserveRatio.mockResolvedValueOnce(ratio);
+        const fee2 = await getMintFeeBps();
 
-          // Same inputs must produce same output
-          expect(fee1).toBe(fee2);
-        }
-      ),
-      { numRuns: 50 }
+        // Same inputs must produce same output
+        expect(fee1).toBe(fee2);
+      }),
+      { numRuns: 50 },
     );
   });
 });

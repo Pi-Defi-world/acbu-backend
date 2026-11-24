@@ -3,6 +3,33 @@
   "version": "0.3.0",
   "last_updated": "2026-08-22",
   "source": "live Horizon effects + go-stellar-sdk ContractCredited/ContractDebited",
+  "listener_contracts": [
+    {
+      "contract": "burning",
+      "listener": "src/jobs/acbu_burning_event_listener.ts",
+      "effect_types": ["contract_debited", "contract_effect"]
+    },
+    {
+      "contract": "escrow",
+      "listener": "src/jobs/acbu_escrow_event_listener.ts",
+      "effect_types": ["contract_credited", "contract_debited", "contract_effect"]
+    },
+    {
+      "contract": "lendingPool",
+      "listener": "src/jobs/acbu_lending_pool_event_listener.ts",
+      "effect_types": ["contract_credited", "contract_debited", "contract_effect"]
+    },
+    {
+      "contract": "minting",
+      "listener": "src/jobs/acbu_minting_event_listener.ts",
+      "effect_types": ["contract_credited", "contract_effect"]
+    },
+    {
+      "contract": "savingsVault",
+      "listener": "src/jobs/acbu_savings_vault_event_listener.ts",
+      "effect_types": ["contract_credited", "contract_debited", "contract_effect"]
+    }
+  ],
   "events": [
     {
       "name": "ContractCredited",

@@ -8,10 +8,8 @@ import { ingestMetricsAndProposeWeights } from "../services/metrics/metricsServi
 
 const DEFAULT_INTERVAL_DAYS = 30;
 const INTERVAL_MS =
-  (parseInt(
-    process.env.BASKET_METRICS_INTERVAL_DAYS || String(DEFAULT_INTERVAL_DAYS),
-    10,
-  ) || DEFAULT_INTERVAL_DAYS) *
+  (parseInt(process.env.BASKET_METRICS_INTERVAL_DAYS || String(DEFAULT_INTERVAL_DAYS), 10) ||
+    DEFAULT_INTERVAL_DAYS) *
   24 *
   60 *
   60 *

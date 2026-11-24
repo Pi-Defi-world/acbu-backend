@@ -148,14 +148,14 @@ Unit tests for the currency conversion logic.
 ### Test Execution
 ```bash
 # Run all tests
-npm test
+pnpm test
 
 # Run specific test file
-npm test mintController.test.ts
-npm test currencyConverter.test.ts
+pnpm test mintController.test.ts
+pnpm test currencyConverter.test.ts
 
 # Run with coverage
-npm test -- --coverage
+pnpm test -- --coverage
 ```
 
 ## Security Considerations

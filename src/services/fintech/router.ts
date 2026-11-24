@@ -6,7 +6,6 @@
 
 import type { FintechProvider, FintechProviderId } from "./types";
 
-
 /**
  * Default currency → provider id array (priority order). Overridable via config.
  * Example: NGN: ["paystack", "flutterwave"]
@@ -37,12 +36,16 @@ export class FintechProviderRouter {
   }
 
   /**
-   * Selects the best provider for a currency based on health and fees.
+   * Selects the first healthy provider in the configured currency priority order.
+   * Fee-based selection is unsupported because providers do not expose fee quotes.
    * If all fail, throws an error.
    * @param currency
    * @param opts Optionally pass {simulateOutageFor?: FintechProviderId}
    */
-  async getProvider(currency: string, opts?: { simulateOutageFor?: FintechProviderId }): Promise<FintechProvider> {
+  async getProvider(
+    currency: string,
+    opts?: { simulateOutageFor?: FintechProviderId },
+  ): Promise<FintechProvider> {
     const providerIds = this.currencyProviders[currency] ?? ["flutterwave"];
     let lastError: Error | null = null;
     for (const id of providerIds) {
@@ -55,7 +58,6 @@ export class FintechProviderRouter {
       // Health check: try getBalance (could be replaced with a real health endpoint)
       try {
         await provider.getBalance(currency);
-        // TODO: Add fee comparison logic here if needed
         return provider;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
@@ -68,7 +70,8 @@ export class FintechProviderRouter {
       if (fallback) return fallback;
     }
     throw new Error(
-      `No healthy fintech provider for currency ${currency}` + (lastError ? ": " + lastError.message : "")
+      `No healthy fintech provider for currency ${currency}` +
+        (lastError ? ": " + lastError.message : ""),
     );
   }
 

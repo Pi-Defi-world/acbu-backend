@@ -4,16 +4,10 @@
  * Requires sme or enterprise segment scope; delegates to shared mint/burn with audience = 'business'.
  */
 import { Router, type IRouter } from "express";
-import {
-  mintFromUsdc,
-  depositFromBasketCurrency,
-} from "../controllers/mintController";
+import { mintFromUsdc, depositFromBasketCurrency } from "../controllers/mintController";
 import { burnAcbu } from "../controllers/burnController";
 import { validateApiKey } from "../middleware/auth";
-import {
-  requireMinTier,
-  requireSegmentScope,
-} from "../middleware/segmentGuard";
+import { requireMinTier, requireSegmentScope } from "../middleware/segmentGuard";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";
 
 const router: IRouter = Router();

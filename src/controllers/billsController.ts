@@ -84,9 +84,7 @@ export async function postBillsPay(
     });
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return next(
-        new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten()),
-      );
+      return next(new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten()));
     }
     next(e);
   }
@@ -101,10 +99,7 @@ export async function postBillsRefund(
     const actorUserId = req.apiKey?.userId ?? null;
     const actorOrganizationId = req.apiKey?.organizationId ?? null;
     if (!actorUserId && !actorOrganizationId) {
-      throw new AppError(
-        "Bills refund requires a user-scoped or organization-scoped API key",
-        401,
-      );
+      throw new AppError("Bills refund requires a user-scoped or organization-scoped API key", 401);
     }
 
     const body = billRefundBodySchema.parse(req.body);
@@ -121,9 +116,7 @@ export async function postBillsRefund(
     });
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return next(
-        new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten()),
-      );
+      return next(new AppError("Validation error", 400, "VALIDATION_ERROR", e.flatten()));
     }
     next(e);
   }

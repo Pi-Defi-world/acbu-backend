@@ -88,9 +88,7 @@ export class FlutterwaveClient implements FintechProvider {
    */
   async getBalance(currency: string): Promise<number> {
     try {
-      const response = await this.requestWrapper(() => 
-        this.client.get(`/balances/${currency}`)
-      );
+      const response = await this.requestWrapper(() => this.client.get(`/balances/${currency}`));
       return parseFloat(response.data.data.balance);
     } catch (error) {
       logger.error("Failed to get balance from Flutterwave", {
@@ -110,12 +108,12 @@ export class FlutterwaveClient implements FintechProvider {
     toCurrency: string,
   ): Promise<ConvertCurrencyResult> {
     try {
-      const response = await this.requestWrapper(() => 
+      const response = await this.requestWrapper(() =>
         this.client.post("/currency/conversions", {
           amount,
           from: fromCurrency,
           to: toCurrency,
-        })
+        }),
       );
       return {
         amount: parseFloat(response.data.data.amount),
@@ -141,7 +139,7 @@ export class FlutterwaveClient implements FintechProvider {
     recipient: DisburseRecipient,
   ): Promise<DisburseResult> {
     try {
-      const response = await this.requestWrapper(() => 
+      const response = await this.requestWrapper(() =>
         this.client.post("/transfers", {
           account_bank: recipient.bankCode,
           account_number: recipient.accountNumber,
@@ -149,7 +147,7 @@ export class FlutterwaveClient implements FintechProvider {
           currency,
           narration: "ACBU withdrawal",
           beneficiary_name: recipient.accountName,
-        })
+        }),
       );
 
       return {

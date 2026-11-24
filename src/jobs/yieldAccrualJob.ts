@@ -35,9 +35,12 @@ export async function startYieldAccrualScheduler(): Promise<void> {
     logger.error("Initial yield accrual failed", err);
   }
 
-  setInterval(() => {
-    runOnce().catch((e) => logger.error("Scheduled yield accrual failed", e));
-  }, 24 * 60 * 60 * 1000);
+  setInterval(
+    () => {
+      runOnce().catch((e) => logger.error("Scheduled yield accrual failed", e));
+    },
+    24 * 60 * 60 * 1000,
+  );
 
   logger.info("Yield accrual scheduler started (daily)");
 }

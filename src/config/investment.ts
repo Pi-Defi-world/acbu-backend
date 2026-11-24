@@ -21,9 +21,6 @@ export function isBusinessWithdrawalAllowedDay(dayOfMonth: number): boolean {
   return INVESTMENT_BUSINESS_ALLOWED_DAYS.includes(dayOfMonth);
 }
 
-export function isBusinessWithdrawalAllowedDate(
-  date: Date,
-  timeZone?: string,
-): boolean {
+export function isBusinessWithdrawalAllowedDate(date: Date, timeZone?: string): boolean {
   return isBusinessWithdrawalAllowedDay(getZonedDayOfMonth(date, timeZone));
 }

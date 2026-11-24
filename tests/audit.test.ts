@@ -94,9 +94,10 @@ describe("logAudit", () => {
   // ── retry logic ──────────────────────────────────────────────────────────────
 
   it("retries and succeeds on second attempt", async () => {
-    const sendToQueue = jest.fn()
-      .mockReturnValueOnce(false)   // attempt 1 fails
-      .mockReturnValueOnce(true);   // attempt 2 succeeds
+    const sendToQueue = jest
+      .fn()
+      .mockReturnValueOnce(false) // attempt 1 fails
+      .mockReturnValueOnce(true); // attempt 2 succeeds
     mockGetChannel.mockReturnValue({ sendToQueue });
 
     await logAudit(entry);
@@ -110,7 +111,8 @@ describe("logAudit", () => {
   });
 
   it("retries and succeeds on third attempt", async () => {
-    const sendToQueue = jest.fn()
+    const sendToQueue = jest
+      .fn()
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(true);
@@ -124,7 +126,9 @@ describe("logAudit", () => {
 
   it("retries when getRabbitMQChannel throws", async () => {
     mockGetChannel
-      .mockImplementationOnce(() => { throw new Error("not connected"); })
+      .mockImplementationOnce(() => {
+        throw new Error("not connected");
+      })
       .mockReturnValue({ sendToQueue: makeSendToQueue(true) });
 
     await logAudit(entry);
@@ -139,7 +143,7 @@ describe("logAudit", () => {
     // All 3 attempts fail
     mockGetChannel.mockReturnValue({ sendToQueue: makeSendToQueue(false) });
 
-    await logAudit(entry);
+    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ sendToQueue returned false");
 
     // Event must not be lost — outbox must have received it
     expect(mockCollection).toHaveBeenCalledWith("audit_outbox");
@@ -162,7 +166,7 @@ describe("logAudit", () => {
       throw new Error("RabbitMQ down");
     });
 
-    await logAudit(entry);
+    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ down");
 
     expect(mockInsertOne).toHaveBeenCalledTimes(1);
     expect(mockInsertOne).toHaveBeenCalledWith(
@@ -178,7 +182,7 @@ describe("logAudit", () => {
       throw new Error("MongoDB down");
     });
 
-    await logAudit(entry);
+    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ sendToQueue returned false");
 
     expect(mockFs.appendFileSync).toHaveBeenCalledWith(
       expect.stringContaining("lost-audits.log"),
@@ -196,7 +200,7 @@ describe("logAudit", () => {
       throw new Error("MongoDB down");
     });
 
-    await logAudit(entry);
+    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ sendToQueue returned false");
 
     expect(mockSendEmail).toHaveBeenCalledWith(
       "admin@example.com",
@@ -207,26 +211,27 @@ describe("logAudit", () => {
 
   it("[chaos] creates log dir if it does not exist before writing fallback file", async () => {
     mockGetChannel.mockReturnValue({ sendToQueue: makeSendToQueue(false) });
-    mockGetMongoDB.mockImplementation(() => { throw new Error("down"); });
+    mockGetMongoDB.mockImplementation(() => {
+      throw new Error("down");
+    });
     mockFs.existsSync.mockReturnValueOnce(false);
 
-    await logAudit(entry);
+    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ sendToQueue returned false");
 
-    expect(mockFs.mkdirSync).toHaveBeenCalledWith(
-      expect.any(String),
-      { recursive: true },
-    );
+    expect(mockFs.mkdirSync).toHaveBeenCalledWith(expect.any(String), { recursive: true });
     expect(mockFs.appendFileSync).toHaveBeenCalled();
   });
 
   it("[chaos] logs FATAL when file write also fails", async () => {
     mockGetChannel.mockReturnValue({ sendToQueue: makeSendToQueue(false) });
-    mockGetMongoDB.mockImplementation(() => { throw new Error("down"); });
+    mockGetMongoDB.mockImplementation(() => {
+      throw new Error("down");
+    });
     mockFs.appendFileSync.mockImplementationOnce(() => {
       throw new Error("disk full");
     });
 
-    await logAudit(entry);
+    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ sendToQueue returned false");
 
     expect(mockLogger.error).toHaveBeenCalledWith(
       expect.stringContaining("FATAL"),
@@ -240,9 +245,11 @@ describe("logAudit", () => {
     config.notification.alertEmail = "";
 
     mockGetChannel.mockReturnValue({ sendToQueue: makeSendToQueue(false) });
-    mockGetMongoDB.mockImplementation(() => { throw new Error("down"); });
+    mockGetMongoDB.mockImplementation(() => {
+      throw new Error("down");
+    });
 
-    await logAudit(entry);
+    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ sendToQueue returned false");
 
     expect(mockSendEmail).not.toHaveBeenCalled();
     config.notification.alertEmail = original;
@@ -250,10 +257,64 @@ describe("logAudit", () => {
 
   it("handles sendEmail rejection without throwing", async () => {
     mockGetChannel.mockReturnValue({ sendToQueue: makeSendToQueue(false) });
-    mockGetMongoDB.mockImplementation(() => { throw new Error("down"); });
+    mockGetMongoDB.mockImplementation(() => {
+      throw new Error("down");
+    });
     mockSendEmail.mockRejectedValueOnce(new Error("SMTP error"));
 
     // Must not throw even if email fails
-    await expect(logAudit(entry)).resolves.toBeUndefined();
+    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ sendToQueue returned false");
+  });
+
+  // ── AB-018: attribution validation must never abort the caller ──────────────
+
+  it("[AB-018] never throws on incomplete admin attribution and still publishes the entry", async () => {
+    const sendToQueue = makeSendToQueue(true);
+    mockGetChannel.mockReturnValue({ sendToQueue });
+
+    await expect(
+      logAudit({
+        eventType: "auth",
+        action: "admin_key_issued",
+        keyType: "ADMIN_KEY",
+        performedBy: "user-1",
+        actorType: "sme",
+        // organizationId and reason intentionally missing
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(sendToQueue).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse((sendToQueue.mock.calls[0][1] as Buffer).toString()) as Record<
+      string,
+      unknown
+    >;
+    expect(payload.action).toBe("admin_key_issued");
+    expect(payload.attributionError).toContain("organizationId");
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("missing required attribution fields"),
+      expect.any(Object),
+    );
+  });
+
+  it("[AB-018] saves incomplete admin attribution entries to the outbox instead of rejecting", async () => {
+    mockGetChannel.mockReturnValue({ sendToQueue: makeSendToQueue(false) });
+
+    await expect(
+      logAudit({
+        eventType: "auth",
+        action: "privileged_key_revoked",
+        keyType: "BREAK_GLASS_KEY",
+        // all attribution fields intentionally missing
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(mockCollection).toHaveBeenCalledWith("audit_outbox");
+    expect(mockInsertOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "privileged_key_revoked",
+        attributionError: expect.any(String),
+        failureReason: expect.any(String),
+      }),
+    );
   });
 });

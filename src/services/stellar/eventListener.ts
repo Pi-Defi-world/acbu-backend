@@ -39,6 +39,8 @@ interface ContractEffectsApi {
 
 const FETCH_ATTEMPTS = 3;
 const HANDLER_ATTEMPTS = 3;
+const CIRCUIT_FAILURE_THRESHOLD = 3;
+const CIRCUIT_OPEN_DURATION_MS = 15000;
 const RETRY_BASE_DELAY_MS = 500;
 const ACTIVE_POLL_DELAY_MS = 250;
 const IDLE_POLL_DELAY_MS = 1000;
@@ -73,9 +75,35 @@ export class EventListener {
   private isReconnecting = false;
   private defaultCursor: string | null = null;
   private healthStatus = eventListenerHealth;
+  private consecutiveFailures = 0;
+  private circuitOpenUntil = 0;
 
   constructor() {
     this.server = stellarClient.getServer();
+  }
+
+  /**
+   * Circuit breaker: after repeated failures, skip polling for a cooldown window
+   * so the listener fails over to a fresh server endpoint instead of hammering one.
+   */
+  private isCircuitOpen(): boolean {
+    return Date.now() < this.circuitOpenUntil;
+  }
+
+  private recordSuccess(): void {
+    this.consecutiveFailures = 0;
+    this.circuitOpenUntil = 0;
+  }
+
+  private recordFailure(): void {
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+      this.circuitOpenUntil = Date.now() + CIRCUIT_OPEN_DURATION_MS;
+      this.consecutiveFailures = 0;
+      logger.warn("Soroban event listener circuit opened", {
+        cooldownMs: CIRCUIT_OPEN_DURATION_MS,
+      });
+    }
   }
 
   /**
@@ -149,6 +177,11 @@ export class EventListener {
       return false;
     }
 
+    if (this.isCircuitOpen()) {
+      logger.debug("EventListener poll skipped: circuit open");
+      return false;
+    }
+
     let processedAny = false;
     for (const contractId of contractIds) {
       const processed = await this.pollContractOnce(contractId);
@@ -162,10 +195,7 @@ export class EventListener {
    * Process a raw Horizon effect for a specific contract.
    * Public so tests and DLQ replay tools can verify projection delivery.
    */
-  async dispatchRawEffect(
-    registeredContractId: string,
-    effect: RawContractEffect,
-  ): Promise<void> {
+  async dispatchRawEffect(registeredContractId: string, effect: RawContractEffect): Promise<void> {
     try {
       const event = this.parseEffect(registeredContractId, effect);
       await this.dispatchEvent(event);
@@ -220,10 +250,7 @@ export class EventListener {
 
           if (contractId) {
             const cursor = this.contractCursors.get(contractId) ?? this.defaultCursor;
-            const builder = this.getEffectsApi()
-              .forContract(contractId)
-              .order("asc")
-              .limit(1);
+            const builder = this.getEffectsApi().forContract(contractId).order("asc").limit(1);
 
             if (cursor) {
               builder.cursor(cursor);
@@ -256,11 +283,7 @@ export class EventListener {
   /**
    * Listen for specific contract events (MintEvent, BurnEvent, etc.).
    */
-  listenToContractEvents(
-    contractId: string,
-    eventTypes: string[],
-    handler: EventHandler,
-  ): void {
+  listenToContractEvents(contractId: string, eventTypes: string[], handler: EventHandler): void {
     if (!contractId) {
       logger.warn("Skipping contract event registration: missing contractId");
       return;
@@ -305,10 +328,7 @@ export class EventListener {
       const events: ContractEvent[] = [];
       for (const effect of effects.records) {
         const parsed = this.parseEffect(contractId, effect);
-        if (
-          options?.toLedger !== undefined &&
-          parsed.ledger > options.toLedger
-        ) {
+        if (options?.toLedger !== undefined && parsed.ledger > options.toLedger) {
           continue;
         }
         events.push(parsed);
@@ -331,9 +351,7 @@ export class EventListener {
         }
 
         const processedAny = await this.pollOnce();
-        await this.sleep(
-          processedAny ? ACTIVE_POLL_DELAY_MS : IDLE_POLL_DELAY_MS,
-        );
+        await this.sleep(processedAny ? ACTIVE_POLL_DELAY_MS : IDLE_POLL_DELAY_MS);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         logger.error("Error listening for events", { error: message });
@@ -358,12 +376,8 @@ export class EventListener {
           cursor: this.contractCursors.get(contractId) ?? this.defaultCursor,
         },
         fn: async () => {
-          const builder = this.getEffectsApi()
-            .forContract(contractId)
-            .order("asc")
-            .limit(200);
-          const cursor =
-            this.contractCursors.get(contractId) ?? this.defaultCursor;
+          const builder = this.getEffectsApi().forContract(contractId).order("asc").limit(200);
+          const cursor = this.contractCursors.get(contractId) ?? this.defaultCursor;
           if (cursor) {
             builder.cursor(cursor);
           }
@@ -372,6 +386,7 @@ export class EventListener {
       });
 
       this.markHealthy();
+      this.recordSuccess();
 
       for (const effect of effects.records) {
         await this.dispatchRawEffect(contractId, effect);
@@ -380,31 +395,26 @@ export class EventListener {
 
       return effects.records.length > 0;
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       logger.error("Failed to poll contract effects", {
         contractId,
         cursor: this.contractCursors.get(contractId) ?? this.defaultCursor,
         error: message,
       });
       this.markUnhealthy(message);
+      this.recordFailure();
       await this.reconnectServer(contractId);
       return false;
     }
   }
 
-  private parseEffect(
-    registeredContractId: string,
-    effect: RawContractEffect,
-  ): ContractEvent {
+  private parseEffect(registeredContractId: string, effect: RawContractEffect): ContractEvent {
     if (!effect || typeof effect !== "object") {
       throw new Error("Effect payload must be an object");
     }
 
     const type =
-      typeof effect.type === "string" && effect.type.trim().length > 0
-        ? effect.type
-        : null;
+      typeof effect.type === "string" && effect.type.trim().length > 0 ? effect.type : null;
     if (!type) {
       throw new Error("Effect payload missing type");
     }
@@ -423,12 +433,8 @@ export class EventListener {
         : Number.parseInt(String(effect.ledger ?? "0"), 10);
 
     const parsedTimestamp =
-      typeof effect.created_at === "string"
-        ? new Date(effect.created_at).getTime()
-        : Number.NaN;
-    const timestamp = Number.isFinite(parsedTimestamp)
-      ? parsedTimestamp
-      : Date.now();
+      typeof effect.created_at === "string" ? new Date(effect.created_at).getTime() : Number.NaN;
+    const timestamp = Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now();
 
     return {
       contractId,
@@ -449,10 +455,7 @@ export class EventListener {
     }
   }
 
-  private async invokeHandlerWithRetry(
-    handler: EventHandler,
-    event: ContractEvent,
-  ): Promise<void> {
+  private async invokeHandlerWithRetry(handler: EventHandler, event: ContractEvent): Promise<void> {
     try {
       await this.withRetries({
         label: "stellar event handler",
@@ -496,10 +499,7 @@ export class EventListener {
       logger.error("Failed to capture stellar event failure", {
         reason,
         payload,
-        error:
-          captureError instanceof Error
-            ? captureError.message
-            : String(captureError),
+        error: captureError instanceof Error ? captureError.message : String(captureError),
       });
     }
   }

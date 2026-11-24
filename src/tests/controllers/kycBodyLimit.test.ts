@@ -9,18 +9,25 @@ function buildApp(): express.Express {
   app.use(express.urlencoded({ extended: true, limit: MAX_REQUEST_BODY_SIZE }));
   app.use(express.json({ limit: MAX_REQUEST_BODY_SIZE }));
 
-  app.use((err: Error & { type?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (err?.type === "entity.too.large") {
-      res.status(413).json({
-        error: {
-          code: "PAYLOAD_TOO_LARGE",
-          message: "Request body exceeds maximum allowed size",
-        },
-      });
-      return;
-    }
-    next(err);
-  });
+  app.use(
+    (
+      err: Error & { type?: string },
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      if (err?.type === "entity.too.large") {
+        res.status(413).json({
+          error: {
+            code: "PAYLOAD_TOO_LARGE",
+            message: "Request body exceeds maximum allowed size",
+          },
+        });
+        return;
+      }
+      next(err);
+    },
+  );
 
   app.post("/api/v1/kyc/documents/upload-url", (_req, res) => {
     res.status(200).json({ ok: true });

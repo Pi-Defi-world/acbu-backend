@@ -26,8 +26,7 @@ Records all mint, burn, and transfer operations affecting treasury:
 SELECT 
   type,
   local_currency,
-  acbu_amount,
-  acbu_amount_burned,
+  usdc_amount,
   status,
   created_at
 FROM transactions
@@ -36,10 +35,10 @@ WHERE status IN ('completed', 'processing')
 ```
 
 **Aggregation Logic**:
-- `MINT` operations: Add to minted total
-- `BURN` operations: Subtract from balance
-- `TRANSFER` operations: Net movement
-- Results grouped by currency
+- `MINT` operations: Add `usdc_amount` to minted total (USD value minted)
+- `BURN` operations: Subtract `usdc_amount` from balance (USD value burned)
+- `TRANSFER` operations: Add `usdc_amount` as net movement (USD value transferred)
+- Results grouped by currency, all values in USD
 
 #### 2. Reserves (Reserves Table)
 
@@ -61,8 +60,13 @@ WHERE (r.currency, r.segment, r.timestamp) IN (
 ```
 
 **Segments**:
-- `transactions`: Liquidity for operational transfers (primary)
+- `transactions`: Liquidity for operational transfers (primary; held in partner-held segregated accounts)
 - `investment_savings`: Locked reserves for investment/yield programs
+
+**Float Interest & Segregated Reserve Entitlement Policy (W10-S-012)**:
+- Operational reserves in the `transactions` segment are held in segregated bank/fintech partner accounts across local jurisdictions.
+- In accordance with standard custodial banking law, interest generated on these accounts accrues legally to the **partner**, not ACBU, unless an explicit **Partner Reserve & Interest Agreement (PRIA)** has been ratified.
+- The baseline revenue model zeroes out uncontracted partner float interest ($0.00). Yield is generated legitimately via protocol-governed deployments in the `investment_savings` segment (see [W10-S-012-FLOAT-INTEREST-REVENUE-RESOLUTION.md](./W10-S-012-FLOAT-INTEREST-REVENUE-RESOLUTION.md) and `src/services/investment/allocationService.ts`).
 
 #### 3. FX Snapshots (OracleRate Table)
 
@@ -117,12 +121,12 @@ The system uses the following precedence when resolving data:
 
 3. Aggregate Transactions
    ├─ Group by local_currency
-   ├─ Sum minted - burned + transferred
-   └─ Store calculated total
+   ├─ Sum minted - burned + transferred (all from usdc_amount, in USD)
+   └─ Store calculatedTotalUsd per currency
 
 4. Reconcile
-   ├─ Ledger Total = Sum of all reserve_value_usd
-   ├─ Calculated Total = Sum of net transactions
+   ├─ Ledger Total (USD) = Sum of all reserve_value_usd
+   ├─ Calculated Total (USD) = Sum of net usdc_amount transactions per currency
    ├─ Discrepancy % = |Ledger - Calculated| / Ledger * 100
    └─ isReconciled = Discrepancy % ≤ Tolerance %
 
@@ -434,7 +438,7 @@ Before deploying to production:
 
 - [ ] Run migration: `prisma migrate deploy`
 - [ ] Verify indexes created: `SELECT * FROM pg_indexes WHERE tablename IN ('reserves', 'oracle_rates', 'transactions')`
-- [ ] Run test suite: `npm test -- src/services/treasury/`
+- [ ] Run test suite: `pnpm test -- src/services/treasury/`
 - [ ] Load test with production data size
 - [ ] Configure tolerance based on SLA requirements
 - [ ] Monitor logs for reconciliation failures in first 24h

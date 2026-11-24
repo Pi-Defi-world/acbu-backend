@@ -51,8 +51,8 @@ export const getReserveStatus = async (
     const reserveSvc = new ReserveTrackerService(addresses.reserveTracker);
     const oracleSvc = new OracleService(addresses.oracle);
 
-    const minRatio = Number(process.env.RESERVE_MIN_RATIO ?? "1.02");
-    const targetRatio = Number(process.env.RESERVE_TARGET_RATIO ?? "1.05");
+    const minRatio = config.reserve.minRatio;
+    const targetRatio = config.reserve.targetRatio;
 
     const [totalReserveValueUsdStr, acbuUsdRateStr, allReserves] = await Promise.all([
       reserveSvc.getTotalReserveValue(),

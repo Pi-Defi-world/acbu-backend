@@ -64,8 +64,7 @@ export async function processXlmToAcbu(
   payload: XlmToAcbuPayload,
   correlationId: string = randomUUID(),
 ): Promise<void> {
-  const { onRampSwapId, userId, stellarAddress, xlmAmount, usdcEquivalent } =
-    payload;
+  const { onRampSwapId, userId, stellarAddress, xlmAmount, usdcEquivalent } = payload;
   const xlmNum = Number(xlmAmount);
   let usdcAmount = usdcEquivalent ? Number(usdcEquivalent) : 0;
 
@@ -84,10 +83,9 @@ export async function processXlmToAcbu(
     data: { status: "processing" },
   });
   if (claimed.count === 0) {
-    logger.warn(
-      "OnRampSwap not found, not pending, or already claimed by another worker",
-      { onRampSwapId },
-    );
+    logger.warn("OnRampSwap not found, not pending, or already claimed by another worker", {
+      onRampSwapId,
+    });
     return;
   }
 
@@ -156,9 +154,7 @@ export async function processXlmToAcbu(
 /**
  * Enqueue an on-ramp swap for processing (call when user has swapped USDC→XLM).
  */
-export async function enqueueXlmToAcbu(
-  payload: XlmToAcbuPayload,
-): Promise<void> {
+export async function enqueueXlmToAcbu(payload: XlmToAcbuPayload): Promise<void> {
   const ch = await connectRabbitMQ();
   await assertQueueWithDLQ(QUEUE);
   ch.sendToQueue(QUEUE, Buffer.from(JSON.stringify(payload)), {

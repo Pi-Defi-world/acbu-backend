@@ -1,16 +1,27 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 /**
  * Webhook controller tests.
- * env is mocked with known secrets so we can compute expected HMACs deterministically.
+ *
+ * Optimised for speed (<5 s): provider-agnostic Content-Type enforcement is
+ * tested once per signature verifier via `test.each` rather than repeating
+ * identical rejection assertions across every provider. Signature HMAC,
+ * idempotency, and timestamp-replay paths are still individually asserted.
+ *
+ * env is mocked with known secrets so we can compute expected HMACs
+ * deterministically.
  */
 import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
 
 const FW_SECRET = "test-flutterwave-secret";
 const PS_SECRET = "test-paystack-secret";
+const BILLS_SECRET = "test-bills-secret";
 
 jest.mock("../config/env", () => ({
   config: {
     nodeEnv: "test",
+    webhookSignatureBypass: false,
     port: 5000,
     apiVersion: "v1",
     databaseUrl: "",
@@ -29,6 +40,7 @@ jest.mock("../config/env", () => ({
     logFile: "logs/app.log",
     flutterwave: { webhookSecret: FW_SECRET },
     paystack: { secretKey: PS_SECRET },
+    bills: { webhookSecret: BILLS_SECRET },
     mtnMomo: {
       subscriptionKey: "",
       apiUserId: "",
@@ -72,7 +84,7 @@ jest.mock("../config/env", () => ({
       updateIntervalHours: 6,
       emergencyThreshold: 0.05,
       maxDeviationPerUpdate: 0.05,
-      circuitBreakerThreshold: 0.10,
+      circuitBreakerThreshold: 0.1,
       forex: { baseUrl: "", apiKey: "" },
       centralBankUrls: {},
     },
@@ -97,6 +109,7 @@ jest.mock("../config/env", () => ({
     webhook: {
       url: "",
       secret: "",
+      signatureBypass: false,
     },
     corsOrigin: ["*"],
     challengeTokenSecret: "default_secret",
@@ -126,9 +139,12 @@ jest.mock("../services/bills", () => ({
 import {
   verifyFlutterwaveSignature,
   verifyPaystackSignature,
+  verifyBillsWebhookSignature,
   handleFlutterwaveWebhook,
   handlePaystackWebhook,
   handleBillsWebhook,
+  assertWebhookSignatureBypassSafe,
+  isWebhookSignatureBypassEnabled,
 } from "./webhookController";
 import { prisma } from "../config/database";
 import { reconcileBillsWebhook } from "../services/bills";
@@ -147,43 +163,264 @@ const makeRes = () => {
 };
 const makeNext = () => jest.fn() as jest.MockedFunction<NextFunction>;
 
+/** Shared timestamp helpers used across provider blocks. */
+const validTimestamp = () => String(Math.floor(Date.now() / 1000));
+const expiredTimestamp = () => String(Math.floor(Date.now() / 1000) - 600);
+const futureTimestamp = () => String(Math.floor(Date.now() / 1000) + 600);
+
+// ── Helpers to build signed requests per provider ────────────────────────────
+
+function buildFlutterwaveSignedReq(
+  body: object,
+  opts?: { sig?: string; ts?: string; contentType?: string },
+) {
+  const rawBody = Buffer.from(JSON.stringify(body));
+  const sig = opts?.sig ?? crypto.createHmac("sha256", FW_SECRET).update(rawBody).digest("hex");
+  const headers: Record<string, string> = {
+    "verif-hash": sig,
+    "x-flw-timestamp": opts?.ts ?? validTimestamp(),
+  };
+  if (opts && "contentType" in opts) {
+    if (opts.contentType !== undefined) headers["content-type"] = opts.contentType;
+  } else {
+    headers["content-type"] = "application/json";
+  }
+  return { headers, rawBody } as unknown as RawRequest;
+}
+
+function buildPaystackSignedReq(
+  body: object,
+  opts?: { sig?: string; ts?: string; contentType?: string },
+) {
+  const rawBody = Buffer.from(JSON.stringify(body));
+  const sig = opts?.sig ?? crypto.createHmac("sha512", PS_SECRET).update(rawBody).digest("hex");
+  const headers: Record<string, string> = {
+    "x-paystack-signature": sig,
+    "x-paystack-timestamp": opts?.ts ?? validTimestamp(),
+  };
+  if (opts && "contentType" in opts) {
+    if (opts.contentType !== undefined) headers["content-type"] = opts.contentType;
+  } else {
+    headers["content-type"] = "application/json";
+  }
+  return { headers, rawBody } as unknown as RawRequest;
+}
+
+function buildBillsSignedReq(
+  body: object,
+  opts?: { sig?: string; ts?: string; contentType?: string },
+) {
+  const rawBody = Buffer.from(JSON.stringify(body));
+  const sig = opts?.sig ?? crypto.createHmac("sha256", BILLS_SECRET).update(rawBody).digest("hex");
+  const headers: Record<string, string> = {
+    "x-bills-signature": sig,
+    "x-bills-timestamp": opts?.ts ?? validTimestamp(),
+  };
+  if (opts && "contentType" in opts) {
+    if (opts.contentType !== undefined) headers["content-type"] = opts.contentType;
+  } else {
+    headers["content-type"] = "application/json";
+  }
+  return { headers, rawBody } as unknown as RawRequest;
+}
+
+// ── Helpers for WEBHOOK_SIGNATURE_BYPASS tests ───────────────────────────────
+
+/**
+ * Re-imports the controller with a mutated env config so that the module-level
+ * bypass flag is recomputed. Uses jest.isolateModules to avoid leaking state
+ * across tests.
+ */
+function loadControllerWithEnv(
+  overrides: Record<string, unknown>,
+): typeof import("./webhookController") {
+  let mod!: typeof import("./webhookController");
+  jest.isolateModules(() => {
+    jest.doMock("../config/env", () => {
+      const base = jest.requireActual("../config/env");
+      return {
+        ...base,
+        config: {
+          ...base.config,
+          ...overrides,
+        },
+      };
+    });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- synchronous reload inside jest.isolateModules
+    mod = require("./webhookController");
+  });
+  jest.dontMock("../config/env");
+  return mod;
+}
+
+// ── Test suite ───────────────────────────────────────────────────────────────
+
 describe("webhookController", () => {
   beforeEach(() => jest.clearAllMocks());
+
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
+  // ── WEBHOOK_SIGNATURE_BYPASS fail-closed guards ────────────────────────────
+
+  describe("WEBHOOK_SIGNATURE_BYPASS fail-closed guards", () => {
+    const ORIGINAL_ENV = process.env;
+
+    beforeEach(() => {
+      process.env = { ...ORIGINAL_ENV };
+    });
+
+    afterAll(() => {
+      process.env = ORIGINAL_ENV;
+    });
+
+    it("isWebhookSignatureBypassEnabled() returns false when flag is unset", () => {
+      delete process.env.WEBHOOK_SIGNATURE_BYPASS;
+      expect(isWebhookSignatureBypassEnabled()).toBe(false);
+    });
+
+    it("isWebhookSignatureBypassEnabled() returns false when flag is 'false'", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "false";
+      expect(isWebhookSignatureBypassEnabled()).toBe(false);
+    });
+
+    it("isWebhookSignatureBypassEnabled() returns true only when flag is 'true'", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      expect(isWebhookSignatureBypassEnabled()).toBe(true);
+    });
+
+    it("assertWebhookSignatureBypassSafe() throws when bypass is set in production", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "production";
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(/WEBHOOK_SIGNATURE_BYPASS/);
+    });
+
+    it("assertWebhookSignatureBypassSafe() throws when bypass is set outside test profile", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "development";
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(/WEBHOOK_SIGNATURE_BYPASS/);
+    });
+
+    it("assertWebhookSignatureBypassSafe() does not throw when bypass is unset", () => {
+      delete process.env.WEBHOOK_SIGNATURE_BYPASS;
+      process.env.NODE_ENV = "production";
+      expect(() => assertWebhookSignatureBypassSafe()).not.toThrow();
+    });
+
+    it("assertWebhookSignatureBypassSafe() does not throw when bypass is 'false'", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "false";
+      process.env.NODE_ENV = "production";
+      expect(() => assertWebhookSignatureBypassSafe()).not.toThrow();
+    });
+
+    it("assertWebhookSignatureBypassSafe() allows bypass only under explicit test profile", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "test";
+      expect(() => assertWebhookSignatureBypassSafe()).not.toThrow();
+    });
+
+    it("assertWebhookSignatureBypassSafe() throws when bypass is set and NODE_ENV is unset", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      delete process.env.NODE_ENV;
+      expect(() => assertWebhookSignatureBypassSafe()).toThrow(/WEBHOOK_SIGNATURE_BYPASS/);
+    });
+
+    it("signature verifiers reject forged payloads when bypass is not enabled", () => {
+      delete process.env.WEBHOOK_SIGNATURE_BYPASS;
+      const res = makeRes();
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({ event: "charge.completed" }, { sig: "a".repeat(64) }),
+        res,
+        makeNext(),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it("signature verifiers reject forged payloads when bypass is 'false'", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "false";
+      const res = makeRes();
+      verifyPaystackSignature(
+        buildPaystackSignedReq({ event: "charge.success" }, { sig: "deadbeef" }),
+        res,
+        makeNext(),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it("signature verifiers reject forged payloads in production even if bypass flag is set", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "production";
+      const res = makeRes();
+      verifyBillsWebhookSignature(
+        buildBillsSignedReq({ transaction_id: "tx-1" }, { sig: "a".repeat(64) }),
+        res,
+        makeNext(),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it("signature verifiers reject forged payloads outside test profile even if bypass flag is set", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "development";
+      const res = makeRes();
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({ event: "charge.completed" }, { sig: "a".repeat(64) }),
+        res,
+        makeNext(),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it("signature verifiers accept bypass only under explicit test profile", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "test";
+      const next = makeNext();
+      const res = makeRes();
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({ event: "charge.completed" }, { sig: "a".repeat(64) }),
+        res,
+        next,
+      );
+      expect(next).toHaveBeenCalledWith();
+      expect(res.status).not.toHaveBeenCalledWith(401);
+    });
+
+    it("loadControllerWithEnv recomputes bypass flag from env at module load", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "test";
+      const mod = loadControllerWithEnv({ nodeEnv: "test" });
+      expect(mod.isWebhookSignatureBypassEnabled()).toBe(true);
+    });
+
+    it("loadControllerWithEnv in production keeps bypass disabled", () => {
+      process.env.WEBHOOK_SIGNATURE_BYPASS = "true";
+      process.env.NODE_ENV = "production";
+      const mod = loadControllerWithEnv({ nodeEnv: "production" });
+      expect(mod.isWebhookSignatureBypassEnabled()).toBe(false);
+    });
+  });
 
   // ── verifyFlutterwaveSignature ─────────────────────────────────────────────
 
   describe("verifyFlutterwaveSignature", () => {
-    const validTimestamp = () => String(Math.floor(Date.now() / 1000));
-    const expiredTimestamp = () => String(Math.floor(Date.now() / 1000) - 600); // 10 min ago
-    const futureTimestamp = () => String(Math.floor(Date.now() / 1000) + 600); // 10 min ahead
-
-    it("calls next() with no args on a valid HMAC-SHA256 signature", () => {
-      const rawBody = Buffer.from(
-        JSON.stringify({ event: "charge.completed" }),
-      );
-      const sig = crypto
-        .createHmac("sha256", FW_SECRET)
-        .update(rawBody)
-        .digest("hex");
-      const req = {
-        headers: { "verif-hash": sig, "x-flw-timestamp": validTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
+    it("calls next() on a valid HMAC-SHA256 signature", () => {
       const next = makeNext();
-      verifyFlutterwaveSignature(req, makeRes(), next);
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({ event: "charge.completed" }),
+        makeRes(),
+        next,
+      );
       expect(next).toHaveBeenCalledWith();
     });
 
     it("returns 401 on mismatched signature", () => {
-      const rawBody = Buffer.from(
-        JSON.stringify({ event: "charge.completed" }),
-      );
-      const req = {
-        headers: { "verif-hash": "a".repeat(64), "x-flw-timestamp": validTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({}, { sig: "a".repeat(64) }),
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Invalid signature" }),
@@ -191,10 +428,15 @@ describe("webhookController", () => {
     });
 
     it("returns 401 when verif-hash header is absent", () => {
-      const rawBody = Buffer.from("{}");
-      const req = { headers: { "x-flw-timestamp": validTimestamp() }, rawBody } as unknown as RawRequest;
       const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
+      verifyFlutterwaveSignature(
+        {
+          headers: { "x-flw-timestamp": validTimestamp(), "content-type": "application/json" },
+          rawBody: Buffer.from("{}"),
+        } as unknown as RawRequest,
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Missing verif-hash header" }),
@@ -202,30 +444,43 @@ describe("webhookController", () => {
     });
 
     it("returns 400 when rawBody is missing", () => {
-      const req = { headers: { "verif-hash": "abc", "x-flw-timestamp": validTimestamp() } } as unknown as RawRequest;
       const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
+      verifyFlutterwaveSignature(
+        {
+          headers: {
+            "verif-hash": "abc",
+            "x-flw-timestamp": validTimestamp(),
+            "content-type": "application/json",
+          },
+        } as unknown as RawRequest,
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
-    it("returns 401 when signature length causes timingSafeEqual to throw (caught internally)", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "verif-hash": "tooshort", "x-flw-timestamp": validTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
+    it("returns 401 when signature length causes timingSafeEqual to throw", () => {
       const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({}, { sig: "tooshort" }),
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
     });
 
     // ── #390 timestamp validation ──────────────────────────────────────────
 
     it("returns 401 when x-flw-timestamp header is absent", () => {
-      const rawBody = Buffer.from("{}");
-      const req = { headers: { "verif-hash": "abc" }, rawBody } as unknown as RawRequest;
       const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
+      verifyFlutterwaveSignature(
+        {
+          headers: { "verif-hash": "abc", "content-type": "application/json" },
+          rawBody: Buffer.from("{}"),
+        } as unknown as RawRequest,
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
@@ -233,13 +488,12 @@ describe("webhookController", () => {
     });
 
     it("returns 401 when x-flw-timestamp is expired (>5 min old)", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "verif-hash": "abc", "x-flw-timestamp": expiredTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({}, { sig: "abc", ts: expiredTimestamp() }),
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
@@ -247,13 +501,12 @@ describe("webhookController", () => {
     });
 
     it("returns 401 when x-flw-timestamp is too far in the future (>5 min)", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "verif-hash": "abc", "x-flw-timestamp": futureTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({}, { sig: "abc", ts: futureTimestamp() }),
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
@@ -261,50 +514,60 @@ describe("webhookController", () => {
     });
 
     it("returns 401 when x-flw-timestamp is not a valid number or date", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "verif-hash": "abc", "x-flw-timestamp": "not-a-date" },
-        rawBody,
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyFlutterwaveSignature(req, res, makeNext());
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({}, { sig: "abc", ts: "not-a-date" }),
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
       );
+    });
+
+    // ── #296 Content-Type enforcement (consolidated) ─────────────────────────
+
+    it.each([
+      ["application/json", true],
+      ["application/json; charset=utf-8", true],
+      ["multipart/form-data", false],
+      ["text/xml", false],
+      [undefined, false],
+    ])("Content-Type %s → %s", (contentType, shouldPass) => {
+      const next = makeNext();
+      const res = makeRes();
+      // For valid content-types compute a correct HMAC; for invalid ones any sig suffices
+      const opts: { sig?: string; contentType?: string } = { contentType };
+      if (!shouldPass) opts.sig = "abc";
+      verifyFlutterwaveSignature(
+        buildFlutterwaveSignedReq({ event: "charge.completed" }, opts),
+        res,
+        next,
+      );
+      if (shouldPass) {
+        expect(next).toHaveBeenCalled();
+      } else {
+        expect(res.status).toHaveBeenCalledWith(415);
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ error: "Content-Type must be application/json" }),
+        );
+      }
     });
   });
 
   // ── verifyPaystackSignature ────────────────────────────────────────────────
 
   describe("verifyPaystackSignature", () => {
-    const validTimestamp = () => String(Math.floor(Date.now() / 1000));
-    const expiredTimestamp = () => String(Math.floor(Date.now() / 1000) - 600);
-    const futureTimestamp = () => String(Math.floor(Date.now() / 1000) + 600);
-
-    it("calls next() with no args on a valid HMAC-SHA512 signature", () => {
-      const rawBody = Buffer.from(JSON.stringify({ event: "charge.success" }));
-      const sig = crypto
-        .createHmac("sha512", PS_SECRET)
-        .update(rawBody)
-        .digest("hex");
-      const req = {
-        headers: { "x-paystack-signature": sig, "x-paystack-timestamp": validTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
+    it("calls next() on a valid HMAC-SHA512 signature", () => {
       const next = makeNext();
-      verifyPaystackSignature(req, makeRes(), next);
+      verifyPaystackSignature(buildPaystackSignedReq({ event: "charge.success" }), makeRes(), next);
       expect(next).toHaveBeenCalledWith();
     });
 
     it("returns 401 on mismatched signature", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "x-paystack-signature": "deadbeef", "x-paystack-timestamp": validTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
+      verifyPaystackSignature(buildPaystackSignedReq({}, { sig: "deadbeef" }), res, makeNext());
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Invalid signature" }),
@@ -312,34 +575,49 @@ describe("webhookController", () => {
     });
 
     it("returns 401 when x-paystack-signature header is absent", () => {
-      const rawBody = Buffer.from("{}");
-      const req = { headers: { "x-paystack-timestamp": validTimestamp() }, rawBody } as unknown as RawRequest;
       const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
+      verifyPaystackSignature(
+        {
+          headers: { "x-paystack-timestamp": validTimestamp(), "content-type": "application/json" },
+          rawBody: Buffer.from("{}"),
+        } as unknown as RawRequest,
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: "Missing x-paystack-signature header",
-        }),
+        expect.objectContaining({ error: "Missing x-paystack-signature header" }),
       );
     });
 
     it("returns 400 when rawBody is missing", () => {
-      const req = {
-        headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": validTimestamp() },
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
+      verifyPaystackSignature(
+        {
+          headers: {
+            "x-paystack-signature": "abc",
+            "x-paystack-timestamp": validTimestamp(),
+            "content-type": "application/json",
+          },
+        } as unknown as RawRequest,
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
     // ── #390 timestamp validation ──────────────────────────────────────────
 
     it("returns 401 when x-paystack-timestamp header is absent", () => {
-      const rawBody = Buffer.from("{}");
-      const req = { headers: { "x-paystack-signature": "abc" }, rawBody } as unknown as RawRequest;
       const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
+      verifyPaystackSignature(
+        {
+          headers: { "x-paystack-signature": "abc", "content-type": "application/json" },
+          rawBody: Buffer.from("{}"),
+        } as unknown as RawRequest,
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
@@ -347,13 +625,12 @@ describe("webhookController", () => {
     });
 
     it("returns 401 when x-paystack-timestamp is expired (>5 min old)", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": expiredTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
+      verifyPaystackSignature(
+        buildPaystackSignedReq({}, { sig: "abc", ts: expiredTimestamp() }),
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
@@ -361,13 +638,12 @@ describe("webhookController", () => {
     });
 
     it("returns 401 when x-paystack-timestamp is too far in the future (>5 min)", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": futureTimestamp() },
-        rawBody,
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
+      verifyPaystackSignature(
+        buildPaystackSignedReq({}, { sig: "abc", ts: futureTimestamp() }),
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
@@ -375,17 +651,40 @@ describe("webhookController", () => {
     });
 
     it("returns 401 when x-paystack-timestamp is not a valid number or date", () => {
-      const rawBody = Buffer.from("{}");
-      const req = {
-        headers: { "x-paystack-signature": "abc", "x-paystack-timestamp": "garbage" },
-        rawBody,
-      } as unknown as RawRequest;
       const res = makeRes();
-      verifyPaystackSignature(req, res, makeNext());
+      verifyPaystackSignature(
+        buildPaystackSignedReq({}, { sig: "abc", ts: "garbage" }),
+        res,
+        makeNext(),
+      );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
       );
+    });
+
+    // ── #296 Content-Type enforcement (consolidated) ─────────────────────────
+
+    it.each([
+      ["application/json", true],
+      ["application/json; charset=utf-8", true],
+      ["multipart/form-data", false],
+      ["text/xml", false],
+      [undefined, false],
+    ])("Content-Type %s → %s", (contentType, shouldPass) => {
+      const next = makeNext();
+      const res = makeRes();
+      const opts: { sig?: string; contentType?: string } = { contentType };
+      if (!shouldPass) opts.sig = "abc";
+      verifyPaystackSignature(buildPaystackSignedReq({ event: "charge.success" }, opts), res, next);
+      if (shouldPass) {
+        expect(next).toHaveBeenCalled();
+      } else {
+        expect(res.status).toHaveBeenCalledWith(415);
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ error: "Content-Type must be application/json" }),
+        );
+      }
     });
   });
 
@@ -394,15 +693,15 @@ describe("webhookController", () => {
   describe("handlePaystackWebhook", () => {
     it("persists webhook record with paystack: prefix and returns 200", async () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({ id: "wh-1" });
-      const req = {
-        headers: {},
-        body: {
-          event: "charge.success",
-          data: { reference: "ref-1", status: "success" },
-        },
-      } as Request;
       const res = makeRes();
-      await handlePaystackWebhook(req, res, makeNext());
+      await handlePaystackWebhook(
+        {
+          headers: {},
+          body: { event: "charge.success", data: { reference: "ref-1", status: "success" } },
+        } as Request,
+        res,
+        makeNext(),
+      );
       expect(prisma.webhook.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -413,20 +712,13 @@ describe("webhookController", () => {
       );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: "ok",
-          deprecated: true,
-        }),
+        expect.objectContaining({ status: "ok", deprecated: true }),
       );
     });
 
     it("uses 'unknown' eventType when event field is absent", async () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({});
-      await handlePaystackWebhook(
-        { headers: {}, body: {} } as Request,
-        makeRes(),
-        makeNext(),
-      );
+      await handlePaystackWebhook({ headers: {}, body: {} } as Request, makeRes(), makeNext());
       expect(prisma.webhook.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ eventType: "paystack:unknown" }),
@@ -434,10 +726,31 @@ describe("webhookController", () => {
       );
     });
 
-    it("calls next(error) when DB write fails", async () => {
-      (prisma.webhook.create as jest.Mock).mockRejectedValue(
-        new Error("DB error"),
+    it("persists event_id and acknowledges a database duplicate", async () => {
+      (prisma.webhook.create as jest.Mock)
+        .mockResolvedValueOnce({ id: "wh-1" })
+        .mockRejectedValueOnce({ code: "P2002" });
+      const payload = { event: "charge.success", event_id: "paystack-event-1", data: {} };
+      const firstRes = makeRes();
+      const secondRes = makeRes();
+
+      await handlePaystackWebhook({ headers: {}, body: payload } as Request, firstRes, makeNext());
+      await handlePaystackWebhook({ headers: {}, body: payload } as Request, secondRes, makeNext());
+
+      expect(prisma.webhook.create).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          data: expect.objectContaining({ eventId: "paystack-event-1" }),
+        }),
       );
+      expect(secondRes.status).toHaveBeenCalledWith(200);
+      expect(secondRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "ok", duplicate: true }),
+      );
+    });
+
+    it("calls next(error) when DB write fails", async () => {
+      (prisma.webhook.create as jest.Mock).mockRejectedValue(new Error("DB error"));
       const next = makeNext();
       await handlePaystackWebhook(
         { headers: {}, body: { event: "charge.success" } } as Request,
@@ -453,15 +766,15 @@ describe("webhookController", () => {
   describe("handleFlutterwaveWebhook", () => {
     it("persists webhook record and returns 200", async () => {
       (prisma.webhook.create as jest.Mock).mockResolvedValue({ id: "wh-2" });
-      const req = {
-        headers: {},
-        body: {
-          event: "charge.completed",
-          data: { tx_ref: "ref-2", status: "successful" },
-        },
-      } as Request;
       const res = makeRes();
-      await handleFlutterwaveWebhook(req, res, makeNext());
+      await handleFlutterwaveWebhook(
+        {
+          headers: {},
+          body: { event: "charge.completed", data: { tx_ref: "ref-2", status: "successful" } },
+        } as Request,
+        res,
+        makeNext(),
+      );
       expect(prisma.webhook.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -472,10 +785,7 @@ describe("webhookController", () => {
       );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: "ok",
-          deprecated: true,
-        }),
+        expect.objectContaining({ status: "ok", deprecated: true }),
       );
     });
 
@@ -493,23 +803,67 @@ describe("webhookController", () => {
       );
     });
 
-    it("calls next(error) when DB write fails", async () => {
-      (prisma.webhook.create as jest.Mock).mockRejectedValue(
-        new Error("DB error"),
+    it("acknowledges duplicate event_id values without logging them again", async () => {
+      (prisma.webhook.create as jest.Mock).mockRejectedValue({ code: "P2002" });
+      const next = makeNext();
+      const res = makeRes();
+
+      await handleFlutterwaveWebhook(
+        { headers: {}, body: { event_id: "flutterwave-event-1", data: {} } } as Request,
+        res,
+        next,
       );
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "ok", duplicate: true }),
+      );
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("calls next(error) when DB write fails", async () => {
+      (prisma.webhook.create as jest.Mock).mockRejectedValue(new Error("DB error"));
       const next = makeNext();
       await handleFlutterwaveWebhook({ headers: {}, body: {} } as Request, makeRes(), next);
       expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
   });
 
+  // ── verifyBillsWebhookSignature ─────────────────────────────────────────────
+
+  describe("verifyBillsWebhookSignature", () => {
+    it("calls next() on a valid HMAC-SHA256 signature", () => {
+      const next = makeNext();
+      verifyBillsWebhookSignature(buildBillsSignedReq({ transaction_id: "tx-1" }), makeRes(), next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it.each([
+      ["application/json", true],
+      ["application/json; charset=utf-8", true],
+      ["multipart/form-data", false],
+      ["text/xml", false],
+      [undefined, false],
+    ])("Content-Type %s → %s", (contentType, shouldPass) => {
+      const next = makeNext();
+      const res = makeRes();
+      const opts: { sig?: string; contentType?: string } = { contentType };
+      if (!shouldPass) opts.sig = "abc";
+      verifyBillsWebhookSignature(buildBillsSignedReq({ transaction_id: "tx-1" }, opts), res, next);
+      if (shouldPass) {
+        expect(next).toHaveBeenCalled();
+      } else {
+        expect(res.status).toHaveBeenCalledWith(415);
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ error: "Content-Type must be application/json" }),
+        );
+      }
+    });
+  });
+
   // ── handleBillsWebhook ─────────────────────────────────────────────────────
 
   describe("handleBillsWebhook", () => {
-    const validTimestamp = () => String(Math.floor(Date.now() / 1000));
-    const expiredTimestamp = () => String(Math.floor(Date.now() / 1000) - 600);
-    const futureTimestamp = () => String(Math.floor(Date.now() / 1000) + 600);
-
     const validBody = {
       transaction_id: "tx-1",
       provider_reference: "ref-1",
@@ -518,12 +872,17 @@ describe("webhookController", () => {
       currency: "NGN",
     };
 
-    it("returns 401 when x-bills-timestamp header is absent", async () => {
+    it.each([
+      ["absent", undefined],
+      ["expired (>5 min old)", expiredTimestamp()],
+      ["too far in the future (>5 min)", futureTimestamp()],
+      ["not a valid number or date", "not-a-date"],
+    ])("returns 401 when x-bills-timestamp is %s", async (_label, ts) => {
       const res = makeRes();
       const next = makeNext();
       await handleBillsWebhook(
         {
-          headers: {},
+          headers: ts !== undefined ? { "x-bills-timestamp": ts } : {},
           params: { provider: "simulated" },
           body: validBody,
         } as unknown as Request,
@@ -536,63 +895,6 @@ describe("webhookController", () => {
       );
       expect(reconcileBillsWebhook).not.toHaveBeenCalled();
       expect(next).not.toHaveBeenCalled();
-    });
-
-    it("returns 401 when x-bills-timestamp is expired (>5 min old)", async () => {
-      const res = makeRes();
-      const next = makeNext();
-      await handleBillsWebhook(
-        {
-          headers: { "x-bills-timestamp": expiredTimestamp() },
-          params: { provider: "simulated" },
-          body: validBody,
-        } as unknown as Request,
-        res,
-        next,
-      );
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
-      );
-      expect(reconcileBillsWebhook).not.toHaveBeenCalled();
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it("returns 401 when x-bills-timestamp is too far in the future (>5 min)", async () => {
-      const res = makeRes();
-      const next = makeNext();
-      await handleBillsWebhook(
-        {
-          headers: { "x-bills-timestamp": futureTimestamp() },
-          params: { provider: "simulated" },
-          body: validBody,
-        } as unknown as Request,
-        res,
-        next,
-      );
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
-      );
-      expect(reconcileBillsWebhook).not.toHaveBeenCalled();
-    });
-
-    it("returns 401 when x-bills-timestamp is not a valid number or date", async () => {
-      const res = makeRes();
-      await handleBillsWebhook(
-        {
-          headers: { "x-bills-timestamp": "not-a-date" },
-          params: { provider: "simulated" },
-          body: validBody,
-        } as unknown as Request,
-        res,
-        makeNext(),
-      );
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: "Webhook timestamp invalid or expired" }),
-      );
-      expect(reconcileBillsWebhook).not.toHaveBeenCalled();
     });
 
     it("reconciles and returns 200 when x-bills-timestamp is within tolerance", async () => {

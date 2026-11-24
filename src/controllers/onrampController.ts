@@ -21,24 +21,15 @@ export const bodySchema = z.object({
     .string()
     .length(56)
     .regex(/^G/)
-    .refine(
-      (s) => isValidStellarAddress(s),
-      "Invalid Stellar address (bad checksum)",
-    ),
+    .refine((s) => isValidStellarAddress(s), "Invalid Stellar address (bad checksum)"),
   xlm_amount: z
     .string()
     .min(1)
-    .refine(
-      (s) => !Number.isNaN(Number(s)) && Number(s) > 0,
-      "must be positive",
-    ),
+    .refine((s) => !Number.isNaN(Number(s)) && Number(s) > 0, "must be positive"),
   usdc_amount: z
     .string()
     .min(1)
-    .refine(
-      (s) => !Number.isNaN(Number(s)) && Number(s) >= 0,
-      "must be non-negative",
-    )
+    .refine((s) => !Number.isNaN(Number(s)) && Number(s) >= 0, "must be non-negative")
     .optional(),
 });
 
@@ -57,19 +48,11 @@ export async function registerOnRampSwap(
     }
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) {
-      throw new AppError(
-        "Invalid request",
-        400,
-        "VALIDATION_ERROR",
-        parsed.error.flatten(),
-      );
+      throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
     }
 
     const { stellar_address, xlm_amount, usdc_amount } = parsed.data;
-    const userWalletAddress = await assertUserWalletAddress(
-      userId,
-      stellar_address,
-    );
+    const userWalletAddress = await assertUserWalletAddress(userId, stellar_address);
 
     const idempotencyKey = extractIdempotencyKey(req);
     if (idempotencyKey) {
@@ -96,8 +79,7 @@ export async function registerOnRampSwap(
           stellarAddress: userWalletAddress,
           source: "xlm_deposit",
           xlmAmount: new Decimal(xlmNum),
-          usdcAmount:
-            usdc_amount != null ? new Decimal(Number(usdc_amount)) : null,
+          usdcAmount: usdc_amount != null ? new Decimal(Number(usdc_amount)) : null,
           status: "pending_convert",
           idempotencyKey,
         },
@@ -124,8 +106,7 @@ export async function registerOnRampSwap(
       throw createError;
     }
     const correlationId =
-      (req.headers["x-request-id"] as string | undefined) ??
-      crypto.randomUUID();
+      (req.headers["x-request-id"] as string | undefined) ?? crypto.randomUUID();
     logFinancialEvent({
       event: "onramp.registered",
       status: "pending",
@@ -152,8 +133,7 @@ export async function registerOnRampSwap(
     res.status(202).json({
       on_ramp_swap_id: swap.id,
       status: "pending_convert",
-      message:
-        "XLM→ACBU job queued. ACBU will be minted to your wallet when processing completes.",
+      message: "XLM→ACBU job queued. ACBU will be minted to your wallet when processing completes.",
     });
   } catch (error) {
     next(error);

@@ -8,6 +8,34 @@ updates:
     allow:
       - dependency-type: "direct"
       - dependency-type: "indirect"
+    groups:
+      # W10-P-004: Group all Stellar SDK updates together so they are reviewed
+      # and upgraded as a single coordinated change across the monorepo.
+      stellar-sdk:
+        patterns:
+          - "@stellar/stellar-sdk"
+          - "stellar-sdk"
+  # W11-MIG-009: the monorepo carries a frontend workspace and a Rust
+  # contracts workspace. Without these entries their dependencies would stop
+  # receiving automated security updates once the standalone repos are archived.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    groups:
+      stellar-sdk:
+        patterns:
+          - "@stellar/stellar-sdk"
+          - "stellar-sdk"
+  - package-ecosystem: "cargo"
+    directory: "/contracts"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 10
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

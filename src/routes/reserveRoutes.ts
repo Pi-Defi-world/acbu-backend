@@ -1,8 +1,5 @@
 import { Router, type IRouter } from "express";
-import {
-  getReserveStatus,
-  trackReserves,
-} from "../controllers/reserveController";
+import { getReserveStatus, trackReserves } from "../controllers/reserveController";
 import { validateApiKey } from "../middleware/auth";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";
 

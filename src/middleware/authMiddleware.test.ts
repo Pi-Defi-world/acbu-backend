@@ -1,24 +1,12 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import {
-  assertJwtTypHeader,
-  EXPECTED_JWT_TYP,
-  getJwtHeader,
-  verifyJwt,
-} from "./authMiddleware";
+import { assertJwtTypHeader, EXPECTED_JWT_TYP, getJwtHeader, verifyJwt } from "./authMiddleware";
 
-function signWithoutTypHeader(
-  payload: Record<string, unknown>,
-  secret: string,
-): string {
-  const header = Buffer.from(JSON.stringify({ alg: "HS256" }))
-    .toString("base64url");
+function signWithoutTypHeader(payload: Record<string, unknown>, secret: string): string {
+  const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const data = `${header}.${body}`;
-  const signature = crypto
-    .createHmac("sha256", secret)
-    .update(data)
-    .digest("base64url");
+  const signature = crypto.createHmac("sha256", secret).update(data).digest("base64url");
 
   return `${data}.${signature}`;
 }

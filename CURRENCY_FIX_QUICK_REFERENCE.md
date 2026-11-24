@@ -71,17 +71,17 @@ Where:
 
 ```bash
 # All tests
-npm test
+pnpm test
 
 # Specific test file
-npm test src/controllers/mintController.test.ts
-npm test src/services/rates/currencyConverter.test.ts
+pnpm test src/controllers/mintController.test.ts
+pnpm test src/services/rates/currencyConverter.test.ts
 
 # With coverage
-npm test -- --coverage
+pnpm test -- --coverage
 
 # Watch mode
-npm test -- --watch
+pnpm test -- --watch
 ```
 
 ## Error Scenarios Handled

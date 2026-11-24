@@ -1,10 +1,4 @@
-import {
-  TransactionBuilder,
-  Operation,
-  xdr,
-  Address,
-  rpc,
-} from "@stellar/stellar-sdk";
+import { TransactionBuilder, Operation, xdr, Address, rpc } from "@stellar/stellar-sdk";
 import { stellarClient } from "./client";
 import { getBaseFee, calculateSorobanFeeWithCap, getFeeCapConfig } from "./feeManager";
 import { logger } from "../../config/logger";
@@ -13,10 +7,31 @@ import { trace, SpanStatusCode } from "@opentelemetry/api";
 
 const sorobanTracer = trace.getTracer("soroban");
 
+/**
+ * Primitive JavaScript values that a Soroban ScVal can be decoded into.
+ * Replaces the previous `any` return type on fromScVal so callers catch
+ * shape mismatches at compile time instead of at runtime.
+ */
+export type ScValPrimitive =
+  | boolean
+  | null
+  | number
+  | string
+  | bigint
+  | Uint8Array
+  | Buffer
+  | xdr.ScVal
+  | ScValPrimitive[];
+
+/**
+ * Accepted JavaScript input types for toScVal.
+ * Replaces the previous `any` parameter type so unsupported shapes are
+ * rejected by the compiler rather than reaching the runtime throw.
+ */
+export type ScValInput = string | number | bigint | boolean | Uint8Array | ScValInput[];
+
 function isRetryableSorobanNetworkError(message: string): boolean {
-  return /ENOTFOUND|ECONNRESET|ETIMEDOUT|ECONNREFUSED|fetch failed|socket hang up/i.test(
-    message,
-  );
+  return /ENOTFOUND|ECONNRESET|ETIMEDOUT|ECONNREFUSED|fetch failed|socket hang up/i.test(message);
 }
 
 async function simulateTransactionWithRetry(
@@ -84,35 +99,31 @@ export class ContractClient {
   /**
    * Invoke a contract function
    */
-  async invokeContract(
-    options: ContractCallOptions,
-  ): Promise<ContractInvokeResult> {
-    return sorobanTracer.startActiveSpan(
-      `soroban.invoke.${options.functionName}`,
-      async (span) => {
+  async invokeContract(options: ContractCallOptions): Promise<ContractInvokeResult> {
+    return sorobanTracer.startActiveSpan(`soroban.invoke.${options.functionName}`, async (span) => {
+      span.setAttributes({
+        "soroban.contract_id": options.contractId,
+        "soroban.function": options.functionName,
+        "soroban.source_account": options.sourceAccount,
+      });
+      try {
+        const result = await this._invokeContractInner(options);
         span.setAttributes({
-          "soroban.contract_id": options.contractId,
-          "soroban.function": options.functionName,
-          "soroban.source_account": options.sourceAccount,
+          "soroban.tx_hash": result.transactionHash,
+          "soroban.ledger": result.ledger,
         });
-        try {
-          const result = await this._invokeContractInner(options);
-          span.setAttributes({ "soroban.tx_hash": result.transactionHash, "soroban.ledger": result.ledger });
-          span.setStatus({ code: SpanStatusCode.OK });
-          return result;
-        } catch (err) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
-          throw err;
-        } finally {
-          span.end();
-        }
-      },
-    );
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (err) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+        throw err;
+      } finally {
+        span.end();
+      }
+    });
   }
 
-  private async _invokeContractInner(
-    options: ContractCallOptions,
-  ): Promise<ContractInvokeResult> {
+  private async _invokeContractInner(options: ContractCallOptions): Promise<ContractInvokeResult> {
     try {
       const { contractId, functionName, args, sourceAccount, fee } = options;
 
@@ -145,29 +156,19 @@ export class ContractClient {
       const rpcServer = new rpc.Server(stellarClient.getSorobanRpcUrl());
       // Simulate first so we can attach Soroban auth + resource footprint/fees.
       // This is required for contracts that call `require_auth()` (admin/validator gated).
-      const simulation = await simulateTransactionWithRetry(
-        rpcServer,
-        transaction,
-        {
-          contractId,
-          functionName,
-        },
-      );
+      const simulation = await simulateTransactionWithRetry(rpcServer, transaction, {
+        contractId,
+        functionName,
+      });
       if (rpc.Api.isSimulationError(simulation)) {
         throw new Error(`Simulation error: ${simulation.error}`);
       }
-      transaction = rpc
-        .assembleTransaction(transaction, simulation)
-        .setTimeout(0)
-        .build();
+      transaction = rpc.assembleTransaction(transaction, simulation).setTimeout(0).build();
 
       // Apply Soroban fee caps (min/max) to ensure predictable confirmation under load
       const { minFeeStroops, maxFeeStroops } = getFeeCapConfig();
       const currentFee = parseInt(transaction.fee, 10);
-      if (
-        currentFee < minFeeStroops ||
-        currentFee > maxFeeStroops
-      ) {
+      if (currentFee < minFeeStroops || currentFee > maxFeeStroops) {
         const cappedFee = calculateSorobanFeeWithCap(currentFee);
         transaction.fee = cappedFee;
         logger.debug("Applied Soroban fee cap", {
@@ -195,7 +196,7 @@ export class ContractClient {
 
       // IMPORTANT: Soroban transactions should be submitted to the Soroban RPC,
       // not Horizon `/transactions` (which can 504 on long-running Soroban TXs).
-      let send: any;
+      let send: rpc.Api.SendTransactionResponse | undefined;
       let lastSendError: unknown;
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -216,18 +217,16 @@ export class ContractClient {
         }
       }
       if (!send) {
-        throw lastSendError instanceof Error
-          ? lastSendError
-          : new Error(String(lastSendError));
+        throw lastSendError instanceof Error ? lastSendError : new Error(String(lastSendError));
       }
       const txHash = send.hash;
 
       // Poll until the transaction is confirmed.
       const maxWaitMs = 120_000;
       const start = Date.now();
-      // eslint-disable-next-line no-constant-condition
+
       while (true) {
-        let status: any;
+        let status: rpc.Api.GetTransactionResponse;
         try {
           status = await rpcServer.getTransaction(txHash);
         } catch (e) {
@@ -254,21 +253,20 @@ export class ContractClient {
           // value. Prefer `returnValue`; fall back to TransactionResult parsing
           // for non-Soroban paths or older RPC responses.
           let resultScVal: xdr.ScVal;
-          if (status.returnValue) {
-            resultScVal = status.returnValue as xdr.ScVal;
+          const successStatus = status as rpc.Api.GetSuccessfulTransactionResponse;
+          if (successStatus.returnValue) {
+            resultScVal = successStatus.returnValue as xdr.ScVal;
           } else {
-            resultScVal = this.parseTransactionResult(status);
+            resultScVal = this.parseTransactionResult(successStatus);
           }
           return {
             transactionHash: txHash,
             result: resultScVal,
-            ledger: status.ledger ?? 0,
+            ledger: successStatus.ledger ?? 0,
           };
         }
         if (status.status === "FAILED") {
-          throw new Error(
-            `Soroban transaction failed: ${status.resultXdr ?? "unknown result"}`,
-          );
+          throw new Error(`Soroban transaction failed: ${status.resultXdr ?? "unknown result"}`);
         }
         if (Date.now() - start > maxWaitMs) {
           throw new Error(`Soroban transaction timed out after ${maxWaitMs}ms`);
@@ -326,14 +324,10 @@ export class ContractClient {
       const transaction = builder.build();
 
       const rpcServer = new rpc.Server(stellarClient.getSorobanRpcUrl());
-      const simulation = await simulateTransactionWithRetry(
-        rpcServer,
-        transaction,
-        {
-          contractId,
-          functionName,
-        },
-      );
+      const simulation = await simulateTransactionWithRetry(rpcServer, transaction, {
+        contractId,
+        functionName,
+      });
 
       if (rpc.Api.isSimulationError(simulation)) {
         throw new Error(`Simulation error: ${simulation.error}`);
@@ -356,42 +350,34 @@ export class ContractClient {
   }
 
   /**
-   * Parse transaction result
+   * Parse transaction result from the Soroban RPC getTransaction response.
+   * Accepts GetSuccessfulTransactionResponse which carries resultXdr.
+   * Falls back to Horizon-style result_xdr shape for non-Soroban paths.
    */
-  private parseTransactionResult(result: any): xdr.ScVal {
+  private parseTransactionResult(result: rpc.Api.GetSuccessfulTransactionResponse): xdr.ScVal {
     try {
-      const rawResultXdr =
-        // Horizon shape
-        result?.result_xdr ??
-        // Soroban RPC `getTransaction` shape
-        result?.resultXdr ??
-        result?.result_xdr;
+      // `resultXdr` is present on GetSuccessfulTransactionResponse.
+      // We normalise it to a base64 string regardless of whether the SDK has
+      // already parsed it into an XDR struct or left it as a raw string.
+      const rawResultXdr: xdr.TransactionResult | string | undefined = result.resultXdr;
 
       if (rawResultXdr) {
-        // Newer stellar-sdk versions may already parse `resultXdr` into an XDR struct.
-        // Normalize into a base64 string for `fromXDR`.
         const resultXdrBase64: string =
           typeof rawResultXdr === "string"
             ? rawResultXdr
-            : typeof rawResultXdr?.toXDR === "function"
-              ? rawResultXdr.toXDR("base64")
+            : typeof (rawResultXdr as xdr.TransactionResult).toXDR === "function"
+              ? (rawResultXdr as xdr.TransactionResult).toXDR("base64")
               : Buffer.isBuffer(rawResultXdr)
-                ? rawResultXdr.toString("base64")
+                ? (rawResultXdr as Buffer).toString("base64")
                 : String(rawResultXdr);
 
-        const txResult = xdr.TransactionResult.fromXDR(
-          resultXdrBase64,
-          "base64",
-        );
+        const txResult = xdr.TransactionResult.fromXDR(resultXdrBase64, "base64");
         const results = txResult.result().results();
         if (results.length > 0) {
           const tr = results[0].tr();
           // Check for host function success
           const opResult = tr.invokeHostFunctionResult();
-          if (
-            opResult.switch() ===
-            xdr.InvokeHostFunctionResultCode.invokeHostFunctionSuccess()
-          ) {
+          if (opResult.switch() === xdr.InvokeHostFunctionResultCode.invokeHostFunctionSuccess()) {
             return opResult.success() as unknown as xdr.ScVal;
           }
         }
@@ -404,9 +390,11 @@ export class ContractClient {
   }
 
   /**
-   * Convert JavaScript value to ScVal
+   * Convert a JavaScript primitive to a Soroban ScVal.
+   * Accepted input types are defined by ScValInput; unsupported shapes are
+   * rejected at compile time rather than reaching the runtime throw.
    */
-  static toScVal(value: any): xdr.ScVal {
+  static toScVal(value: ScValInput): xdr.ScVal {
     if (typeof value === "string") {
       try {
         // Try to parse as Address if it looks like one
@@ -432,9 +420,11 @@ export class ContractClient {
   }
 
   /**
-   * Convert ScVal to JavaScript value
+   * Convert a Soroban ScVal to a JavaScript primitive.
+   * Returns ScValPrimitive instead of `any` so callers can catch shape
+   * mismatches at compile time.
    */
-  static fromScVal(scVal: xdr.ScVal): any {
+  static fromScVal(scVal: xdr.ScVal): ScValPrimitive {
     switch (scVal.switch()) {
       case xdr.ScValType.scvBool():
         return scVal.b();
@@ -450,10 +440,7 @@ export class ContractClient {
         return scVal.i64().toBigInt().toString();
       case xdr.ScValType.scvU128():
       case xdr.ScValType.scvI128(): {
-        const parts =
-          scVal.switch() === xdr.ScValType.scvU128()
-            ? scVal.u128()
-            : scVal.i128();
+        const parts = scVal.switch() === xdr.ScValType.scvU128() ? scVal.u128() : scVal.i128();
         const lo = parts.lo().toBigInt();
         const hi = parts.hi().toBigInt();
         return (hi << BigInt(64)) | lo;
@@ -463,9 +450,7 @@ export class ContractClient {
       case xdr.ScValType.scvBytes():
         return scVal.bytes();
       case xdr.ScValType.scvVec():
-        return (scVal.vec() ?? []).map((v: xdr.ScVal) =>
-          ContractClient.fromScVal(v),
-        );
+        return (scVal.vec() ?? []).map((v: xdr.ScVal) => ContractClient.fromScVal(v));
       case xdr.ScValType.scvAddress():
         return Address.fromScVal(scVal).toString();
       default:

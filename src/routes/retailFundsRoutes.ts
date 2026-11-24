@@ -4,10 +4,7 @@
  * Delegates to shared mint/burn controllers with audience = 'retail'.
  */
 import { Router, type IRouter } from "express";
-import {
-  mintFromUsdc,
-  depositFromBasketCurrency,
-} from "../controllers/mintController";
+import { mintFromUsdc, depositFromBasketCurrency } from "../controllers/mintController";
 import { burnAcbu } from "../controllers/burnController";
 import { validateApiKey } from "../middleware/auth";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";

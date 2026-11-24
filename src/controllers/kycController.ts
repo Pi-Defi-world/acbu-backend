@@ -25,13 +25,69 @@ import {
   MAX_FILE_SIZE_BYTES,
   assertKeyOwnership,
 } from "../services/storage/s3Service";
+import { generateId } from "../utils/idGenerator";
+
+/**
+ * #1143: Jurisdiction licensing check for KYC operations.
+ *
+ * ACBU's KYC/AML operations may trigger licensing obligations in countries where
+ * it does not hold licenses. This check ensures the operating model matches actual
+ * regulatory permissions.
+ *
+ * @param countryCode - User's ISO 3166-1 alpha-3 country code
+ * @returns true if licensed/partner-operated, false if not licensed and enforcement is enabled
+ */
+function checkJurisdictionLicensing(countryCode: string): boolean {
+  const { licensedJurisdictions, enforce, kycOperatingModel } = config.jurisdiction;
+  const normalizedCountryCode = countryCode.toUpperCase();
+
+  // In partner model, KYC is handled by licensed partners - no direct licensing required
+  if (kycOperatingModel === "partner") {
+    logger.info("KYC operating model: partner (no direct jurisdiction check required)", {
+      countryCode: normalizedCountryCode,
+      operatingModel: kycOperatingModel,
+    });
+    return true;
+  }
+
+  // In direct model, check if jurisdiction is licensed
+  const isLicensed = licensedJurisdictions.includes(normalizedCountryCode);
+
+  // Log jurisdiction check for audit trail
+  logger.info("Jurisdiction licensing check", {
+    countryCode: normalizedCountryCode,
+    licensedJurisdictions,
+    isLicensed,
+    enforce,
+    operatingModel: kycOperatingModel,
+  });
+
+  if (!isLicensed) {
+    if (enforce) {
+      logger.error("Jurisdiction licensing violation: KYC operation in unlicensed jurisdiction", {
+        countryCode: normalizedCountryCode,
+        licensedJurisdictions,
+        operatingModel: kycOperatingModel,
+      });
+      return false;
+    }
+    logger.warn(
+      "Jurisdiction limitation: KYC operation in unlicensed jurisdiction (not enforced)",
+      {
+        countryCode: normalizedCountryCode,
+        licensedJurisdictions,
+        operatingModel: kycOperatingModel,
+      },
+    );
+  }
+
+  return true;
+}
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
 const requestUploadUrlSchema = z.object({
-  document_kind: z.enum(
-    Object.keys(ALLOWED_MIME_TYPES) as [string, ...string[]],
-  ),
+  document_kind: z.enum(Object.keys(ALLOWED_MIME_TYPES) as [string, ...string[]]),
   mime_type: z.string().min(1).max(100),
   /** Optional: client-supplied document ID (UUID). Server generates one if omitted. */
   document_id: z.string().uuid().optional(),
@@ -39,9 +95,7 @@ const requestUploadUrlSchema = z.object({
 
 const confirmUploadSchema = z.object({
   /** SHA-256 checksum of the uploaded file (hex). Stored for integrity auditing. */
-  checksum: z
-    .string()
-    .regex(/^[a-f0-9]{64}$/, "Must be a 64-char hex SHA-256 checksum"),
+  checksum: z.string().regex(/^[a-f0-9]{64}$/, "Must be a 64-char hex SHA-256 checksum"),
   /** File size in bytes — must not exceed MAX_FILE_SIZE_BYTES. */
   file_size_bytes: z.number().int().positive().max(MAX_FILE_SIZE_BYTES),
 });
@@ -67,10 +121,24 @@ async function getOrCreateApplication(userId: string) {
     select: { countryCode: true },
   });
 
+  const countryCode = user?.countryCode ?? "XX";
+
+  // #1143: Check jurisdiction licensing before creating KYC application
+  const isJurisdictionCompliant = checkJurisdictionLicensing(countryCode);
+  if (!isJurisdictionCompliant) {
+    throw new AppError(
+      `KYC operations are not licensed for jurisdiction ${countryCode}. ` +
+        `ACBU currently holds licenses for: ${config.jurisdiction.licensedJurisdictions.join(", ")}. ` +
+        `If this is a partner-operated KYC, set KYC_OPERATING_MODEL=partner. ` +
+        `Otherwise, contact legal/compliance to obtain the required license.`,
+      422,
+    );
+  }
+
   return prisma.kycApplication.create({
     data: {
       userId,
-      countryCode: user?.countryCode ?? "XX",
+      countryCode,
       status: "pending",
       feePaidAcbu: 0,
     },
@@ -99,16 +167,9 @@ export async function requestUploadUrl(
     const body = requestUploadUrlSchema.parse(req.body);
 
     // Generate a document ID if not provided
-    const documentId =
-      body.document_id ??
-      crypto.randomUUID();
+    const documentId = body.document_id ?? generateId();
 
-    const result = await generateUploadUrl(
-      userId,
-      body.document_kind,
-      documentId,
-      body.mime_type,
-    );
+    const result = await generateUploadUrl(userId, body.document_kind, documentId, body.mime_type);
 
     // Pre-create the KycDocument record so we can track it before the upload
     const application = await getOrCreateApplication(userId);
@@ -190,7 +251,14 @@ export async function confirmUpload(
         checksum: body.checksum,
         fileSizeBytes: body.file_size_bytes,
       },
-      select: { id: true, kind: true, storageRef: true, checksum: true, scanStatus: true, createdAt: true },
+      select: {
+        id: true,
+        kind: true,
+        storageRef: true,
+        checksum: true,
+        scanStatus: true,
+        createdAt: true,
+      },
     });
 
     logger.info("KYC document upload confirmed", {
@@ -287,16 +355,10 @@ export async function scanWebhook(
         throw new AppError("Missing scan webhook signature", 401);
       }
       const rawBody = JSON.stringify(req.body);
-      const expected = crypto
-        .createHmac("sha256", secret)
-        .update(rawBody)
-        .digest("hex");
+      const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
       const sigBuffer = Buffer.from(signature, "hex");
       const expBuffer = Buffer.from(expected, "hex");
-      if (
-        sigBuffer.length !== expBuffer.length ||
-        !crypto.timingSafeEqual(sigBuffer, expBuffer)
-      ) {
+      if (sigBuffer.length !== expBuffer.length || !crypto.timingSafeEqual(sigBuffer, expBuffer)) {
         throw new AppError("Invalid scan webhook signature", 401);
       }
     } else if (config.nodeEnv === "production") {

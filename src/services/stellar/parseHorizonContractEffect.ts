@@ -12,10 +12,7 @@ import type {
   ParsedContractBalanceEffect,
 } from "./horizonEffectTypes";
 
-const CONTRACT_EFFECT_TYPES = new Set<string>([
-  "contract_credited",
-  "contract_debited",
-]);
+const CONTRACT_EFFECT_TYPES = new Set<string>(["contract_credited", "contract_debited"]);
 
 export function isHorizonContractBalanceEffect(
   data: unknown,
@@ -42,9 +39,7 @@ export function parseHorizonContractBalanceEffect(
   if (!isHorizonContractBalanceEffect(data)) return null;
 
   const operationHref = data._links?.operation?.href;
-  const operationId = operationHref
-    ? operationHref.split("/").filter(Boolean).pop()
-    : undefined;
+  const operationId = operationHref ? operationHref.split("/").filter(Boolean).pop() : undefined;
 
   return {
     effectId: data.id,
@@ -55,8 +50,7 @@ export function parseHorizonContractBalanceEffect(
     assetType: data.asset_type,
     assetCode: data.asset_code,
     assetIssuer: data.asset_issuer,
-    operationId:
-      operationId && /^\d+$/.test(operationId) ? operationId : undefined,
+    operationId: operationId && /^\d+$/.test(operationId) ? operationId : undefined,
   };
 }
 
@@ -80,9 +74,7 @@ export function getOperationIdFromEffect(data: unknown): string | null {
  * Best-effort amount extraction for older call sites that still accept
  * loosely-shaped effect data. Prefer parseHorizonContractBalanceEffect.
  */
-export function parseAmountFromEffectData(
-  data: Record<string, unknown>,
-): string | null {
+export function parseAmountFromEffectData(data: Record<string, unknown>): string | null {
   const amount = data.amount ?? data.value;
   if (typeof amount === "string") return amount;
   if (typeof amount === "number") return String(amount);
@@ -92,9 +84,7 @@ export function parseAmountFromEffectData(
 /**
  * Best-effort account extraction. Live contract_* effects expose `account`.
  */
-export function parseAccountFromEffectData(
-  data: Record<string, unknown>,
-): string | null {
+export function parseAccountFromEffectData(data: Record<string, unknown>): string | null {
   const account = data.account ?? data.recipient ?? data.to;
   if (typeof account === "string" && account.length >= 56) return account;
   return null;

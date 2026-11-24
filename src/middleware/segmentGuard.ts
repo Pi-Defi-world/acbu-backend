@@ -48,12 +48,7 @@ export function requireSegmentScope(...scopes: SegmentScope[]) {
     const permissions = req.apiKey.permissions || [];
     const hasScope = scopes.some((scope) => permissions.includes(scope));
     if (!hasScope) {
-      next(
-        new AppError(
-          `Missing segment scope. Required one of: ${scopes.join(", ")}`,
-          403,
-        ),
-      );
+      next(new AppError(`Missing segment scope. Required one of: ${scopes.join(", ")}`, 403));
       return;
     }
     next();
@@ -82,9 +77,7 @@ export function requireMinTier(minTier: UserTier) {
       return;
     }
     if (tierIdx < minIdx) {
-      next(
-        new AppError(`Insufficient tier. Required at least: ${minTier}`, 403),
-      );
+      next(new AppError(`Insufficient tier. Required at least: ${minTier}`, 403));
       return;
     }
     next();
@@ -93,6 +86,12 @@ export function requireMinTier(minTier: UserTier) {
 
 /**
  * Require an admin-capable key type for privileged operations.
+ *
+ * Use after validateApiKey on endpoints that manage privileged credentials, so that
+ * holding an admin-tier *account* (session/USER_KEY) is not enough on its own to
+ * enumerate or revoke admin material. Key *issuance* deliberately stays on the
+ * admin-tier + MFA path: requiring an admin key to mint the first admin key would
+ * make provisioning (and break-glass recovery) impossible.
  */
 export function requireAdminKeyType() {
   return (req: AuthRequest, _res: Response, next: NextFunction): void => {

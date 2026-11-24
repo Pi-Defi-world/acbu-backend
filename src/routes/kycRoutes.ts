@@ -5,10 +5,7 @@ import {
   requestDownloadUrl,
   scanWebhook,
 } from "../controllers/kycController";
-import {
-  createReward,
-  listRewards,
-} from "../controllers/kycValidatorRewardController";
+import { createReward, listRewards } from "../controllers/kycValidatorRewardController";
 import { validateApiKey } from "../middleware/auth";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";
 

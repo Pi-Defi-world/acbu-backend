@@ -8,6 +8,15 @@ import { getContractAddresses } from "../../config/contracts";
 import { decryptUserStellarSecret } from "../wallet/stellarSecretService";
 import { ensureAcbuTrustline, ensureDemoFiatTrustline } from "../stellar/trustlineService";
 import { ensureAccountActivated } from "../stellar/activationService";
+import {
+  InvalidCurrencyError,
+  InvalidMintAmountError,
+  InvalidCurrencyForOnRampError,
+  TrustlineMissingError,
+  NonExistentContractFunctionError,
+  ValidationError,
+} from "../../errors/index";
+import { assertValidRecipientAccount } from "../../utils/stellar";
 
 const DECIMALS_7 = 1e7;
 const DECIMALS_7_BIGINT = 10_000_000n;
@@ -17,15 +26,36 @@ const MAX_MINT_USD_7 = 1_000_000_000_000n; // 100,000 USD in 7-dec fixed point
 function assertMintingConfigured(): void {
   const { minting } = getContractAddresses();
   if (!minting) {
-    throw new Error("Minting contract not configured (CONTRACT_MINTING)");
+    throw new ValidationError("Minting contract not configured (CONTRACT_MINTING)");
   }
 }
 
 function wholeFiatToI128(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error("Invalid fiat amount");
+    throw new ValidationError("Invalid fiat amount");
   }
   return String(Math.round(amount * DECIMALS_7));
+}
+
+function isTrustlineMissing(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("trustline entry is missing");
+}
+
+/**
+ * Self-custody (W10-SEC-006): the backend holds no usable copy of a user's
+ * key, so it cannot submit the change_trust operation on their behalf. Tell the
+ * caller exactly which asset needs the trustline instead.
+ */
+function trustlineMissingError(assetCode: string): TrustlineMissingError {
+  let asset = assetCode;
+  try {
+    asset = `${assetCode}:${getAcbuIssuer()}`;
+  } catch {
+    // Issuer unset: guidance without it is still actionable.
+  }
+  return new TrustlineMissingError(
+    `Missing trustline for ${asset}. Add the trustline from your own wallet, then retry.`,
+  );
 }
 
 function divCeil(a: bigint, b: bigint): bigint {
@@ -55,12 +85,12 @@ async function validateDemoMintAmount(currency: string, fiatAmountI128: string):
     const requestedFiat = Number(fiatAmountI128) / DECIMALS_7;
     const usdApprox = Number(usdGross) / DECIMALS_7;
 
-    throw new Error(
+    throw new InvalidMintAmountError(
       `Invalid mint amount for ${currency}: ${requestedFiat} converts to ~${usdApprox.toFixed(2)} USD. Allowed range is ${minFiat.toFixed(2)} to ${maxFiat.toFixed(2)} ${currency}.`,
     );
   } catch (e) {
     // Bubble only intentional validation errors; ignore pre-check network issues.
-    if (e instanceof Error && e.message.startsWith("Invalid mint amount for")) {
+    if (e instanceof InvalidMintAmountError) {
       throw e;
     }
   }
@@ -90,7 +120,7 @@ export async function getBankAccounts(userId: string): Promise<FiatAccountView[]
         userId,
         type: "mint",
         status: "completed",
-        localCurrency: { in: BASKET_CURRENCIES },
+        localCurrency: { in: [...BASKET_CURRENCIES] },
         localAmount: { not: null },
         rateSnapshot: { path: ["source"], equals: "admin_drip_demo_fiat" },
       },
@@ -101,7 +131,7 @@ export async function getBankAccounts(userId: string): Promise<FiatAccountView[]
       },
     }),
     prisma.oracleRate.findMany({
-      where: { currency: { in: BASKET_CURRENCIES } },
+      where: { currency: { in: [...BASKET_CURRENCIES] } },
       orderBy: { timestamp: "desc" },
       distinct: ["currency"],
       select: { currency: true, rateUsd: true },
@@ -115,12 +145,12 @@ export async function getBankAccounts(userId: string): Promise<FiatAccountView[]
   for (const row of faucetRows) {
     const c = row.localCurrency ?? "";
     if (!balances.has(c) || !row.localAmount) continue;
-    balances.set(c, (balances.get(c) ?? 0) + row.localAmount.toNumber());
+    balances.set(c, (balances.get(c) ?? 0) + Number(row.localAmount.toString()));
   }
 
   const usdRates = new Map<string, number>();
   for (const r of latestRates) {
-    usdRates.set(r.currency, r.rateUsd.toNumber());
+    usdRates.set(r.currency, Number(r.rateUsd.toString()));
   }
 
   return BASKET_CURRENCIES.map((currency) => {
@@ -147,7 +177,6 @@ export async function requestFaucet(
   currency: string,
   amount: number,
   recipient?: string,
-  passcode?: string,
 ): Promise<{
   currency: string;
   amount: number;
@@ -155,11 +184,11 @@ export async function requestFaucet(
   transaction_hash: string;
 }> {
   if (!BASKET_CURRENCIES.includes(currency as BasketCurrency)) {
-    throw new Error("Invalid currency for demo fiat faucet.");
+    throw new InvalidCurrencyError(currency);
   }
 
   if (amount <= 0 || amount > 10_000_000) {
-    throw new Error("Invalid amount (must be > 0 and <= 10000000).");
+    throw new ValidationError("Invalid amount (must be > 0 and <= 10000000).");
   }
 
   assertMintingConfigured();
@@ -181,26 +210,11 @@ export async function requestFaucet(
     }
   }
   if (!stellarAddress) {
-    throw new Error("User wallet address not set (and no recipient provided).");
+    throw new ValidationError("User wallet address not set (and no recipient provided).");
   }
 
   // Ensure the recipient account exists on-chain (testnet: newly generated addresses need funding).
   await ensureAccountActivated(stellarAddress);
-
-  // Ensure the recipient can receive the demo SAC-wrapped classic asset.
-  // This requires a classic trustline on the recipient account.
-  //
-  // We can auto-add it only if the backend can decrypt the user's seed.
-  if (passcode) {
-    try {
-      const secret = await decryptUserStellarSecret(userId, passcode);
-      if (secret) {
-        await ensureDemoFiatTrustline({ userSecret: secret, currency });
-      }
-    } catch {
-      // Ignore trustline failures and let the on-chain call surface the real error.
-    }
-  }
 
   const amountI128 = wholeFiatToI128(amount);
   let transactionHash: string;
@@ -224,6 +238,10 @@ export async function requestFaucet(
     } else {
       throw e;
     }
+    if (e instanceof Error && e.message.includes("non-existent contract function")) {
+      throw new NonExistentContractFunctionError();
+    }
+    throw e;
   }
 
   // Record faucet drips in transaction history so Activity can display them.
@@ -258,13 +276,13 @@ export async function requestFaucet(
 }
 
 /**
- * On-ramp: custodial `mint_from_demo_fiat` (no simulated bank ledger).
+ * On-ramp: `mint_from_demo_fiat` mints ACBU against the minting contract's demo
+ * fiat custody (no simulated bank ledger). The user's own key is never involved.
  */
 export async function simulateOnRamp(
   userId: string,
   currency: string,
   fiatAmount: number,
-  passcode?: string,
 ): Promise<{
   transactionId: string;
   acbuAmount: number;
@@ -274,33 +292,20 @@ export async function simulateOnRamp(
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.stellarAddress) {
-    throw new Error("User wallet address not set");
+    throw new ValidationError("User wallet address not set");
   }
 
   if (!BASKET_CURRENCIES.includes(currency as BasketCurrency)) {
-    throw new Error("Invalid currency for on-ramp.");
+    throw new InvalidCurrencyForOnRampError();
   }
 
   const sourceAccount = stellarClient.getKeypair()?.publicKey();
   if (!sourceAccount) {
-    throw new Error("No Stellar source account (STELLAR_SECRET_KEY)");
+    throw new ValidationError("No Stellar source account (STELLAR_SECRET_KEY)");
   }
 
   const fiatAmountI128 = wholeFiatToI128(fiatAmount);
   await validateDemoMintAmount(currency, fiatAmountI128);
-
-  // Default setup: if passcode is available, ensure recipient has ACBU trustline
-  // before minting to avoid contract-level trustline failures.
-  if (passcode) {
-    try {
-      const secret = await decryptUserStellarSecret(userId, passcode);
-      if (secret) {
-        await ensureAcbuTrustline({ userSecret: secret });
-      }
-    } catch {
-      // Ignore and let on-chain call surface exact trustline error if still missing.
-    }
-  }
 
   const tx = await prisma.transaction.create({
     data: {
@@ -383,6 +388,13 @@ export async function simulateOnRamp(
         },
       },
     });
+    // The ACBU trustline has to be added by the wallet that holds the key.
+    if (isTrustlineMissing(err)) {
+      throw trustlineMissingError(getAcbuAssetCode());
+    }
+    if (err instanceof Error && err.message.includes("non-existent contract function")) {
+      throw new NonExistentContractFunctionError();
+    }
     throw err;
   }
 }
@@ -395,6 +407,7 @@ export async function simulateOffRamp(
   currency: string,
   acbuAmount: number,
   blockchainTxHash?: string,
+  idempotencyKey?: string,
 ): Promise<{
   fiatAmount: number;
   acbuAmount: number;
@@ -402,8 +415,9 @@ export async function simulateOffRamp(
 }> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.stellarAddress) {
-    throw new Error("User wallet address not set");
+    throw new ValidationError("User wallet address not set");
   }
+  assertValidRecipientAccount(user.stellarAddress);
 
   const acbuRateRecord = await getLatestAcbuRate();
 
@@ -415,7 +429,7 @@ export async function simulateOffRamp(
     throw new Error(`Rate not found for currency ${currency}`);
   }
 
-  const fiatAmount = acbuAmount * acbuPerLocal.toNumber();
+  const fiatAmount = acbuAmount * Number(acbuPerLocal.toString());
 
   const addresses = getContractAddresses();
   if (!addresses.burning) {
@@ -433,9 +447,11 @@ export async function simulateOffRamp(
 
     const result = await acbuBurningService.redeemSingle({
       user: sourceAccount,
-      recipient: sourceAccount,
+      recipient: user.stellarAddress,
       acbuAmount: acbuAmount7,
       currency,
+      idempotencyKey:
+        idempotencyKey || `off-ramp:${userId}:${currency}:${acbuAmount7}`,
     });
     txHash = result.transactionHash;
   }

@@ -33,6 +33,7 @@ jest.mock("../../config/env", () => ({
       activationAmount: "1",
       baseFeeStroops: 100,
       useDynamicFees: false,
+      treasuryAccountId: "",
     },
   },
 }));
@@ -42,9 +43,8 @@ import { logger } from "../../config/logger";
 import { config } from "../../config/env";
 
 // Prefer an injected secret so CI/CD can supply a non-committed value.
-// The fallback keeps existing test behaviour when the env var is absent (#611).
-const VALID_SECRET =
-  process.env.TEST_STELLAR_SECRET_KEY ?? "SCZANGBA5YHTNYVVVVCG2XTIBQ4SKWDJXG3G5C2JKKQLOOOQ2K3X7LKP";
+// The fallback uses a synthetic placeholder (never a real Stellar seed).
+const VALID_SECRET = process.env.TEST_STELLAR_SECRET_KEY ?? `S${"A".repeat(55)}`;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -58,6 +58,17 @@ beforeEach(() => {
 
 describe("StellarClient", () => {
   describe("constructor secret key validation", () => {
+    it("uses an explicitly configured treasury account for operation validation", async () => {
+      const treasuryAccountId = "GConfiguredTreasuryAccount";
+      const client = new StellarClient({ treasuryAccountId });
+
+      await expect(
+        client.buildTransaction(treasuryAccountId, [
+          { type: "accountMerge", destination: "GDestination" } as any,
+        ]),
+      ).rejects.toThrow("forbidden for the treasury account");
+    });
+
     it("initializes keypair when secret key is valid", () => {
       const client = new StellarClient({ secretKey: VALID_SECRET });
       expect(client.getKeypair()).not.toBeNull();
@@ -67,12 +78,20 @@ describe("StellarClient", () => {
     it("throws 'Invalid Stellar secret key' when secret key has wrong format (hex instead of base32)", () => {
       const hexKey = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6";
       expect(() => new StellarClient({ secretKey: hexKey })).toThrow("Invalid Stellar secret key");
-      expect(logger.error).toHaveBeenCalledWith("Failed to initialize Stellar keypair", expect.any(Object));
+      expect(logger.error).toHaveBeenCalledWith(
+        "Failed to initialize Stellar keypair",
+        expect.any(Object),
+      );
     });
 
     it("throws 'Invalid Stellar secret key' when secret key has wrong length", () => {
-      expect(() => new StellarClient({ secretKey: "too-short" })).toThrow("Invalid Stellar secret key");
-      expect(logger.error).toHaveBeenCalledWith("Failed to initialize Stellar keypair", expect.any(Object));
+      expect(() => new StellarClient({ secretKey: "too-short" })).toThrow(
+        "Invalid Stellar secret key",
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        "Failed to initialize Stellar keypair",
+        expect.any(Object),
+      );
     });
 
     it("does not initialize keypair when secret key is empty", () => {
@@ -93,6 +112,41 @@ describe("StellarClient", () => {
       expect(client.getKeypair()).not.toBeNull();
       expect(mockFromSecret).toHaveBeenCalledWith(VALID_SECRET);
       (config.stellar as any).secretKey = "";
+    });
+  });
+
+  describe("external HSM / multi-sig signer support", () => {
+    it("configures external signer without initializing an in-memory keypair", () => {
+      const sign = jest.fn(async (tx: any) => tx);
+      const client = new StellarClient({
+        signer: {
+          publicKey: "GEXTERNALHSMSIGNERACCOUNTID",
+          sign,
+        },
+      });
+
+      expect(client.getKeypair()).toBeNull();
+      expect(mockFromSecret).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        "External Stellar transaction signer configured",
+        expect.objectContaining({ publicKey: "GEXTERNALHSMSIGNERACCOUNTID" }),
+      );
+    });
+
+    it("enforces treasury account operation restrictions using the external signer publicKey", async () => {
+      const signerPublicKey = "GEXTERNALHSMSIGNERACCOUNTID";
+      const client = new StellarClient({
+        signer: {
+          publicKey: signerPublicKey,
+          sign: jest.fn(async (tx: any) => tx),
+        },
+      });
+
+      await expect(
+        client.buildTransaction(signerPublicKey, [
+          { type: "accountMerge", destination: "GDestination" } as any,
+        ]),
+      ).rejects.toThrow("forbidden for the treasury account");
     });
   });
 });

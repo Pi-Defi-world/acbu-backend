@@ -238,10 +238,9 @@ describe("userService", () => {
 
       await tombstoneDeleteUser(userId, "deleteMe");
 
-      expect(logger.info).toHaveBeenCalledWith(
-        "Account tombstone deleted (legacy endpoint)",
-        { userId },
-      );
+      expect(logger.info).toHaveBeenCalledWith("Account tombstone deleted (legacy endpoint)", {
+        userId,
+      });
     });
 
     it("should use default source of 'deleteAccount' when not specified", async () => {
@@ -269,9 +268,7 @@ describe("userService", () => {
       const transactionError = new Error("Transaction failed");
       (prisma.$transaction as jest.Mock).mockRejectedValue(transactionError);
 
-      await expect(tombstoneDeleteUser(userId)).rejects.toThrow(
-        "Transaction failed",
-      );
+      await expect(tombstoneDeleteUser(userId)).rejects.toThrow("Transaction failed");
     });
   });
 });

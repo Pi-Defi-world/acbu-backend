@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { AppError } from "../middleware/errorHandler";
 
 /**
  * Decimal configuration for monetary calculations with high precision
@@ -25,17 +26,15 @@ export function parseMonetaryString(value: string, fieldName = "amount"): Decima
 
   // Trim whitespace
   const trimmed = value.trim();
-  
+
   // Validate format (no scientific notation, reasonable decimal places)
   if (!trimmed || !/^\d+(\.\d{1,7})?$/.test(trimmed)) {
-    throw new Error(
-      `${fieldName} must be a positive number with up to 7 decimal places`
-    );
+    throw new Error(`${fieldName} must be a positive number with up to 7 decimal places`);
   }
 
   try {
     const decimal = new Decimal(trimmed);
-    
+
     if (decimal.lte(0)) {
       throw new Error(`${fieldName} must be positive`);
     }
@@ -52,12 +51,21 @@ export function parseMonetaryString(value: string, fieldName = "amount"): Decima
  * @param decimals - Number of decimal places for the contract (default 7)
  * @returns Number formatted for contract
  */
-export function decimalToContractNumber(
-  decimal: Decimal,
-  decimals: number = 7
-): number {
+export function decimalToContractNumber(decimal: Decimal, decimals: number = 7): number {
+  if (!decimal.isFinite() || decimal.isNegative()) {
+    throw new AppError("Contract amount must be a finite non-negative value", 400);
+  }
+  if (!Number.isSafeInteger(decimals) || decimals < 0) {
+    throw new AppError("Contract decimal precision must be a non-negative integer", 500);
+  }
+
   const scaled = decimal.mul(new Decimal(10).pow(decimals));
-  return scaled.toDecimalPlaces(0, Decimal.ROUND_DOWN).toNumber();
+  const contractInteger = scaled.toDecimalPlaces(0, Decimal.ROUND_DOWN);
+  if (!contractInteger.isFinite() || contractInteger.abs().gt(Number.MAX_SAFE_INTEGER)) {
+    throw new AppError("Amount exceeds the safe integer range supported for contract calls", 400);
+  }
+
+  return contractInteger.toNumber();
 }
 
 /**
@@ -66,10 +74,7 @@ export function decimalToContractNumber(
  * @param decimals - Number of decimal places the contract uses (default 7)
  * @returns Decimal instance
  */
-export function contractNumberToDecimal(
-  contractNumber: number,
-  decimals: number = 7
-): Decimal {
+export function contractNumberToDecimal(contractNumber: number, decimals: number = 7): Decimal {
   return new Decimal(contractNumber).div(new Decimal(10).pow(decimals));
 }
 
@@ -80,7 +85,40 @@ export function contractNumberToDecimal(
  * @returns Fee amount as Decimal
  */
 export function calculateFee(amount: Decimal, feeBps: number): Decimal {
-  return amount.mul(new Decimal(feeBps)).div(new Decimal(10000));
+  if (!amount.isFinite() || amount.isNegative()) {
+    throw new AppError("Fee amount must be a finite non-negative value", 400);
+  }
+  if (!Number.isSafeInteger(feeBps) || feeBps < 0 || feeBps > 10000) {
+    throw new AppError("Fee rate must be an integer between 0 and 10000 basis points", 500);
+  }
+
+  const fee = amount.mul(new Decimal(feeBps)).div(new Decimal(10000));
+  if (!fee.isFinite() || fee.isNegative()) {
+    throw new AppError("Fee calculation exceeded the supported numeric range", 500);
+  }
+
+  return fee;
+}
+
+/**
+ * Convert a Decimal (decimal.js or Prisma) to a JS number at an API/reporting boundary.
+ *
+ * Routes through the exact string representation first so that values like
+ * Decimal("0.0007000") are serialised faithfully before the IEEE-754 cast.
+ * This avoids the precision loss that occurs when calling `.toNumber()` directly
+ * on values whose string form has more significant digits than a 64-bit float
+ * can represent.
+ *
+ * ONLY call this function at an explicit API-response or logging boundary.
+ * Never call it in the middle of financial arithmetic — keep the computation in
+ * Decimal throughout and only convert at the very last moment.
+ *
+ * @param value - A Decimal-like object (decimal.js Decimal or Prisma Decimal) or null/undefined
+ * @returns A JS number, or 0 if the value is null/undefined
+ */
+export function decimalToNumber(value: { toString(): string } | null | undefined): number {
+  if (value == null) return 0;
+  return Number(value.toString());
 }
 
 /**
@@ -94,17 +132,13 @@ export function validateAmountRange(
   amount: Decimal,
   min: Decimal,
   max: Decimal,
-  fieldName = "amount"
+  fieldName = "amount",
 ): void {
   if (amount.lt(min)) {
-    throw new Error(
-      `${fieldName} must be at least ${min.toString()}`
-    );
+    throw new Error(`${fieldName} must be at least ${min.toString()}`);
   }
-  
+
   if (amount.gt(max)) {
-    throw new Error(
-      `${fieldName} must be at most ${max.toString()}`
-    );
+    throw new Error(`${fieldName} must be at most ${max.toString()}`);
   }
 }

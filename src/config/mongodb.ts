@@ -108,9 +108,7 @@ export function getMongoDB(): Db {
 // reopens from the last stored token so no events are missed or double-replayed.
 
 function getTokenCollection(): Collection<{ _id: string; token: ResumeToken }> {
-  return getMongoDB().collection<{ _id: string; token: ResumeToken }>(
-    RESUME_TOKEN_COLLECTION,
-  );
+  return getMongoDB().collection<{ _id: string; token: ResumeToken }>(RESUME_TOKEN_COLLECTION);
 }
 
 /** Load the persisted resume token for a named stream consumer, or null if none. */
@@ -120,10 +118,7 @@ export async function loadResumeToken(consumerName: string): Promise<ResumeToken
 }
 
 /** Persist the latest resume token for a named stream consumer. */
-export async function saveResumeToken(
-  consumerName: string,
-  token: ResumeToken,
-): Promise<void> {
+export async function saveResumeToken(consumerName: string, token: ResumeToken): Promise<void> {
   await getTokenCollection().updateOne(
     { _id: consumerName },
     { $set: { token } },

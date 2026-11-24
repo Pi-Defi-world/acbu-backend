@@ -61,21 +61,14 @@ export class EscrowService {
     const result = await this.contractClient.invokeContract({
       contractId: this.contractId,
       functionName: "refund",
-      args: [
-        ContractClient.toScVal(params.escrowId),
-        ContractClient.toScVal(params.payer),
-      ],
+      args: [ContractClient.toScVal(params.escrowId), ContractClient.toScVal(params.payer)],
       sourceAccount,
     });
     return result.transactionHash;
   }
 
   async isPaused(): Promise<boolean> {
-    const result = await this.contractClient.readContract(
-      this.contractId,
-      "is_paused",
-      [],
-    );
+    const result = await this.contractClient.readContract(this.contractId, "is_paused", []);
     return ContractClient.fromScVal(result) as boolean;
   }
 }

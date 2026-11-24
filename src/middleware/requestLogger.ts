@@ -6,9 +6,17 @@ import { AuthRequest } from "./auth";
 /**
  * Derive a dot-namespaced action type from method + path for audit logs.
  * e.g. POST /v1/transfers → "transfers.create"
+ * For resource routes with IDs (e.g. /v1/transfers/{uuid}), strips the ID segment.
  */
 function deriveActionType(method: string, path: string): string {
-  const segment = path.split("/").filter(Boolean).pop() ?? "unknown";
+  const segments = path.split("/").filter(Boolean);
+  let segment = segments.pop() ?? "unknown";
+
+  // Skip ID segments (UUID, numeric, or alphanumeric slug) to get the resource name
+  if (!/^(v\d+|[a-z-]+)$/i.test(segment)) {
+    segment = segments.pop() ?? "resource";
+  }
+
   const verbMap: Record<string, string> = {
     GET: "read",
     POST: "create",
@@ -51,7 +59,9 @@ function microTimestamp(): string {
   // Microseconds within the current millisecond (0–999)
   const microWithinMs = Number((hrNs / 1000n) % 1000n);
   // ISO string: "2026-06-24T12:28:32.235Z" → insert microseconds before "Z"
-  return now.toISOString().replace(/\.(\d{3})Z$/, (_, ms) => `.${ms}${String(microWithinMs).padStart(3, "0")}Z`);
+  return now
+    .toISOString()
+    .replace(/\.(\d{3})Z$/, (_, ms) => `.${ms}${String(microWithinMs).padStart(3, "0")}Z`);
 }
 
 /**
@@ -67,15 +77,10 @@ function microTimestamp(): string {
  *   - correlationId (x-request-id header or auto-generated UUID)
  *   - standard HTTP fields (method, path, statusCode, durationMs, userAgent)
  */
-export const requestLogger = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void => {
+export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
   const startHr = process.hrtime.bigint();
   const timestamp = microTimestamp();
-  const correlationId =
-    (req.headers["x-request-id"] as string | undefined) ?? crypto.randomUUID();
+  const correlationId = (req.headers["x-request-id"] as string | undefined) ?? crypto.randomUUID();
 
   // Propagate correlationId so downstream code can reference it
   res.setHeader("x-request-id", correlationId);

@@ -34,6 +34,9 @@ export class OracleService {
       if (!sourceAccount) {
         throw new Error("No source account available");
       }
+      if (params.validator !== sourceAccount) {
+        throw new Error("Oracle rate submission signer must match the validator address");
+      }
 
       // Reject zero/negative/invalid rates before they reach the chain.
       assertPositiveOraclePrice(params.rate, params.currency);
@@ -44,15 +47,15 @@ export class OracleService {
       const currencyScVal = ContractClient.toScVal([[params.currency]]);
       const args = [currencyScVal, ContractClient.toScVal(BigInt(params.rate))];
 
-      // Invoke contract
+      // Each invocation is one validator's independently authorized submission.
       const result = await this.contractClient.invokeContract({
         contractId: this.contractId,
-        functionName: "set_rate_admin",
+        functionName: "update_rate",
         args,
         sourceAccount,
       });
 
-      logger.info("Rate update successful", {
+      logger.info("Oracle validator rate submission successful", {
         transactionHash: result.transactionHash,
         currency: params.currency,
       });

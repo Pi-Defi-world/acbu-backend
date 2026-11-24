@@ -16,7 +16,7 @@ export interface ZonedDateParts extends CalendarParts {
   second: number;
 }
 
-const IANA_TIMEZONE_PATTERN = /^[A-Za-z0-9_+\/-]+$/;
+const IANA_TIMEZONE_PATTERN = /^[A-Za-z0-9_+/-]+$/;
 
 export function getDefaultBusinessTimeZone(): string {
   return config.businessTimeZone;
@@ -146,10 +146,7 @@ export function formatIsoDateInTimeZone(date: Date, timeZone?: string): string {
 export function getNextDailyMidnight(from: Date, timeZone?: string): Date {
   const tz = resolveTimeZone(timeZone);
   const parts = getZonedParts(from, tz);
-  const tomorrow = addCalendarDays(
-    { year: parts.year, month: parts.month, day: parts.day },
-    1,
-  );
+  const tomorrow = addCalendarDays({ year: parts.year, month: parts.month, day: parts.day }, 1);
   return zonedDateTimeToUtc(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, 0, tz);
 }
 
@@ -157,15 +154,7 @@ export function getNextDailyMidnight(from: Date, timeZone?: string): Date {
 export function getInitialDailyMidnight(from: Date, timeZone?: string): Date {
   const tz = resolveTimeZone(timeZone);
   const parts = getZonedParts(from, tz);
-  const todayMidnight = zonedDateTimeToUtc(
-    parts.year,
-    parts.month,
-    parts.day,
-    0,
-    0,
-    0,
-    tz,
-  );
+  const todayMidnight = zonedDateTimeToUtc(parts.year, parts.month, parts.day, 0, 0, 0, tz);
 
   if (todayMidnight > from) {
     return todayMidnight;

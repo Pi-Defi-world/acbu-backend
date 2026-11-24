@@ -20,8 +20,7 @@ jest.mock("../services/investment/withdrawalTimingService", () => ({
 }));
 
 const mockCreate = prisma.investmentWithdrawalRequest.create as jest.Mock;
-const mockGetInvestmentWithdrawalTiming =
-  getInvestmentWithdrawalTiming as jest.Mock;
+const mockGetInvestmentWithdrawalTiming = getInvestmentWithdrawalTiming as jest.Mock;
 
 const trustedRequestedAt = new Date("2026-05-27T12:00:00.000Z");
 const trustedAvailableAt = new Date("2026-05-28T12:00:00.000Z");

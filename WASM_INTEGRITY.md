@@ -66,9 +66,27 @@ contract binary to rebuild when a Soroban invocation fails — they are not comp
 When compiled contract binaries are added to this repository, place them under `contracts/`
 or `wasm/` and follow the registration steps above.
 
-## Workflow file
+## Soroban Contract Performance & Budget Guard
 
-`.github/workflows/verify-wasm-integrity.yml`
+The `.github/workflows/soroban-contract-benchmarks.yml` workflow and `scripts/ci/check-contract-budget.js` script enforce budget ceilings and measure performance for Soroban smart contracts (`acbu-smart-contract`, `ultrahonk-soroban-verifier`, and local WASM binaries):
 
-The workflow is triggered automatically on changes to contract paths. It can also be run
-manually via `workflow_dispatch` from the GitHub Actions tab.
+- **Max WASM Binary Size**: 256 KB (262,144 bytes)
+- **Max CPU Instructions**: 100,000,000 instructions per contract invocation
+- **Max Memory Bytes**: 40 MB (41,943,040 bytes)
+- **Max Storage Read/Write**: 1 MB (1,048,576 bytes)
+
+### Running Budget Checks Locally
+
+```bash
+# Scan default contract directories
+node scripts/ci/check-contract-budget.js
+
+# Custom budget limits via environment variables
+MAX_WASM_SIZE_KB=300 MAX_CPU_INSTRUCTIONS=120000000 node scripts/ci/check-contract-budget.js --dir contracts
+```
+
+## Workflow files
+
+- Integrity Guard: `.github/workflows/verify-wasm-integrity.yml`
+- Performance & Budget Guard: `.github/workflows/soroban-contract-benchmarks.yml`
+

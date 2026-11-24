@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 enum ApiKeyType {
@@ -14,7 +15,7 @@ enum ApiKeyType {
 }
 
 model Organization {
-  id              String           @id @default(uuid()) @db.Uuid
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name            String?          @db.VarChar(255)
   kycStatus       String           @default("pending") @map("kyc_status") @db.VarChar(20)
   kycVerifiedAt   DateTime?        @map("kyc_verified_at") @db.Timestamp(6)
@@ -26,14 +27,14 @@ model Organization {
   salaryBatches   SalaryBatch[]
   salarySchedules SalarySchedule[]
   bulkTransferJobs BulkTransferJob[]
-  transactions    Transaction[]    @relation("OrganizationTransactions")
+  transactions     Transaction[]     @relation("OrganizationTransactions")
 
   @@index([kycStatus], name: "idx_organization_kyc_status")
   @@map("organizations")
 }
 
 model User {
-  id                     String           @id @default(uuid()) @db.Uuid
+  id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   stellarAddress         String?          @unique @db.VarChar(56)
   kycStatus              String           @default("pending") @map("kyc_status") @db.VarChar(20)
   kycVerifiedAt          DateTime?        @map("kyc_verified_at") @db.Timestamp(6)
@@ -45,7 +46,13 @@ model User {
   phoneVerifiedAt        DateTime?        @map("phone_verified_at") @db.Timestamp(6)
   privacyHideFromSearch  Boolean          @default(true) @map("privacy_hide_from_search")
   passcodeHash           String?          @map("passcode_hash") @db.VarChar(255)
+  failedSigninAttempts   Int              @default(0) @map("failed_signin_attempts")
+  lockoutUntil           DateTime?        @map("lockout_until") @db.Timestamp(6)
+  /// Opaque wallet backup encrypted by the client (W10-SEC-006). The backend
+  /// never receives the secret that opens it and ships no decryption path.
   encryptedStellarSecret String?          @map("encrypted_stellar_secret") @db.VarChar(512)
+  /// How encryptedStellarSecret was produced: "client_wrapped" or "external"
+  /// (address bound, no backup stored). Never "passcode".
   keyEncryptionHint      String?          @map("key_encryption_hint") @db.VarChar(50)
   walletVersion          Int              @default(0) @map("wallet_version")
   twoFaMethod            String?          @map("two_fa_method") @db.VarChar(20)
@@ -82,22 +89,26 @@ model User {
 }
 
 model Transaction {
-  id               String           @id @default(uuid()) @db.Uuid
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId           String?          @map("user_id") @db.Uuid
   organizationId   String?          @map("organization_id") @db.Uuid
   idempotencyKey   String?          @unique(map: "idx_transactions_idempotency_key") @map("idempotency_key") @db.VarChar(255)
   type             String           @db.VarChar(20)
+  // pending | processing | completed | failed | refunded — enforced by the
+  // chk_transactions_status CHECK constraint (see TRANSACTION_STATUSES in
+  // src/utils/transactionStateMachine.ts).
   status           String           @default("pending") @db.VarChar(20)
   usdcAmount       Decimal?         @map("usdc_amount") @db.Decimal(20, 8)
   acbuAmount       Decimal?         @map("acbu_amount") @db.Decimal(20, 8)
   acbuAmountBurned Decimal?         @map("acbu_amount_burned") @db.Decimal(20, 8)
   localCurrency    String?          @map("local_currency") @db.VarChar(3)
-  localAmount      Decimal?         @map("local_amount") @db.Decimal(20, 2)
+  localAmount      Decimal?         @map("local_amount") @db.Decimal(20, 8)
   recipientAccount Json?            @map("recipient_account")
   recipientAddress String?          @map("recipient_address") @db.VarChar(56)
   fee              Decimal?         @db.Decimal(20, 8)
   rateSnapshot     Json?            @map("rate_snapshot")
   blockchainTxHash String?          @map("blockchain_tx_hash") @db.VarChar(255)
+  fintechProvider  String?          @map("fintech_provider") @db.VarChar(100)
   confirmations    Int              @default(0)
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
   completedAt      DateTime?        @map("completed_at") @db.Timestamp(6)
@@ -117,11 +128,13 @@ model Transaction {
   @@index([userId, type], map: "idx_transactions_user_type")
   @@index([status, createdAt], map: "idx_transactions_status_created")
   @@index([userId, createdAt(sort: Desc)], map: "idx_transactions_user_id_created_at")
+  // #758: composite index for organization daily aggregate queries (e.g. org-level reporting by date range)
+  @@index([organizationId, createdAt(sort: Desc)], map: "idx_transactions_org_id_created_at")
   @@map("transactions")
 }
 
 model Reserve {
-  id              String   @id @default(uuid()) @db.Uuid
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   currency        String   @db.VarChar(3)
   segment         String   @default("transactions") @db.VarChar(20) // 'transactions' | 'investment_savings'
   targetWeight    Decimal  @map("target_weight") @db.Decimal(5, 2)
@@ -139,7 +152,7 @@ model Reserve {
 }
 
 model ReserveHistory {
-  id             String   @id @default(uuid()) @db.Uuid
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   currency       String   @db.VarChar(3)
   amountChange   Decimal  @map("amount_change") @db.Decimal(20, 2)
   reason         String?  @db.VarChar(100) // 'mint', 'burn', 'rebalance', 'conversion'
@@ -157,7 +170,7 @@ model ReserveHistory {
 }
 
 model OracleRate {
-  id       String  @id @default(uuid()) @db.Uuid
+  id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   currency String  @db.VarChar(3)
   rateUsd  Decimal @map("rate_usd") @db.Decimal(20, 8)
 
@@ -167,6 +180,7 @@ model OracleRate {
   medianRate          Decimal  @map("median_rate") @db.Decimal(20, 8)
   twap24h             Decimal? @map("twap_24h") @db.Decimal(20, 8)
   validatorSignatures Json?    @map("validator_signatures")
+  rawValues           Json?    @map("raw_values")
   timestamp           DateTime @default(now()) @db.Timestamp(6)
 
   @@unique([currency, timestamp], map: "oracle_rates_currency_timestamp_key")
@@ -175,7 +189,7 @@ model OracleRate {
 }
 
 model AcbuRate {
-  id           String   @id @default(uuid()) @db.Uuid
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   acbuUsd      Decimal  @map("acbu_usd") @db.Decimal(20, 8)
   acbuEur      Decimal? @map("acbu_eur") @db.Decimal(20, 8)
   acbuGbp      Decimal? @map("acbu_gbp") @db.Decimal(20, 8)
@@ -198,7 +212,7 @@ model AcbuRate {
 
 /// Metrics for basket weight calculation (GDP, trade, liquidity). External APIs + internal data.
 model BasketMetrics {
-  id             String   @id @default(uuid()) @db.Uuid
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   currency       String   @db.VarChar(3)
   period         String   @db.VarChar(20)
   gdpScore       Decimal? @map("gdp_score") @db.Decimal(10, 4)
@@ -217,7 +231,7 @@ model BasketMetrics {
 /// Current basket composition (currencies + weights). Source of truth for reserve/oracle/rebalancing.
 /// One row per currency per version; weights from stats + DAO, not hardcoded.
 model BasketConfig {
-  id            String   @id @default(uuid()) @db.Uuid
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   effectiveFrom DateTime @map("effective_from") @db.Timestamp(6)
   currency      String   @db.VarChar(3)
   weight        Decimal  @db.Decimal(5, 2)
@@ -232,7 +246,7 @@ model BasketConfig {
 }
 
 model RebalancingEvent {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   type        String    @db.VarChar(20)
   status      String    @default("pending") @db.VarChar(20)
   adjustments Json?
@@ -245,8 +259,53 @@ model RebalancingEvent {
   @@map("rebalancing_events")
 }
 
+/// Weekly weight-drift audit: basket policy target vs actual reserve weights + approval workflow.
+model WeightDriftAudit {
+  id                        String                   @id @default(uuid()) @db.Uuid
+  auditPeriodStart          DateTime                 @map("audit_period_start") @db.Timestamp(6)
+  auditPeriodEnd            DateTime                 @map("audit_period_end") @db.Timestamp(6)
+  totalCurrencies           Int                      @map("total_currencies")
+  currenciesExceedingThreshold Int                   @map("currencies_exceeding_threshold")
+  maxDriftPercent           Decimal                  @map("max_drift_percent") @db.Decimal(10, 4)
+  status                    String                   @default("pending") @db.VarChar(20) // pending | approved | rejected
+  diffReport                Json                     @map("diff_report") @db.JsonB
+  createdBy                 String?                  @map("created_by") @db.Uuid
+  approvedBy                String?                  @map("approved_by") @db.Uuid
+  approvalNotes             String?                  @map("approval_notes") @db.Text
+  createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamp(6)
+  approvedAt                DateTime?                @map("approved_at") @db.Timestamp(6)
+
+  currencies WeightDriftCurrency[]
+
+  @@index([status], map: "idx_weight_drift_audits_status")
+  @@index([createdAt], map: "idx_weight_drift_audits_created_at")
+  @@index([status, createdAt(sort: Desc)], map: "idx_weight_drift_audits_status_created")
+  @@index([auditPeriodStart, auditPeriodEnd], map: "idx_weight_drift_audits_period")
+  @@map("weight_drift_audits")
+}
+
+/// Per-currency drift snapshot for each weight-drift audit.
+model WeightDriftCurrency {
+  id                 String   @id @default(uuid()) @db.Uuid
+  auditId            String   @map("audit_id") @db.Uuid
+  currency           String   @db.VarChar(3)
+  policyWeight       Decimal  @map("policy_weight") @db.Decimal(5, 2)
+  actualWeight       Decimal  @map("actual_weight") @db.Decimal(5, 2)
+  driftPercent       Decimal  @map("drift_percent") @db.Decimal(10, 4)
+  exceedsThreshold   Boolean  @default(false) @map("exceeds_threshold")
+  recommendation     String?  @db.Text
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  audit WeightDriftAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  @@index([auditId], map: "idx_weight_drift_currencies_audit_id")
+  @@index([currency], map: "idx_weight_drift_currencies_currency")
+  @@index([exceedsThreshold], map: "idx_weight_drift_currencies_exceeds")
+  @@map("weight_drift_currencies")
+}
+
 model AuditTrail {
-  id          String   @id @default(uuid()) @db.Uuid
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   eventType   String   @map("event_type") @db.VarChar(50)
   entityType  String?  @map("entity_type") @db.VarChar(50)
   entityId    String?  @map("entity_id") @db.Uuid
@@ -270,8 +329,9 @@ model AuditTrail {
 }
 
 model Webhook {
-  id            String    @id @default(uuid()) @db.Uuid
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   transactionId String?   @map("transaction_id") @db.Uuid
+  eventId       String?   @map("event_id") @db.VarChar(255)
   eventType     String    @map("event_type") @db.VarChar(50)
   payload       Json
   signature     String?   @db.VarChar(255)
@@ -284,12 +344,17 @@ model Webhook {
 
   @@index([transactionId], map: "idx_webhooks_transaction_id")
   @@index([status], map: "idx_webhooks_status")
+  @@index([eventId], map: "idx_webhooks_event_id")
+  // #758: composite index for filtering pending/failed webhooks by event type (hot path in retry queue)
+  @@index([eventType, status], map: "idx_webhooks_event_type_status")
+  // #758: composite index for retry queue worker — find pending webhooks ordered by creation time
+  @@index([status, createdAt], map: "idx_webhooks_status_created_at")
   @@map("webhooks")
 }
 
 /// Deposit USDC or XLM: we run conversion (USDC→XLM) and/or LP/swap in backend; mint is approved once conversion succeeds. Pools/swaps run independently.
 model OnRampSwap {
-  id             String    @id @default(uuid()) @db.Uuid
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId         String    @map("user_id") @db.Uuid
   idempotencyKey String?   @unique @map("idempotency_key") @db.VarChar(255)
   stellarAddress String    @map("stellar_address") @db.VarChar(56)
@@ -313,7 +378,7 @@ model OnRampSwap {
 
 /// Investment withdrawal request: retail (24h + message when ready) or business (calendar or 1% early fee).
 model InvestmentWithdrawalRequest {
-  id             String    @id @default(uuid()) @db.Uuid
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId         String?   @map("user_id") @db.Uuid
   organizationId String?   @map("organization_id") @db.Uuid
   audience       String    @db.VarChar(20) // 'retail' | 'business'
@@ -332,7 +397,7 @@ model InvestmentWithdrawalRequest {
 }
 
 model ApiKey {
-  id             String    @id @default(uuid()) @db.Uuid
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId         String?   @map("user_id") @db.Uuid
   organizationId String?   @map("organization_id") @db.Uuid
   lookupKey      String?   @unique @map("lookup_key") @db.VarChar(24)
@@ -347,6 +412,7 @@ model ApiKey {
   expiresAt      DateTime? @map("expires_at") @db.Timestamp(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
   revokedAt      DateTime? @map("revoked_at") @db.Timestamp(6)
+  refreshTokenFamilyId String? @map("refresh_token_family_id") @db.Uuid
 
   user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization? @relation("OrganizationApiKeys", fields: [organizationId], references: [id], onDelete: Cascade)
@@ -355,11 +421,12 @@ model ApiKey {
   @@index([organizationId], name: "idx_api_keys_organization_id")
   @@index([keyType], name: "idx_api_keys_key_type")
   @@index([keyHash], name: "idx_api_keys_key_hash")
+  @@index([refreshTokenFamilyId], name: "idx_api_keys_refresh_token_family_id")
   @@map("api_keys")
 }
 
 model UserPasskey {
-  id           String   @id @default(uuid()) @db.Uuid
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId       String   @map("user_id") @db.Uuid
   credentialId String   @unique @map("credential_id") @db.VarChar(512)
   publicKey    String   @map("public_key")
@@ -373,7 +440,7 @@ model UserPasskey {
 }
 
 model UserDevice {
-  id                   String   @id @default(uuid()) @db.Uuid
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId               String   @map("user_id") @db.Uuid
   fingerprint          String   @map("fingerprint") @db.VarChar(64)
   userAgent            String?  @map("user_agent") @db.VarChar(512)
@@ -381,9 +448,9 @@ model UserDevice {
   isTrusted            Boolean  @default(false) @map("is_trusted")
   verificationAttempts Int      @default(0) @map("verification_attempts")
   trustedAt            DateTime? @map("trusted_at") @db.Timestamp(6)
-  lastSeenAt           DateTime @default(now()) @map("last_seen_at") @db.Timestamp(6)
-  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  lastSeenAt           DateTime  @default(now()) @map("last_seen_at") @db.Timestamp(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -395,7 +462,7 @@ model UserDevice {
 }
 
 model Guardian {
-  id             String    @id @default(uuid()) @db.Uuid
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId         String    @map("user_id") @db.Uuid
   guardianUserId String?   @map("guardian_user_id") @db.Uuid
   guardianEmail  String?   @map("guardian_email") @db.VarChar(255)
@@ -416,7 +483,7 @@ model Guardian {
 }
 
 model UserContact {
-  id               String   @id @default(uuid()) @db.Uuid
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId           String   @map("user_id") @db.Uuid
   contactUserId    String?  @map("contact_user_id") @db.Uuid
   contactUsername  String?  @map("contact_username") @db.VarChar(64)
@@ -433,7 +500,7 @@ model UserContact {
 }
 
 model OtpChallenge {
-  id        String    @id @default(uuid()) @db.Uuid
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String    @map("user_id") @db.Uuid
   codeHash  String    @map("code_hash") @db.VarChar(255)
   channel   String    @db.VarChar(20) // 'sms' | 'email'
@@ -449,7 +516,7 @@ model OtpChallenge {
 }
 
 model KycApplication {
-  id                      String    @id @default(uuid()) @db.Uuid
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId                  String    @map("user_id") @db.Uuid
   countryCode             String    @map("country_code") @db.VarChar(3)
   status                  String    @db.VarChar(20)
@@ -477,7 +544,7 @@ model KycApplication {
 }
 
 model KycDocument {
-  id            String   @id @default(uuid()) @db.Uuid
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   applicationId String   @map("application_id") @db.Uuid
   kind          String   @db.VarChar(20)
   storageRef    String   @map("storage_ref") @db.VarChar(512)
@@ -494,7 +561,7 @@ model KycDocument {
 }
 
 model KycValidator {
-  id                  String    @id @default(uuid()) @db.Uuid
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId              String    @map("user_id") @db.Uuid
   countryCode         String    @map("country_code") @db.VarChar(3)
   status              String    @db.VarChar(20)
@@ -516,7 +583,7 @@ model KycValidator {
 }
 
 model KycValidation {
-  id            String   @id @default(uuid()) @db.Uuid
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   applicationId String   @map("application_id") @db.Uuid
   validatorId   String   @map("validator_id") @db.Uuid
   result        String   @db.VarChar(20) // pending, approve, reject
@@ -532,7 +599,7 @@ model KycValidation {
 }
 
 model KycValidatorReward {
-  id            String   @id @default(uuid()) @db.Uuid
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   validatorId   String   @map("validator_id") @db.Uuid
   applicationId String   @map("application_id") @db.Uuid
   acbuAmount    Decimal  @map("acbu_amount") @db.Decimal(20, 8)
@@ -550,7 +617,7 @@ model KycValidatorReward {
 }
 
 model SalaryBatch {
-  id             String        @id @default(uuid()) @db.Uuid
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String?       @map("organization_id") @db.Uuid
   userId         String        @map("user_id") @db.Uuid
   status         String        @default("pending") @db.VarChar(20)
@@ -571,7 +638,7 @@ model SalaryBatch {
 }
 
 model SalaryItem {
-  id               String      @id @default(uuid()) @db.Uuid
+  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   batchId          String      @map("batch_id") @db.Uuid
   recipientId      String?     @map("recipient_id") @db.Uuid
   recipientAddress String      @map("recipient_address") @db.VarChar(56)
@@ -590,7 +657,7 @@ model SalaryItem {
 }
 
 model SalarySchedule {
-  id             String        @id @default(uuid()) @db.Uuid
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String?       @map("organization_id") @db.Uuid
   userId         String        @map("user_id") @db.Uuid
   name           String        @db.VarChar(100)
@@ -600,6 +667,7 @@ model SalarySchedule {
   status         String        @default("active") @db.VarChar(20)
   lastRunAt      DateTime?     @map("last_run_at") @db.Timestamp(6)
   nextRunAt      DateTime?     @map("next_run_at") @db.Timestamp(6)
+  lockedAt       DateTime?     @map("locked_at") @db.Timestamp(6)
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamp(6)
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
@@ -608,11 +676,12 @@ model SalarySchedule {
   @@index([organizationId], map: "idx_salary_schedule_org_id")
   @@index([status], map: "idx_salary_schedule_status")
   @@index([nextRunAt], map: "idx_salary_schedule_next_run")
+  @@index([status, nextRunAt, id], map: "idx_salary_schedule_status_next_run_id")
   @@map("salary_schedules")
 }
 
 model BulkTransferJob {
-  id             String        @id @default(uuid()) @db.Uuid
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String        @map("organization_id") @db.Uuid
   status         String        @default("pending") @db.VarChar(20)
   totalRows      Int           @map("total_rows")
@@ -632,7 +701,7 @@ model BulkTransferJob {
 }
 
 model RecoveryAttempt {
-  id         String   @id @default(uuid()) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId     String   @map("user_id") @db.Uuid
   identifier String   @db.VarChar(255)
   ip         String?  @db.VarChar(45)
@@ -649,7 +718,7 @@ model RecoveryAttempt {
 }
 
 model InvestmentStrategy {
-  id                   String   @id @default(uuid()) @db.Uuid
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                 String   @unique @db.VarChar(100)
   description          String?  @db.Text
   status               String   @default("active") @db.VarChar(20) // 'active' | 'paused' | 'deprecated'
@@ -666,7 +735,7 @@ model InvestmentStrategy {
 }
 
 model RefreshToken {
-  id              String    @id @default(uuid()) @db.Uuid
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId          String    @map("user_id") @db.Uuid
   tokenFamilyId   String    @map("token_family_id") @db.Uuid
   tokenHash       String    @unique @map("token_hash") @db.VarChar(255)
@@ -684,18 +753,3 @@ model RefreshToken {
   @@index([expiresAt], map: "idx_refresh_tokens_expires_at")
   @@map("refresh_tokens")
 }
-
-model PrivacyConsent {
-  id               String   @id @default(uuid()) @db.Uuid
-  addressHash      String   @unique @map("address_hash") @db.VarChar(64)
-  analyticsOptout  Boolean  @default(false) @map("analytics_optout")
-  marketingOptout  Boolean  @default(false) @map("marketing_optout")
-  saleOptout       Boolean  @default(false) @map("sale_optout")
-  biometricConsent Boolean  @default(false) @map("biometric_consent")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
-
-  @@index([addressHash], map: "idx_privacy_consents_address_hash")
-  @@map("privacy_consents")
-}
-

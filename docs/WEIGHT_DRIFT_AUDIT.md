@@ -103,7 +103,7 @@ async getAudit(auditId): Promise<WeightDriftReport>
 1. Calculate drift report using `WeightDriftAuditService.calculateDriftReport()`
 2. Create audit record in DB with "pending" status
 3. Generate detailed email report with per-currency breakdown
-4. Send email to admin distribution list (env: `ADMIN_NOTIFICATION_EMAIL`)
+4. Send email to admin distribution list (env: `NOTIFICATION_ALERT_EMAIL`)
 5. Log audit creation with all details
 
 **Email Content:**
@@ -229,7 +229,7 @@ WEIGHT_DRIFT_AUDIT_INTERVAL_DAYS=7          # Default: 7 days (weekly)
 WEIGHT_DRIFT_AUDIT_RUN_ON_STARTUP=false     # Run audit immediately on app startup
 
 # Admin notifications
-ADMIN_NOTIFICATION_EMAIL=ops@example.com    # Comma-separated list of admin emails
+NOTIFICATION_ALERT_EMAIL=ops@example.com    # Comma-separated list of admin emails
 ```
 
 ## Audit Trail Integration
@@ -289,7 +289,7 @@ All entries include:
 Run the test suite:
 
 ```bash
-npm test -- tests/weightDriftAudit.test.ts
+pnpm test -- tests/weightDriftAudit.test.ts
 ```
 
 **Test Coverage:**
@@ -309,7 +309,7 @@ npm test -- tests/weightDriftAudit.test.ts
 
 2. **Set environment variables:**
    ```bash
-   ADMIN_NOTIFICATION_EMAIL=ops-team@acbu.com
+   NOTIFICATION_ALERT_EMAIL=ops-team@acbu.com
    WEIGHT_DRIFT_AUDIT_RUN_ON_STARTUP=false
    ```
 
@@ -346,7 +346,7 @@ npm test -- tests/weightDriftAudit.test.ts
 - Check RabbitMQ and PostgreSQL connectivity
 
 ### Email not sending
-- Verify `ADMIN_NOTIFICATION_EMAIL` is set
+- Verify `NOTIFICATION_ALERT_EMAIL` is set
 - Check email service credentials
 - Review `sendEmail` error logs
 

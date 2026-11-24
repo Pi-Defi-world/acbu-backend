@@ -24,17 +24,12 @@ export class PaystackClient implements FintechProvider {
   private fxFallback: FintechProvider | null;
   private breaker: CircuitBreaker;
 
-  constructor(options?: {
-    secretKey?: string;
-    baseUrl?: string;
-    fxFallback?: FintechProvider;
-  }) {
+  constructor(options?: { secretKey?: string; baseUrl?: string; fxFallback?: FintechProvider }) {
     const paystackConfig = (config as { paystack?: PaystackConfig }).paystack;
     const secretKey = options?.secretKey ?? paystackConfig?.secretKey ?? "";
-    const baseUrl =
-      options?.baseUrl ?? paystackConfig?.baseUrl ?? "https://api.paystack.co";
+    const baseUrl = options?.baseUrl ?? paystackConfig?.baseUrl ?? "https://api.paystack.co";
     this.fxFallback = options?.fxFallback ?? null;
-    
+
     this.client = createHttpClient({
       baseURL: baseUrl,
       headers: {
@@ -72,10 +67,8 @@ export class PaystackClient implements FintechProvider {
   async getBalance(currency: string): Promise<number> {
     try {
       // Execute through the circuit breaker wrapper
-      const response = await this.requestWrapper(() => 
-        this.client.get("/balance")
-      );
-      
+      const response = await this.requestWrapper(() => this.client.get("/balance"));
+
       const data = response.data?.data;
       if (!data) throw new Error("Invalid balance response");
       // Paystack returns balance in subunits (kobo); ledger_balance or balance
@@ -115,13 +108,12 @@ export class PaystackClient implements FintechProvider {
           recipient: recipient.bankCode,
           reason: "ACBU withdrawal",
           reference: `acbu-${Date.now()}`,
-        })
+        }),
       );
-      
+
       const data = response.data?.data;
       return {
-        transactionId:
-          data?.transfer_code ?? data?.id ?? String(response.data?.data?.id),
+        transactionId: data?.transfer_code ?? data?.id ?? String(response.data?.data?.id),
         status: data?.status ?? "pending",
       };
     } catch (error) {

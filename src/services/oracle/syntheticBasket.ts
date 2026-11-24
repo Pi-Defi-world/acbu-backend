@@ -77,9 +77,7 @@ export function composeOneAcbuFromWeightsAndUsdRates(
   usdPerLocal: Record<string, number>,
   usdNotionalPerAcbu = 1,
 ): SyntheticBasketOneAcbu | null {
-  const priced = basket.filter(
-    (b) => b.weight > 0 && (usdPerLocal[b.currency] ?? 0) > 0,
-  );
+  const priced = basket.filter((b) => b.weight > 0 && (usdPerLocal[b.currency] ?? 0) > 0);
   if (priced.length === 0) {
     return null;
   }
@@ -121,14 +119,10 @@ export async function computeSyntheticBasketOneAcbuForBasket(
       where: { currency },
       orderBy: { timestamp: "desc" },
     });
-    const r = latest?.medianRate.toNumber() ?? 0;
+    const r = latest?.medianRate != null ? Number(latest.medianRate.toString()) : 0;
     if (r > 0) {
       usdPerLocal[currency] = r;
     }
   }
-  return composeOneAcbuFromWeightsAndUsdRates(
-    basket,
-    usdPerLocal,
-    usdNotionalPerAcbu,
-  );
+  return composeOneAcbuFromWeightsAndUsdRates(basket, usdPerLocal, usdNotionalPerAcbu);
 }

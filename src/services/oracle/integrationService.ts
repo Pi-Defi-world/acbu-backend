@@ -21,6 +21,42 @@ import { computeSyntheticBasketOneAcbuForBasket } from "./syntheticBasket";
 const OUTLIER_DEVIATION = 0.03; // 3%
 const ORACLE_RATE_DECIMALS = 1e7;
 
+/** Result of checking a rate move against the per-update deviation limit. */
+export interface RateDeviationAssessment {
+  /** Relative move vs. the previous stored rate, or null when there is none. */
+  deviation: number | null;
+  /** Whether the move exceeds the limit and therefore needs review. */
+  reviewRequired: boolean;
+}
+
+/**
+ * Assess a computed rate against the per-update deviation limit
+ * (`ORACLE_MAX_DEVIATION_PER_UPDATE`, 5% by default).
+ *
+ * W10-DOC-014: a move larger than the limit is an *emergency* update. It is not
+ * rejected outright and it is not silently applied either — it must carry the
+ * review flag, so the same 5% rule governs the normal validator path and the
+ * emergency/admin path. On-chain the contract requires N-of-M emergency votes
+ * before an above-threshold write is accepted (`AdminDeviationTooLarge`
+ * otherwise); in the backend the flag is persisted on the rate row and logged.
+ *
+ * The assessment is made against the raw rate move, before any circuit-breaker
+ * smoothing, so an operator can see the size of the market move that triggered
+ * the emergency rather than only the smoothed value that ends up stored.
+ */
+export function assessRateDeviation(
+  previousRate: number | null | undefined,
+  newRate: number,
+  maxDeviation: number,
+): RateDeviationAssessment {
+  if (previousRate == null || !Number.isFinite(previousRate) || previousRate <= 0) {
+    return { deviation: null, reviewRequired: false };
+  }
+
+  const deviation = Math.abs(newRate - previousRate) / previousRate;
+  return { deviation, reviewRequired: deviation > maxDeviation };
+}
+
 /** Weights for 25/25/25/25 oracle aggregation (central bank, fintech, forex, world bank) */
 const LAYER_WEIGHT_CB = 0.25;
 const LAYER_WEIGHT_FINTECH = 0.25;
@@ -31,9 +67,7 @@ function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2
-    ? sorted[mid]!
-    : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 function excludeOutliers(values: number[], threshold: number): number[] {
@@ -88,44 +122,27 @@ export async function fetchAndStoreRates(): Promise<void> {
       forexRate = await fetchForexRateUsd(currency);
       worldBankRate = await fetchWorldBankRate(currency);
 
-      const sources = [
-        centralBankRate,
-        fintechRate,
-        forexRate,
-        worldBankRate,
-      ].filter((r): r is number => r != null && r > 0);
+      const sources = [centralBankRate, fintechRate, forexRate, worldBankRate].filter(
+        (r): r is number => r != null && r > 0,
+      );
       if (sources.length === 0) {
         logger.warn("Oracle: no rate for currency", { currency });
         continue;
       }
 
-      let composite = compositeRate(
-        centralBankRate,
-        fintechRate,
-        forexRate,
-        worldBankRate,
-      );
+      let composite = compositeRate(centralBankRate, fintechRate, forexRate, worldBankRate);
 
-      const withOutliers = [
-        centralBankRate,
-        fintechRate,
-        forexRate,
-        worldBankRate,
-      ].filter((r): r is number => r != null && r > 0);
+      const withOutliers = [centralBankRate, fintechRate, forexRate, worldBankRate].filter(
+        (r): r is number => r != null && r > 0,
+      );
       const filtered = excludeOutliers(withOutliers, OUTLIER_DEVIATION);
       const inlierSet = new Set(filtered);
       if (filtered.length < withOutliers.length && filtered.length > 0) {
         composite = compositeRate(
-          centralBankRate != null && inlierSet.has(centralBankRate)
-            ? centralBankRate
-            : null,
-          fintechRate != null && inlierSet.has(fintechRate)
-            ? fintechRate
-            : null,
+          centralBankRate != null && inlierSet.has(centralBankRate) ? centralBankRate : null,
+          fintechRate != null && inlierSet.has(fintechRate) ? fintechRate : null,
           forexRate != null && inlierSet.has(forexRate) ? forexRate : null,
-          worldBankRate != null && inlierSet.has(worldBankRate)
-            ? worldBankRate
-            : null,
+          worldBankRate != null && inlierSet.has(worldBankRate) ? worldBankRate : null,
         );
       }
 
@@ -133,47 +150,54 @@ export async function fetchAndStoreRates(): Promise<void> {
         where: { currency },
         orderBy: { timestamp: "desc" },
       });
-      const prevRateNum = prevRate?.medianRate.toNumber();
+      const prevRateNum =
+        prevRate?.medianRate != null ? Number(prevRate.medianRate.toString()) : undefined;
       const maxDeviation = config.oracle.maxDeviationPerUpdate ?? 0.05;
       const circuitThreshold = config.oracle.circuitBreakerThreshold ?? 0.1;
 
-      if (prevRateNum != null && prevRateNum > 0) {
-        const deviation = Math.abs(composite - prevRateNum) / prevRateNum;
-        if (deviation > circuitThreshold) {
-          const avg48h = await getAverageRateOverHours(currency, 48);
-          if (avg48h != null) {
-            logger.warn(
-              "Oracle: circuit breaker triggered, using 48h average",
-              {
-                currency,
-                composite,
-                prevRateNum,
-                avg48h,
-              },
-            );
-            composite = avg48h;
-          }
-        } else if (deviation > maxDeviation) {
-          logger.warn("Oracle: deviation exceeds max, consider manual review", {
+      const { deviation: deviationFromPreviousRate, reviewRequired } = assessRateDeviation(
+        prevRateNum,
+        composite,
+        maxDeviation,
+      );
+
+      if (deviationFromPreviousRate != null && deviationFromPreviousRate > circuitThreshold) {
+        const avg48h = await getAverageRateOverHours(currency, 48);
+        if (avg48h != null) {
+          logger.warn("Oracle: circuit breaker triggered, using 48h average", {
             currency,
             composite,
             prevRateNum,
-            deviation,
+            avg48h,
           });
+          composite = avg48h;
         }
+      }
+
+      if (reviewRequired) {
+        // W10-DOC-014: emergency updates set the review flag instead of being
+        // rejected (normal path) or silently applied (emergency path).
+        logger.warn("Oracle: emergency rate update flagged for review", {
+          currency,
+          composite,
+          prevRateNum,
+          deviation: deviationFromPreviousRate,
+          reviewRequired: true,
+        });
       }
 
       await prisma.oracleRate.create({
         data: {
           currency,
           rateUsd: new Decimal(composite),
-          centralBankRate:
-            centralBankRate != null ? new Decimal(centralBankRate) : null,
+          centralBankRate: centralBankRate != null ? new Decimal(centralBankRate) : null,
           fintechRate: fintechRate != null ? new Decimal(fintechRate) : null,
           forexRate: forexRate != null ? new Decimal(forexRate) : null,
           medianRate: new Decimal(composite),
           rawValues: {
             worldBankRate: worldBankRate != null ? worldBankRate : null,
+            deviationFromPreviousRate,
+            reviewRequired,
           },
         },
       });
@@ -185,12 +209,7 @@ export async function fetchAndStoreRates(): Promise<void> {
           if (!sourceAccount) throw new Error("No source account available");
 
           const rate7 = Math.round(composite * ORACLE_RATE_DECIMALS).toString();
-          const sourcesForContract = [
-            centralBankRate,
-            fintechRate,
-            forexRate,
-            worldBankRate,
-          ]
+          const sourcesForContract = [centralBankRate, fintechRate, forexRate, worldBankRate]
             .filter((r): r is number => r != null && r > 0)
             .map((r) => Math.round(r * ORACLE_RATE_DECIMALS).toString());
 
@@ -208,7 +227,7 @@ export async function fetchAndStoreRates(): Promise<void> {
             sources: sourcesForContract,
             timestamp: timestampUnix,
           });
-          logger.info("Oracle: rate updated on-chain", {
+          logger.info("Oracle: validator rate submitted on-chain", {
             currency,
             rate: rate7,
           });
@@ -227,9 +246,7 @@ export async function fetchAndStoreRates(): Promise<void> {
   // 1 ACBU = V USD notional (V=1) split by basket weights; local per leg q_c = (V·f_c)/r_c, f_c = w_c/W.
   const basketOne = await computeSyntheticBasketOneAcbuForBasket(basket, 1);
   if (!basketOne || basketOne.legs.length === 0) {
-    logger.error(
-      "Oracle: skipping AcbuRate — no basket leg has a fresh oracle USD rate",
-    );
+    logger.error("Oracle: skipping AcbuRate — no basket leg has a fresh oracle USD rate");
     return;
   }
 
@@ -241,8 +258,7 @@ export async function fetchAndStoreRates(): Promise<void> {
   });
   const change24hUsd =
     prev24h && acbuUsd > 0
-      ? ((acbuUsd - prev24h.acbuUsd.toNumber()) / prev24h.acbuUsd.toNumber()) *
-        100
+      ? ((acbuUsd - prev24h.acbuUsd.toNumber()) / prev24h.acbuUsd.toNumber()) * 100
       : null;
 
   const acbuPerCurrency: Record<string, number> = {};
@@ -255,26 +271,16 @@ export async function fetchAndStoreRates(): Promise<void> {
     change24hUsd: change24hUsd != null ? new Decimal(change24hUsd) : null,
     acbuEur: null,
     acbuGbp: null,
-    acbuNgn:
-      acbuPerCurrency.NGN != null ? new Decimal(acbuPerCurrency.NGN) : null,
-    acbuKes:
-      acbuPerCurrency.KES != null ? new Decimal(acbuPerCurrency.KES) : null,
-    acbuZar:
-      acbuPerCurrency.ZAR != null ? new Decimal(acbuPerCurrency.ZAR) : null,
-    acbuRwf:
-      acbuPerCurrency.RWF != null ? new Decimal(acbuPerCurrency.RWF) : null,
-    acbuGhs:
-      acbuPerCurrency.GHS != null ? new Decimal(acbuPerCurrency.GHS) : null,
-    acbuEgp:
-      acbuPerCurrency.EGP != null ? new Decimal(acbuPerCurrency.EGP) : null,
-    acbuMad:
-      acbuPerCurrency.MAD != null ? new Decimal(acbuPerCurrency.MAD) : null,
-    acbuTzs:
-      acbuPerCurrency.TZS != null ? new Decimal(acbuPerCurrency.TZS) : null,
-    acbuUgx:
-      acbuPerCurrency.UGX != null ? new Decimal(acbuPerCurrency.UGX) : null,
-    acbuXof:
-      acbuPerCurrency.XOF != null ? new Decimal(acbuPerCurrency.XOF) : null,
+    acbuNgn: acbuPerCurrency.NGN != null ? new Decimal(acbuPerCurrency.NGN) : null,
+    acbuKes: acbuPerCurrency.KES != null ? new Decimal(acbuPerCurrency.KES) : null,
+    acbuZar: acbuPerCurrency.ZAR != null ? new Decimal(acbuPerCurrency.ZAR) : null,
+    acbuRwf: acbuPerCurrency.RWF != null ? new Decimal(acbuPerCurrency.RWF) : null,
+    acbuGhs: acbuPerCurrency.GHS != null ? new Decimal(acbuPerCurrency.GHS) : null,
+    acbuEgp: acbuPerCurrency.EGP != null ? new Decimal(acbuPerCurrency.EGP) : null,
+    acbuMad: acbuPerCurrency.MAD != null ? new Decimal(acbuPerCurrency.MAD) : null,
+    acbuTzs: acbuPerCurrency.TZS != null ? new Decimal(acbuPerCurrency.TZS) : null,
+    acbuUgx: acbuPerCurrency.UGX != null ? new Decimal(acbuPerCurrency.UGX) : null,
+    acbuXof: acbuPerCurrency.XOF != null ? new Decimal(acbuPerCurrency.XOF) : null,
   };
 
   await prisma.acbuRate.create({
@@ -298,9 +304,6 @@ export async function getAverageRateOverHours(
     orderBy: { timestamp: "asc" },
   });
   if (rows.length === 0) return null;
-  const sum = rows.reduce(
-    (a: number, r: (typeof rows)[number]) => a + r.medianRate.toNumber(),
-    0,
-  );
+  const sum = rows.reduce((a: number, r: (typeof rows)[number]) => a + r.medianRate.toNumber(), 0);
   return sum / rows.length;
 }

@@ -54,10 +54,7 @@ function createSmtpTransport(): Transporter {
   return transport;
 }
 
-async function closeSmtpTransport(
-  transport: Transporter,
-  context: string,
-): Promise<void> {
+async function closeSmtpTransport(transport: Transporter, context: string): Promise<void> {
   try {
     if (!transport.isIdle()) {
       logger.warn("SMTP transport not idle before close", { context });
@@ -97,9 +94,7 @@ export function resetSmtpPoolMetrics(): void {
   poolMetrics.leakedTransportWarnings = 0;
 }
 
-export async function sendSmtpEmailBatch(
-  messages: SmtpEmailMessage[],
-): Promise<void> {
+export async function sendSmtpEmailBatch(messages: SmtpEmailMessage[]): Promise<void> {
   if (messages.length === 0) {
     return;
   }
@@ -124,10 +119,6 @@ export async function sendSmtpEmailBatch(
   }
 }
 
-export async function sendSmtpEmail(
-  to: string,
-  subject: string,
-  body: string,
-): Promise<void> {
+export async function sendSmtpEmail(to: string, subject: string, body: string): Promise<void> {
   await sendSmtpEmailBatch([{ to, subject, body }]);
 }

@@ -47,14 +47,10 @@ export interface IdempotencyRecord<T = unknown> {
 export async function ensureIdempotencyIndex(): Promise<void> {
   try {
     const db = getMongoDB();
-    await db.collection(COLLECTION).createIndex(
-      { expiresAt: 1 },
-      { expireAfterSeconds: 0, background: true },
-    );
-    await db.collection(COLLECTION).createIndex(
-      { key: 1 },
-      { unique: true, background: true },
-    );
+    await db
+      .collection(COLLECTION)
+      .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, background: true });
+    await db.collection(COLLECTION).createIndex({ key: 1 }, { unique: true, background: true });
   } catch (err) {
     logger.warn("Failed to create idempotency indexes", { err });
   }

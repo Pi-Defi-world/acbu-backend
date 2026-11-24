@@ -1,0 +1,36 @@
+-- Migration: switch PK default from uuid() (UUIDv4) to gen_random_uuid() (still UUIDv4 at DB level)
+--
+-- Context
+-- -------
+-- Prisma's @default(uuid()) emits `DEFAULT gen_random_uuid()` in PostgreSQL DDL.
+-- Switching to @default(dbgenerated("gen_random_uuid()")) produces identical DDL —
+-- the change is semantic: Prisma no longer synthesises a UUID in application code
+-- before the INSERT, delegating default generation entirely to PostgreSQL.
+--
+-- At runtime, the app now always supplies `id: generateId()` (UUIDv7) from
+-- src/utils/idGenerator.ts, so the DB-level default acts only as a safety net
+-- for rows inserted outside the application (e.g. manual psql sessions, seed
+-- scripts, or future integrations that do not yet call generateId()).
+--
+-- Why UUIDv7 for application-supplied IDs?
+-- -----------------------------------------
+-- UUIDv4 is fully random, so every INSERT lands at a random position in the
+-- B-tree primary-key index, causing frequent page splits and leaving pages
+-- ~50% full on average (index fragmentation).  UUIDv7 embeds a millisecond
+-- Unix timestamp in the 48 most-significant bits, making new IDs monotonically
+-- increasing and keeping new rows near the end of the index — eliminating
+-- random page splits and matching the insert-locality of a BIGSERIAL sequence
+-- while remaining globally unique.
+--
+-- DDL changes
+-- -----------
+-- No DDL change is required for existing tables: the underlying column type
+-- (uuid DEFAULT gen_random_uuid()) is unchanged.  This file documents the
+-- intent and serves as the Prisma migration record.
+--
+-- If you are applying this to a fresh database via `prisma migrate deploy`,
+-- the migration is a no-op at the SQL level and will succeed without error.
+
+-- No-op: column type and DB default remain `uuid DEFAULT gen_random_uuid()`.
+-- Application now supplies UUIDv7 via generateId() for all new primary keys.
+SELECT 1;

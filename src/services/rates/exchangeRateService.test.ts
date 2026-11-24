@@ -38,9 +38,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   invalidateExchangeRateCache();
   jest.useRealTimers();
-  jest.spyOn(axios, "isAxiosError").mockImplementation(
-    (error: unknown): error is AxiosError => error instanceof AxiosError,
-  );
+  jest
+    .spyOn(axios, "isAxiosError")
+    .mockImplementation((error: unknown): error is AxiosError => error instanceof AxiosError);
 });
 
 describe("resolveExchangeRateCacheTtlMs", () => {
@@ -89,10 +89,7 @@ describe("fetchExchangeRateUsd", () => {
       data: { result: "success", conversion_rate: 0.0012 },
     });
 
-    const [a, b] = await Promise.all([
-      fetchExchangeRateUsd("GHS"),
-      fetchExchangeRateUsd("GHS"),
-    ]);
+    const [a, b] = await Promise.all([fetchExchangeRateUsd("GHS"), fetchExchangeRateUsd("GHS")]);
 
     expect(mockedAxios.get).toHaveBeenCalledTimes(1);
     expect(a).toBe(0.0012);
@@ -102,11 +99,9 @@ describe("fetchExchangeRateUsd", () => {
   it("re-fetches after the negative cache expires", async () => {
     jest.useFakeTimers();
 
-    mockedAxios.get
-      .mockRejectedValueOnce(axiosError(503))
-      .mockResolvedValueOnce({
-        data: { result: "success", conversion_rate: 0.0025 },
-      });
+    mockedAxios.get.mockRejectedValueOnce(axiosError(503)).mockResolvedValueOnce({
+      data: { result: "success", conversion_rate: 0.0025 },
+    });
 
     await fetchExchangeRateUsd("ZAR");
     expect(mockedAxios.get).toHaveBeenCalledTimes(1);
@@ -127,6 +122,15 @@ describe("fetchExchangeRateUsd", () => {
 
     expect(mockedAxios.get).toHaveBeenCalledTimes(1);
     expect(getCachedExchangeRate("UGX")).toBeNull();
+  });
+
+  it("rejects out-of-range upstream rates as unsafe", async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: { result: "success", conversion_rate: 1_000_000_000 },
+    });
+
+    await expect(fetchExchangeRateUsd("NGN")).resolves.toBeNull();
+    expect(getCachedExchangeRate("NGN")).toBeNull();
   });
 });
 

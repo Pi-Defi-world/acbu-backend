@@ -1,7 +1,7 @@
 process.env.DATABASE_URL = "postgresql://test:test@localhost/test";
 process.env.MONGODB_URI = "mongodb://localhost/test";
 process.env.RABBITMQ_URL = "amqp://localhost";
-process.env.JWT_SECRET = "test-secret";
+process.env.JWT_SECRET = "test-secret-min-32-characters-long";
 
 jest.mock("../src/config/database", () => ({
   prisma: {

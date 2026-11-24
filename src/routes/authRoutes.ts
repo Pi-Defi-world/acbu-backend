@@ -15,11 +15,8 @@ import {
 } from "../controllers/authController";
 import { validateApiKey } from "../middleware/auth";
 import type { AuthRequest } from "../middleware/auth";
-import {
-  authRateLimiter,
-  apiKeyRateLimiter,
-  twoFaRateLimiter,
-} from "../middleware/rateLimiter";
+import { requireAdminKeyType } from "../middleware/segmentGuard";
+import { authRateLimiter, apiKeyRateLimiter, twoFaRateLimiter } from "../middleware/rateLimiter";
 
 /**
  * @swagger
@@ -122,12 +119,9 @@ import {
  *                       format: uuid
  *                     stellar_address:
  *                       type: string
- *                     wallet_created:
+ *                     wallet_enrollment_required:
  *                       type: boolean
- *                     passphrase:
- *                       type: string
- *                     encryption_method_required:
- *                       type: boolean
+ *                       description: True when the client must generate and enroll its own keypair
  *                 - type: object
  *                   description: 2FA required
  *                   properties:
@@ -232,11 +226,7 @@ function normalizeRateLimitIdentifier(value: string): string {
   return trimmed.toLowerCase().replace(/\s/g, "");
 }
 
-function normalizeAuthRateLimitBody(
-  req: AuthRequest,
-  _res: Response,
-  next: NextFunction,
-): void {
+function normalizeAuthRateLimitBody(req: AuthRequest, _res: Response, next: NextFunction): void {
   const body = (req.body ?? {}) as Record<string, unknown>;
 
   if (typeof body.identifier === "string") {
@@ -253,13 +243,7 @@ function normalizeAuthRateLimitBody(
 router.post("/signup", authRateLimiter, postSignup);
 // #269: twoFaRateLimiter adds per-user/IP keyed limiting on top of the IP-only authRateLimiter
 // #391: normalize identifier/email before the per-user limiter so case variants share one budget
-router.post(
-  "/signin",
-  authRateLimiter,
-  normalizeAuthRateLimitBody,
-  twoFaRateLimiter,
-  postSignin,
-);
+router.post("/signin", authRateLimiter, normalizeAuthRateLimitBody, twoFaRateLimiter, postSignin);
 router.post(
   "/signin/verify-2fa",
   authRateLimiter,
@@ -272,11 +256,27 @@ router.post(
 router.post("/signout", validateApiKey, apiKeyRateLimiter, postSignout);
 
 // Privileged key lifecycle requires authenticated user + MFA challenge verification.
+// W10-BE-005: key management (listing/revoking admin material) additionally requires an
+// admin-capable key type, so an admin-tier *account* session alone cannot enumerate or
+// revoke privileged keys. Issuance endpoints keep the tier + MFA path (no key-type guard)
+// because they are how the first admin/break-glass key is bootstrapped from a USER_KEY.
 router.post("/admin/challenge", validateApiKey, apiKeyRateLimiter, postAdminMfaChallenge);
 router.post("/keys/admin", validateApiKey, apiKeyRateLimiter, postIssueAdminKey);
 router.post("/keys/break-glass", validateApiKey, apiKeyRateLimiter, postIssueBreakGlassKey);
-router.get("/keys/privileged", validateApiKey, apiKeyRateLimiter, getPrivilegedKeys);
-router.post("/keys/:id/revoke", validateApiKey, apiKeyRateLimiter, postRevokePrivilegedKey);
+router.get(
+  "/keys/privileged",
+  validateApiKey,
+  requireAdminKeyType(),
+  apiKeyRateLimiter,
+  getPrivilegedKeys,
+);
+router.post(
+  "/keys/:id/revoke",
+  validateApiKey,
+  requireAdminKeyType(),
+  apiKeyRateLimiter,
+  postRevokePrivilegedKey,
+);
 
 // Refresh token endpoints
 router.post("/refresh-token", authRateLimiter, postRefreshAccessToken);

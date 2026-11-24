@@ -14,11 +14,7 @@ import { Request, Response, NextFunction } from "express";
  *  - echoed back in the `X-Correlation-ID` response header so callers can
  *    correlate their own logs with server-side traces
  */
-export function correlationMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
+export function correlationMiddleware(req: Request, res: Response, next: NextFunction): void {
   const id =
     (req.headers["x-correlation-id"] as string | undefined) ||
     (req.headers["x-request-id"] as string | undefined) ||

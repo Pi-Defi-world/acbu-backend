@@ -8,6 +8,7 @@ import { basketService } from "../basket";
 import { fetchGdpUsd, fetchPopulation } from "./worldBankClient";
 import { BASKET_CURRENCIES, roundWeightsToExactBasisPoints } from "../../config/basket";
 import { Decimal } from "@prisma/client/runtime/library";
+import { decimalToNumber } from "../../utils/decimalUtils";
 
 const GDP_WEIGHT = 0.4;
 const TRADE_WEIGHT = 0.3;
@@ -28,9 +29,7 @@ function normalizeToScores(values: Map<string, number>): Map<string, number> {
  * Fetch trade volume per currency from platform (burn transactions by localCurrency).
  * Returns map of currency -> volume (e.g. sum of localAmount or acbuAmountBurned).
  */
-async function getTradeVolumeByCurrency(
-  periodDays: number,
-): Promise<Map<string, number>> {
+async function getTradeVolumeByCurrency(periodDays: number): Promise<Map<string, number>> {
   const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
   const burns = await prisma.transaction.findMany({
     where: {
@@ -49,8 +48,7 @@ async function getTradeVolumeByCurrency(
   for (const b of burns) {
     const cc = b.localCurrency ?? "";
     if (!byCurrency.has(cc)) continue;
-    const amount =
-      b.acbuAmountBurned?.toNumber() ?? b.localAmount?.toNumber() ?? 0;
+    const amount = b.acbuAmountBurned?.toNumber() ?? b.localAmount?.toNumber() ?? 0;
     byCurrency.set(cc, (byCurrency.get(cc) ?? 0) + amount);
   }
   return byCurrency;
@@ -60,9 +58,7 @@ async function getTradeVolumeByCurrency(
  * Ingest metrics for a period (e.g. "2025-Q1" or "monthly-202501"), store in BasketMetrics,
  * then compute proposed weights and create BasketConfig rows with status 'proposed'.
  */
-export async function ingestMetricsAndProposeWeights(
-  period: string,
-): Promise<void> {
+export async function ingestMetricsAndProposeWeights(period: string): Promise<void> {
   const periodDays = 90;
   let currencies = await basketService.getCurrencies();
   if (currencies.length === 0) {

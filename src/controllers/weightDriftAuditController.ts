@@ -54,7 +54,7 @@ export const listWeightDriftAudits = async (
     const { status, limit = 20, offset = 0 } = req.query;
 
     const result = await weightDriftAuditService.listAudits(
-      (status as "pending" | "approved" | "rejected" | undefined),
+      status as "pending" | "approved" | "rejected" | undefined,
       Number(limit),
       Number(offset),
     );
@@ -194,11 +194,7 @@ export const approveWeightDriftAudit = async (
 
     const adminId = (req as any).adminId || "system";
 
-    const audit = await weightDriftAuditService.approveAudit(
-      id,
-      adminId,
-      approvalNotes,
-    );
+    const audit = await weightDriftAuditService.approveAudit(id, adminId, approvalNotes);
 
     logger.info("Weight drift audit approved", {
       auditId: id,
@@ -261,20 +257,12 @@ export const rejectWeightDriftAudit = async (
     const { reason } = req.body;
 
     if (!reason) {
-      throw new AppError(
-        "Rejection reason is required",
-        400,
-        ErrorCodes.REJECTION_REASON_REQUIRED,
-      );
+      throw new AppError("Rejection reason is required", 400, ErrorCodes.REJECTION_REASON_REQUIRED);
     }
 
     const adminId = (req as any).adminId || "system";
 
-    const audit = await weightDriftAuditService.rejectAudit(
-      id,
-      adminId,
-      reason,
-    );
+    const audit = await weightDriftAuditService.rejectAudit(id, adminId, reason);
 
     logger.info("Weight drift audit rejected", {
       auditId: id,

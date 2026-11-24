@@ -5,15 +5,15 @@ import { logger } from "../../config/logger";
 
 /**
  * Tombstone delete a user account with all associated data.
- * 
+ *
  * This service performs the following operations in a single transaction:
  * 1. Delete all API keys for the user
  * 2. Delete all OTP challenges
- * 3. Delete all user passphrases
+ * 3. Delete all user passkeys
  * 4. Delete all user contacts (as both sender and recipient)
  * 5. Delete all guardians (as both user and guardian)
  * 6. Update the user record with tombstone data (anonymized fields)
- * 
+ *
  * @param userId - The ID of the user to tombstone delete
  * @param source - The source of the deletion (for logging purposes)
  * @throws {Error} If the transaction fails
@@ -52,8 +52,9 @@ export async function tombstoneDeleteUser(
     });
   });
 
-  const logSource = source === "deleteMe" 
-    ? "Account tombstone deleted (legacy endpoint)" 
-    : "Account tombstone deleted";
+  const logSource =
+    source === "deleteMe"
+      ? "Account tombstone deleted (legacy endpoint)"
+      : "Account tombstone deleted";
   logger.info(logSource, { userId });
 }

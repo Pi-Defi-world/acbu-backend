@@ -1,11 +1,6 @@
 import { Router } from "express";
 import { validateApiKey } from "../middleware/auth";
-import {
-  postFaucet,
-  getAccounts,
-  postOnRamp,
-  postOffRamp,
-} from "../controllers/fiatController";
+import { postFaucet, getAccounts, postOnRamp, postOffRamp } from "../controllers/fiatController";
 
 const router: Router = Router();
 
@@ -45,8 +40,6 @@ router.use(validateApiKey);
  *                 type: number
  *               recipient:
  *                 type: string
- *               passcode:
- *                 type: string
  *     responses:
  *       200:
  *         description: Faucet request successful
@@ -78,8 +71,6 @@ router.post("/faucet", postFaucet);
  *                 maxLength: 3
  *               amount:
  *                 type: number
- *               passcode:
- *                 type: string
  *     responses:
  *       200:
  *         description: On-ramp simulation successful

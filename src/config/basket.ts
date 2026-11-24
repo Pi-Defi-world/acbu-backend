@@ -36,10 +36,7 @@ export const BASKET_WEIGHTS: Record<string, number> = {
 export type BasketCurrency = (typeof BASKET_CURRENCIES)[number];
 
 /** Sum of weights; used for validation */
-export const BASKET_WEIGHTS_SUM = Object.values(BASKET_WEIGHTS).reduce(
-  (a, b) => a + b,
-  0,
-);
+export const BASKET_WEIGHTS_SUM = Object.values(BASKET_WEIGHTS).reduce((a, b) => a + b, 0);
 
 /** 100% expressed in basis points (100.00% = 10000 bps). */
 export const BASKET_WEIGHT_BASIS_POINTS = 10000;
@@ -48,9 +45,7 @@ export const BASKET_WEIGHT_BASIS_POINTS = 10000;
  * Round normalized basket weights to exact 100.00% using basis-point allocation.
  * This protects against rounding drift when storing weights as Decimal(5,2).
  */
-export function roundWeightsToExactBasisPoints(
-  weights: Map<string, number>,
-): Map<string, number> {
+export function roundWeightsToExactBasisPoints(weights: Map<string, number>): Map<string, number> {
   const total = [...weights.values()].reduce((s, w) => s + w, 0);
   if (Math.abs(total - BASKET_WEIGHTS_SUM) > 1e-8) {
     throw new Error(

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from "express";
+import { Response, NextFunction } from "express";
 import { acbuEscrowService } from "../services/contracts";
 import { getContractAddresses } from "../config/contracts";
 import type { AuthRequest } from "../middleware/auth";
@@ -23,9 +23,7 @@ export async function postGatewayCharge(
       amount: String(amount),
       escrowId: Number(escrow_id),
     });
-    res
-      .status(200)
-      .json({ transaction_hash: txHash, escrow_id: Number(escrow_id) });
+    res.status(200).json({ transaction_hash: txHash, escrow_id: Number(escrow_id) });
   } catch (e) {
     next(e);
   }

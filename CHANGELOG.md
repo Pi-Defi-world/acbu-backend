@@ -1,0 +1,464 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Removed
+
+- **Pi Network scope drift resolved (W10-P-007):** Wallet activation is now
+  unambiguously Stellar-only. Removed the dead `bootstrapProfile.includes("pi")`
+  branch from `src/config/env.ts` (the `nativeAssetCode` now defaults to `XLM`,
+  overridable via `STELLAR_NATIVE_ASSET_CODE`), and replaced the `"PI"` /
+  `"pi-testnet"` mock values in `src/services/stellar/activationService.test.ts`
+  with `"XLM"` / `"xlm-testnet"`. Pi Network Mainnet / Open-Mainnet status is
+  out of scope and is not monitored. See `docs/ACTIVATION_SCOPE.md` for the
+  scope decision record. The historical `CHANGELOG.md` entry "Add Pi bridge
+  support for wallet activation" is preserved as a historical record only.
+
+## [1.0.0] - 2026-09-01
+
+### Features
+
+- shared Horizon contract effect parser + types (#827 follow-up)
+- add Soroban event schema guard for Wave 8 (#827)
+- add CCPA/BIPA consent-preference endpoint and table (#731)
+- Fix ErrorCode typing to enforce enum values
+- Add schema validation for RabbitMQ messages with Zod
+- add compression regression integration test for large payload responses (#445)
+- add report export endpoint with Content-Disposition header for CSV downloads (#442)
+- No package.json files field, dist/ published with unnecessary files
+- add user-agent filter middleware to block scanners and abuse tools
+- add per-endpoint response time histograms with P50/P95/P99
+- openai guard — timeout, retries, and configurable fail-open mode (B-063)
+- standardize rate-limiter responses with error_code (closes #293)
+- use ErrorCodes in mintController and replace unstructured responses (closes #293)
+- add ErrorCodes enum and convert unstructured responses to AppError (closes #293)
+- include machine-readable error_code in API error responses (closes #293)
+- support --truncate to clean seed-target tables (TRUNCATE CASCADE with fallback)
+- implement circuit breakers and timeout budgets for fintech providers
+- implement weight drift audit system with weekly job, approval gate, and audit trail
+- structured financial logging for mint, burn, salary (B-052)
+- implement createTransfer service with validation, KYC checks, and blockchain transaction handling, accompanied by full unit test coverage.
+- prisma setup completed
+- Aependency vulnerability scanning
+- implement brute-force protection and account lockout policy
+- swagger ui mount
+- Track deployed notional in DB
+- multi-provider routing per country with health/failover logic (#160)
+- add GDPR export and tombstone delete endpoints
+- add OTel tracing — Prisma + Soroban spans, OTLP exporter, sample rate
+- implement bulk CSV transfer endpoint with idempotency and comprehensive testing
+- implement admin and break-glass API key management with MFA challenge and audit logging. B-060 — Admin role separation Fixes #175
+- S3 presigned URL abuse controls for KYC uploads
+- #130 B-015 Add configurable Soroban fee caps for robust transaction handling
+- #147 B-032 Add /health/ready endpoint for K8s readiness probes
+- add JSR registry config, include idempotency keys, and improve webhook delivery error handling with exponential backoff and explicit DLQ routing.
+- structured financial logging for money movements (B-052)
+- Client-supplied mint recipient vs user wallet
+- implement Salary Disbursement APIs with batching, scheduling, and idempotency
+- implement asynchronous audit logging with RabbitMQ and DLQ
+- add Paystack webhook route with signature verification (#41)
+- implement OpenAI Vision KYC document extraction (#42)
+- implement basket weight computation script and reporting tool
+- Add Pi bridge support for wallet activation
+- Contract client and Stellar fees hardcoded
+- (prisma as any).onRampSwap` casts
+- load limits from environment variables (Fixes #10)
+- add Zod input validation for deposit/withdraw/positions
+- add new routes and controllers
+- add new docs
+- initial commit
+
+### Bug Fixes
+
+- sync queue schemas and retry registry
+- add dedicated migration + tests for salary models (W2-B-038)
+- resolve TS2339 in yieldAccountingService — read Decimal fields directly
+- W2-B-076 - Webhook timestamp tolerance parse can be `NaN` (#786)
+- resolve W2-B-024/039 — rabbitmq casting, prisma drift, axios CVE
+- add global coverage threshold and webhook service threshold to jest config
+- optimise webhookController.test.ts for speed and async cleanup
+- resolve failing salary/limits/enterprise/report/investment suites (#774)
+- correct account_name copy-paste bug
+- strictly type user parameter in notificationConsumer
+- validate and narrow lending pool event listener payload type
+- validate and narrow savings vault event listener payload type
+- add test verifying requestLogger middleware logs correlationId
+- type and validate notification consumer user payload
+- add admin rate limiter
+- harden signature bypass and add event idempotency
+- wire treasury account validation
+- validate Content-Length against actual body size
+- resolve remaining tsc errors so pnpm build passes (#754)
+- implement validateAdminKey and adminRateLimiter middleware
+- repair tx-hash dedup that blocked prisma migrate deploy
+- fix ESLint legacy config and bypass Gitleaks commercial action license requirement
+- type weight-drift audit tx params and restore missing Prisma models
+- resolve Express route registration type error
+- add ADMIN_NOTIFICATION_EMAIL to env schema and config
+- regenerate OpenAPI spec and fix drift test
+- expose usdAmountDecimal as primary Decimal in convertLocalToUsdWithPrecision
+- remove redactPii shadow in logger.ts; use redactLogValue in logFinancialEvent
+- remove unused actualWeight param from generateRecommendation
+- rewrite .env.example with clean ASCII comments
+- fix swapRace and burn idempotency test failures
+- remove hardcoded docker credentials and enforce env vars (#604)
+- W2-B-086 - No idempotency-key validation on burn path (#796)
+- correct postinstall client-marker path for pnpm (#747)
+- update test configuration and dependencies
+- resolve issue #806
+- resolve issue #815
+- remove unused imports in complianceController
+- import logAudit instead of nonexistent auditService.logAuditEntry
+- move raw process.env reads into Zod schema (#804)
+- implement and export validateAdminKey middleware (#801)
+- version audit artifacts and add reproducibility scripts
+- alert and quarantine invalid financial events instead of dropping them (#791)
+- skip structured fields; redact stack frames for PII
+- import validateOperationsForTreasuryAccount
+- wire bulkTransfer config
+- export refresh token functions and use sha256 for hashing
+- add recovery_attempts migration and remove dead import
+- add WeightDriftAudit models and hot-query indexes (#745, #758)
+- set explicit timeout-minutes on every workflow job
+- restore refresh-token exports in auth barrel
+- remove unused Channel import from RabbitMQ config (#715)
+- enforce schema validation at the producer boundary (W2-B-041)
+- type ledger transaction client
+- use tests glob instead of hand-listed test files (#607)
+- update tar override and make build/test tolerant for CI green
+- correct stellarAddress column quoting in validation migration
+- relax USDC issuer validation for dev boot and add vars to .env.local
+- isolate migrations per-run, gate destructive changes, fix broken migration
+- coerce union type to Decimal for exchange rates
+- resolve tsconfig include/exclude conflict for tests
+- resolve env validation and migration issues
+- remove duplicate redaction implementations in logger.ts
+- remove duplicate redactFormat/redactPii/redactLogValue in logger.ts
+- remove unused Prisma and logger imports in userController (fixes #719)
+- clarify unused Redis config in .env.example (#612)
+- resolve unused imports, idempotency TS errors, and shutdown wiring
+- replace UUIDv4 PKs with UUIDv7 to eliminate B-tree index fragmentation
+- align acbuAmount test mocks with string return type (fixes #626)
+- ensure acbu_amount is always serialized as string
+- correct port 3000 → 5000 in README (#602)
+- add type safety spec for any types in burnController and contractClient
+- remove redundant production-only GraphQL blocking handlers (#586)
+- remove duplicate webhook route mount and upgrade Prisma tooling
+- fix README ENV_VARS links and enable no-explicit-any warn
+- detect and reject placeholder fintech keys (#600)
+- remove unused crypto import in userController
+- replace string-based error routing with custom AppError subclasses #578
+- use shared Prisma client in acbuMinting service
+- preserve financial event precision in audit logs
+- use timing-safe comparison for admin API key
+- use typed Express Request generics in controllers
+- stop converting Decimal to number before limit checks
+- import crypto in billsService
+- point index.ts at implemented requestLogger, drop broken duplicate
+- redact phone PII in recovery logs; add CI pipeline and WASM integrity workflow
+- import extractIdempotencyKey in burnController
+- add missing crypto import in userController
+- consolidate duplicate /kyc router mounts (#616)
+- parameterize timezone in withdrawal timing raw query (#636)
+- replace process.env reads with config in reserveController
+- parameterize withdrawal timezone query
+- move Stellar event listener inside RabbitMQ guard
+- add periodic eviction to treasuryCache to prevent memory leak
+- remove prisma migrate deploy from server startup
+- remove dead securityHeaders.ts middleware
+- memory monitor should use validated config instead of raw env
+- prevent undefined throw in connectWithRetry after retry loop
+- make DRIFT_THRESHOLD_PCT configurable via RESERVE_DRIFT_THRESHOLD_PCT
+- guard postinstall prisma generate to skip if client exists
+- load Stellar test secret from env var instead of hardcoding
+- replace JSON.stringify with recursive field walker in blockGraphQLQueries
+- standardize referenceId to crypto.randomUUID() and remove duplicate helmet config
+- replace stray PrismaClient with shared prisma singleton
+- remove unused top-level crypto import in userController
+- harden JWT/challenge secrets, passcode length, bills webhook auth
+- address issues #613, #618, #619, #622
+- guard s3 scan webhook secret in production
+- harden env parsing and job retries
+- avoid empty redis and s3 defaults
+- broaden curl user-agent detection
+- secure environment configuration and document tracing
+- remove committed scratch debug scripts and exclude scratch/ in .gitignore
+- address PR review lint and formatting issues
+- make idempotencyStore atomic and fail-safe
+- address validator rewards and migration safety
+- address CodeRabbit review comments
+- remove hardcoded USDC issuer fallbacks
+- add WAL backup configuration guard
+- resolve linting errors and clean up types
+- enable case-sensitive routing on Express app and router
+- remove stale .env.example entries and align S3 env vars with code
+- harden security headers and webhook body handling
+- bound ledger bulk inserts with explicit transaction timeout
+- add npm engine constraint for package manager consistency
+- remove tsc from postinstall to prevent double build
+- implement non-blocking exponential backoff for retries
+- add If-Match ETag optimistic concurrency for wallet ops
+- use IANA timezone-aware business date utilities
+- remove duplicate bulkTransfer key blocking TypeScript compile
+- cache negative exchange rate API responses
+- configure per-transport log levels in Winston logger
+- load dotenv before app imports (closes #446)
+- add pnpm overrides for vulnerable sub-dependencies
+- add .prettierignore to exclude generated files (#456)
+- pin infrastructure docker images to explicit minor/patch versions
+- add 'unless-stopped' restart policy to infrastructure services
+- exit on uncaughtException and unhandledRejection (#435)
+- align helmet dnsPrefetchControl with CDN usage (#432)
+- Retry-After-aware retry interceptor in shared HTTP client (#430)
+- structured audit request logging for compliance (#433)
+- fix WAL backup test failures from merge conflicts and missing mocks
+- document no-Origin passthrough and add whitelist-enforcement tests
+- replica migration sync and WebSocket header-only auth
+- enforce strict integer constraints on numeric env variables
+- use ConfirmChannel and wait for confirms on shutdown
+- add memory usage monitoring and heap dump on leak detection
+- map composite @@unique constraints to database-level index names to resolve drift
+- resolve merge conflicts with upstream/main
+- prevent account_merge on treasury account to mitigate asset drainage attacks
+- remove duplicate ignoreDeprecations key
+- remove duplicate ignoreDeprecations key, pin strictNullChecks true
+- add log rotation and clean up test teardown
+- #390 #389 #388 webhook timestamp validation, mongo resume tokens, prisma pool metrics
+- idempotency TTL, distributed job lock, Horizon circuit breaker, unbounded query caps
+- enable reportUnusedDisableDirectives as warn
+- sync and resolve conflicts with upstream dev
+- resolve issue #420 by patching Express router with express-async-errors
+- fintech key boot guard, Accelerate timeout alignment, RabbitMQ heartbeat
+- set root: true in .eslintrc.json
+- configure trust proxy to preserve real client IP
+- retry Redis writes on READONLY errors during Sentinel failover
+- validate JWT typ header to prevent token confusion
+- close nodemailer SMTP transport pool after batch sends
+- persist failed status and log financial failure event only on permanent DLQ failure path
+- address CodeRabbit review - fail-closed on missing key, middleware parity (createMany + mutation decryption), env.ts conflict resolution, backfill script
+- fix syntax errors in acbuMinting.service.ts catch blocks
+- resolve type-checking errors in database and complianceController
+- handle gzip encoded request bodies
+- add stellar fee bump transaction support
+- normalize auth identifiers before 2fa rate limiting
+- implement database read/write split for reporting queries
+- generate correlation ID when X-Correlation-ID header is absent
+- add cache headers for semi-static responses
+- Centralize retry limits and cap withdrawal processing retries to prevent indefinite loops
+- harden resilience and pagination security
+- add engines field to package.json (closes #319)
+- remove PII example values from swagger.json
+- increase jest testTimeout to 30s and sanitize swagger PII example values
+- sanitize cache keys and concurrent salary batch processing
+- prefer configured network passphrase from env/config
+- configure HSTS with maxAge >= 1 year and includeSubDomains
+- enforce JSON/request body limits for KYC upload metadata
+- harden helmet content security policy configuration
+- reject wildcard origin with credentials
+- enforce idempotency on mint, burn, transfer, and on-ramp writes
+- implement refresh token family rotation
+- sanitize MongoDB URI in logs, resolve ESLint/Prettier conflict, add compression middleware, and auto-run Prisma migrations on startup
+- make audit_trail table immutable at DB level
+- cache AcbuRate to prevent thundering-herd on mint/burn (#282)
+- enforce private ACL and SSE on KYC document uploads
+- reject sunset API versions with 410 Gone (#314)
+- parameterize all Prisma raw queries to prevent SQL injection
+- resolve four Stellar Wave issues
+- enforce exact basket weight validation and rounding
+- enforce fintech_tx_id validation and uniqueness in mint deposit flow
+- add DLQ support to all RabbitMQ consumers (#278)
+- ensure prisma disconnect on SIGTERM for graceful shutdown
+- implement database compensation for failed stellar minting txs (fixes #268)
+- add exponential backoff retry on connection failure
+- explicit noAck:false and prefetch on audit consumer
+- rate limit 2FA/signin per-user, enforce jti deny-list, harden swagger
+- guard withdrawal availability transition
+- use database clock for withdrawal delays
+- replace stray console error with logger
+- use shared mongo store
+- remove unused exported validator helpers (closes #303)
+- add .dockerignore to exclude node_modules, secrets, and build artifacts (resolves #306)
+- use UTC start-of-day for daily limit windows
+- align pnpm action version with packageManager
+- make snyk workflow safe for fork PRs
+- repair merged dev CI regressions for migration gate
+- remove --passWithNoTests and enforce coverage in CI
+- add migration gate and stabilize CI
+- optimize MongoDB indexes for cache hot keys (B-057)
+- address CodeRabbit review — per-element permission filtering and reject non-admin scopes
+- type permissions as Zod enum instead of loose strings (#163)
+- add Prisma URL guardrails, PII encryption utility, and OpenAI usage guardrails
+- remove duplicate fields on Organization, add missing SalaryItem/SalarySchedule/UserDevice models, add organizationId to Transaction
+- safely use Zod-validated inputs directly in savingsController
+- notify org admins only for org withdrawal requests
+- protect /health/deep and /health/metrics with admin API key
+- enforce requireMinTier on premium routes, fix undefined-tier bypass
+- atomic rate limit increment with MongoDB cap
+- mitigate ReDoS vulnerability in deletePattern
+- implement retry limits and DLQ routing for USDC convert job
+- fix/notification-email-deliverability
+- B-065 JWT clock skew, B-071 versioning headers, B-073 tx state machine, B-075 swap race
+- fail closed when webhook secrets are unset (B-005)
+- implement DB vs on-chain supply reconciliation and drift alert #125
+- add prettierrc to enforce LF line endings
+- audit reliability retry and outbox pattern
+- move stellar-sdk mock state inside factory to fix hoisting
+- mock stellar-sdk to fix signing key test returning failed
+- fix KYC ordering and expand test coverage
+- Add savings controller input validation with Zod schemas
+- add limitType to 429 responses; contextual messages
+- add status filter to investment withdrawal list
+- Add investment withdrawal notifications for org requests
+- scope tx-hash uniqueness to burn and test P2002
+- regenerate pnpm-lock.yaml to remove duplicate mapping key
+- upgrade @typescript-eslint v6→v8 to support TypeScript 5.9.x
+- make burn submit idempotent by blockchain hash
+- align Timestamp precision to @db.Timestamp(6) to match upstream main
+- replace manual env validation with Zod schema for fail-fast startup
+- prevent NaN hazard in government list limit
+- remove duplicate AUDIT_LOGS key to fix TS1117
+- require OTP verification for recovery unlock
+- implement deep health checks and resolve linting errors
+- implement deep health checks for PG, Mongo, and RabbitMQ
+- convert acbuAmount to Decimal type in transferService
+- aggregate byCurrency from transactions and reserve exposure (#55)
+- correct return type access in CacheService.increment for MongoDB 6.x
+- resolve atomicity issue in rate limiter using window-based cache keys
+- sync pnpm-lock.yaml with package.json
+- add Stellar address validation to prevent invalid formats
+- reject webhooks when FLUTTERWAVE_WEBHOOK_SECRET is unset (#48)
+- implement real USDC→XLM swap on Stellar DEX (issue #52)
+- lint fixes for webhookConsumer.ts
+- remove placeholder Stellar address on signup
+- add dead-letter queues for failed message handling
+- verify mint limits bypass is prevented
+- validate limit query param in governmentController.ts
+- address RoDos risk in delete pattern (#147)
+- correct burn fee reserve thresholds
+- publishInvestmentWithdrawalReady now fires for organization requests
+- resolve supply divergence and address linting errors in ReserveTracker
+- get ACBU supply from DB instead of chain (#50)
+- move env validation before config object construction
+- sanitize error logs to prevent stack trace and PII leakage
+- harden recipient resolver and transfer validation
+- enforce financial limits and circuit breakers on direct burn/mint routes
+- add cursor-based pagination to getInvestmentWithdrawRequests
+- address review findings in yield, burning, webhook, and guard typing
+- make OnRampSwap index migration safe on fresh CI databases
+- add OnRampSwap (status, createdAt) composite index and unblock CI
+- resolve merge conflics
+- backfill org limit context and index API key auth
+- enforce org-scoped transaction limits
+- validate API keys using bcrypt compare
+- resolve merge conflicts and satisfy linter/prettier
+- resolve CI failures by fixing linting errors and correcting database imports
+- enforce authenticated user ID in savings controller and add eslint config
+
+### Documentation
+
+- add documentation for W2-B-020 weight drift audit job fix
+- add branch protection and required CI checks documentation
+- clarify intentionally-unused _req in error handler (#722)
+- add contributing guidelines
+- remove obsolete multer memory leak issue
+- prevent stale GitHub owner links in PR references
+- fix README install instructions and add ENV_VARS reference
+- resolve OpenAPI drift vs implementation and strengthen contract tests (#149)
+- Add implementation summary for Pi wallet activation feature
+
+### Refactoring
+
+- tighten event schema guard for actual repo structure (#827)
+- #614 Extract duplicate user delete logic to shared service
+- improve MongoDB index creation with Promise.allSettled and better logging
+- remove unsafe 'as any' cast for permissions
+- remove any types from Stellar client methods (Fixes #22)
+- add new routes and controllers  for new smart contracts
+
+### Tests
+
+- add golden tests for string and Decimal inputs
+- validate swagger spec in CI (closes #461)
+- cover back-to-back mint and burn on same account (closes #444)
+- enhance auth and audit service tests for admin key management and validation
+- add smoke tests and enforce coverage threshold
+- make recovery tests CI-safe with mocks
+- add afterAll teardown to resolve open handle warnings
+
+### CI/CD
+
+- add staging deploy pipeline (#813)
+- add performance and budget benchmark workflow and guard script (#824)
+- upgrade Node.js in workflows to 22 to match package.json engines
+- configure dependabot and auto-merge for dependencies (#825)
+- enforce pnpm audit gate for high severity vulnerabilities (#783)
+- replace hardcoded services with docker compose up (#821)
+- add Dockerfile and GHCR publish job (#811)
+- align GitHub Actions services with docker-compose topology (#805)
+- add gitleaks secret scanning to CI workflow (#767)
+- grant actions write permission for cache persistence in MSRV workflow
+- enforce MSRV 1.88.0 across Rust repos
+- add env contract validation and cross-repo e2e nightly tests
+- make PR test step pass with no tests and tolerate unrelated failures
+- add dependency review gate for high/critical vulnerabilities
+- assert bcrypt native build after dependency installation
+- add gitleaks secret-scanning gate (#816 / #767)
+- run only changed tests on PRs and feature branches (#457)
+- remove explicit pnpm version, use packageManager from package.json
+
+### Security
+
+- add gitleaks history scanning and documentation
+- Block GraphQL endpoint and introspection attempts (#400)
+- canonicalize auth brute-force keys
+- add canonical identifier helpers
+- refine challenge token checks and fix unverified logging
+- implement 2FA challenge token purpose binding - Add `aud` (2fa_challenge) and `iss` (acbu/auth) claims to 2FA challenge tokens. - Implement dedicated secret support via `CHALLENGE_TOKEN_SECRET` for challenge tokens. - Add middleware protection to reject challenge tokens used for general API access. - Update auth and recovery services to use new JWT utility for purpose binding.
+
+### Chores
+
+- bump actions/upload-artifact from 4 to 7
+- bump docker/setup-buildx-action from 3 to 4
+- bump pnpm/action-setup from 4 to 6
+- bump docker/metadata-action from 5 to 6
+- bump node from 22-alpine to 26-alpine
+- bump docker/login-action from 3 to 4
+- verify @babel/core arbitrary-file-read is already patched
+- bump actions/checkout from 4 to 7
+- bump actions/dependency-review-action from 4 to 5
+- bump dependabot/fetch-metadata from 2 to 3
+- bump actions/setup-node from 4 to 7
+- bump actions/cache from 3 to 6
+- untrack .env.local and enforce pre-commit secret guard
+- sync pnpm overrides with dev to fix critical tar audit
+- fix .env.example mojibake and sync runtime keys
+- stop tracking .env.local (W2-B-054 / #764)
+- resolve 87 npm security vulnerabilities
+- align security documentation gitignore policy
+- populate local env override template
+- update pnpm-lock.yaml to resolve overrides mismatch
+- add renovate.json for automated dependency updates
+- remove sensitive architectural documents
+- restrict markdown exclusion to root directory
+- optimize build context by ignoring .github, submodules, and markdown documentation
+- resolve merge artifacts and stabilize environmental config
+- revert unrelated files to keep scope focused on #417
+- exclude test and mock files from tsconfig build output
+- remove ignoreDeprecations from tsconfig.build.json for CI compatibility
+- regenerate pnpm-lock.yaml to sync with package.json
+- auto-fix linting and formatting issues
+- trigger empty commit
+- format merged wallet activation files for CI
+- configure jest to cleanly bypass missing tests for GitHub Actions CI
+- sync pnpm-lock.yaml with package.json
+- update pnpm lockfile
+
+### Styles
+
+- format files and resolve manual ESLint errors
+- fix Prettier line break violation for logConsoleLevel
+- final linting and syntax fixes for rabbitmq audit system
+- fix prettier formatting
+- fix formatting inconsistencies for CI/CD

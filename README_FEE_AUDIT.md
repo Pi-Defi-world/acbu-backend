@@ -76,7 +76,7 @@ Successfully completed comprehensive audit and refactoring of the ACBU fee calcu
 
 ### Burn Fees (ACBU → Fiat)
 - **Low Reserve** (<85% of target): 200 BPS (2.00%)
-- **Normal** (85-115% of target): 10 BPS (0.10%)
+- **Normal** (85-115% of target): 30 BPS (0.30%)
 - **High Reserve** (>115% of target): 5 BPS (0.05%) ← FIXED
 
 ### Spread
@@ -107,23 +107,23 @@ Successfully completed comprehensive audit and refactoring of the ACBU fee calcu
 Using Command Prompt (recommended for Windows):
 ```cmd
 cd "C:\Users\machintosh\Documents\Fouth Wave\acbu-backend"
-npm install --save-dev fast-check
+pnpm add -D fast-check
 ```
 
 ### Step 2: Run Tests
 
 ```cmd
 # Unit tests
-npm test -- src/services/feePolicy/__tests__/feePolicyService.test.ts
+pnpm test -- src/services/feePolicy/__tests__/feePolicyService.test.ts
 
 # Property-based tests
-npm test -- src/services/feePolicy/__tests__/feePolicyService.pbt.test.ts
+pnpm test -- src/services/feePolicy/__tests__/feePolicyService.pbt.test.ts
 
 # All tests
-npm test
+pnpm test
 
 # With coverage
-npm run test:coverage
+pnpm run test:coverage
 ```
 
 ### Step 3: Verify Results
@@ -175,8 +175,8 @@ All tests should pass:
 - [x] Unit tests created and passing
 - [x] Property-based tests implemented
 - [x] Documentation created
-- [ ] Install fast-check: `npm install --save-dev fast-check`
-- [ ] Run full test suite: `npm test`
+- [ ] Install fast-check: `pnpm add -D fast-check`
+- [ ] Run full test suite: `pnpm test`
 - [ ] Run property-based tests
 - [ ] Code review by senior engineer
 - [ ] Financial team review of fee changes

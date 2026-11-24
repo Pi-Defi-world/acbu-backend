@@ -11,11 +11,7 @@ export const DEPRECATION_DATES: Record<string, string> = {
   // Example: "v1": "2025-01-01T00:00:00Z",
 };
 
-export function versioningMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
+export function versioningMiddleware(req: Request, res: Response, next: NextFunction): void {
   const currentVersion = config.apiVersion;
 
   // Always advertise the current API version so clients can track it.

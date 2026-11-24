@@ -110,10 +110,6 @@ export interface PartnerBillRefundResponse {
 export interface BillsPartnerAdapter {
   readonly providerId: string;
   getCatalog(): Promise<BillsCatalogBiller[]>;
-  payBill(
-    request: PartnerBillPaymentRequest,
-  ): Promise<PartnerBillPaymentResponse>;
-  refundBill(
-    request: PartnerBillRefundRequest,
-  ): Promise<PartnerBillRefundResponse>;
+  payBill(request: PartnerBillPaymentRequest): Promise<PartnerBillPaymentResponse>;
+  refundBill(request: PartnerBillRefundRequest): Promise<PartnerBillRefundResponse>;
 }

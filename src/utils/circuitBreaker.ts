@@ -1,4 +1,5 @@
 import { logger } from "../config/logger";
+import { recordCircuitBreakerState } from "../services/monitoring";
 
 export type CircuitState = "CLOSED" | "OPEN" | "HALF_OPEN";
 
@@ -6,6 +7,7 @@ export interface CircuitBreakerOptions {
   failureThreshold: number;
   cooldownMs: number;
   successThreshold: number;
+  serviceName?: string; // W10-I-013: Service name for metrics
 }
 
 const DEFAULT_OPTIONS: CircuitBreakerOptions = {
@@ -20,9 +22,11 @@ export class CircuitBreaker {
   private successCount: number = 0;
   private lastFailureTime: number | null = null;
   private options: CircuitBreakerOptions;
+  private serviceName: string;
 
   constructor(options?: Partial<CircuitBreakerOptions>) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
+    this.serviceName = options?.serviceName || "unknown";
   }
 
   /**
@@ -36,10 +40,7 @@ export class CircuitBreaker {
 
     if (this.state === "OPEN") {
       const now = Date.now();
-      if (
-        this.lastFailureTime &&
-        now - this.lastFailureTime >= this.options.cooldownMs
-      ) {
+      if (this.lastFailureTime && now - this.lastFailureTime >= this.options.cooldownMs) {
         this.transitionTo("HALF_OPEN");
         return true;
       }
@@ -75,10 +76,7 @@ export class CircuitBreaker {
     if (this.state === "HALF_OPEN") {
       // Any failure in half-open immediately opens circuit
       this.transitionTo("OPEN");
-    } else if (
-      this.state === "CLOSED" &&
-      this.failureCount >= this.options.failureThreshold
-    ) {
+    } else if (this.state === "CLOSED" && this.failureCount >= this.options.failureThreshold) {
       this.transitionTo("OPEN");
     }
   }
@@ -134,7 +132,15 @@ export class CircuitBreaker {
         to: newState,
         failureCount: this.failureCount,
         successCount: this.successCount,
+        service: this.serviceName,
       });
+
+      // W10-I-013: Record circuit breaker state to metrics
+      try {
+        recordCircuitBreakerState(this.serviceName, newState.toLowerCase() as any);
+      } catch (error) {
+        // Silently fail if metrics are not available
+      }
 
       // Reset counters on state transitions
       if (newState === "CLOSED") {

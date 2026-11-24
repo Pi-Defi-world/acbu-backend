@@ -26,10 +26,7 @@ export function getPiiKey(hexKey: string): Buffer {
 export function encryptField(plaintext: string, key: Buffer): string {
   const iv = randomBytes(IV_BYTES);
   const cipher = createCipheriv(ALGORITHM, key, iv);
-  const encrypted = Buffer.concat([
-    cipher.update(plaintext, "utf8"),
-    cipher.final(),
-  ]);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return (
     VERSION_PREFIX +
@@ -58,12 +55,11 @@ export function decryptField(encrypted: string, key: Buffer): string {
   const tag = Buffer.from(tagHex, "hex");
   const ciphertext = Buffer.from(ciphertextB64, "base64");
 
-  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  const decipher = createDecipheriv(ALGORITHM, key, iv, {
+    authTagLength: TAG_BYTES,
+  });
   decipher.setAuthTag(tag.slice(0, TAG_BYTES));
-  return (
-    decipher.update(ciphertext).toString("utf8") +
-    decipher.final().toString("utf8")
-  );
+  return decipher.update(ciphertext).toString("utf8") + decipher.final().toString("utf8");
 }
 
 /**

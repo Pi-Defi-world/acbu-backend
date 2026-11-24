@@ -12,9 +12,7 @@ import { logger } from "../../config/logger";
  * Fetch official/USD rate from central bank URL for the given currency.
  * Returns null if no URL is configured or request fails.
  */
-export async function fetchCentralBankRateUsd(
-  currency: string,
-): Promise<number | null> {
+export async function fetchCentralBankRateUsd(currency: string): Promise<number | null> {
   const url = config.oracle.centralBankUrls[currency];
   if (!url) return null;
   try {

@@ -56,10 +56,10 @@ jest.mock("./feeManager", () => ({
 jest.mock("../../config/env", () => ({
   config: {
     stellar: {
-      nativeAssetCode: "PI",
+      nativeAssetCode: "XLM",
       activationAmount: "5",
       activationStrategy: "create_account_native",
-      bootstrapProfile: "pi-testnet",
+      bootstrapProfile: "xlm-testnet",
     },
   },
 }));
@@ -70,10 +70,10 @@ import { ensureAccountActivated } from "./activationService";
 describe("ensureAccountActivated", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (config.stellar as any).nativeAssetCode = "PI";
+    (config.stellar as any).nativeAssetCode = "XLM";
     (config.stellar as any).activationAmount = "5";
     (config.stellar as any).activationStrategy = "create_account_native";
-    (config.stellar as any).bootstrapProfile = "pi-testnet";
+    (config.stellar as any).bootstrapProfile = "xlm-testnet";
     mockAddOperation.mockReturnValue(mockBuilder);
     mockSetTimeout.mockReturnValue(mockBuilder);
     mockBuild.mockReturnValue(mockTx);
@@ -86,10 +86,10 @@ describe("ensureAccountActivated", () => {
 
     await expect(ensureAccountActivated("G_DEST")).resolves.toEqual({
       created: false,
-      fundingAssetCode: "PI",
+      fundingAssetCode: "XLM",
       startingBalance: "5",
       strategy: "create_account_native",
-      bootstrapProfile: "pi-testnet",
+      bootstrapProfile: "xlm-testnet",
     });
     expect(mockCreateAccount).not.toHaveBeenCalled();
   });
@@ -109,10 +109,10 @@ describe("ensureAccountActivated", () => {
     expect(result).toEqual({
       created: true,
       txHash: "tx-hash-1",
-      fundingAssetCode: "PI",
+      fundingAssetCode: "XLM",
       startingBalance: "5",
       strategy: "create_account_native",
-      bootstrapProfile: "pi-testnet",
+      bootstrapProfile: "xlm-testnet",
     });
     expect(mockSign).toHaveBeenCalledTimes(1);
   });
@@ -122,7 +122,7 @@ describe("ensureAccountActivated", () => {
     mockLoadAccount.mockRejectedValueOnce({ response: { status: 404 } });
 
     await expect(ensureAccountActivated("G_DEST")).rejects.toThrow(
-      "Wallet activation is disabled for bootstrap asset PI",
+      "Wallet activation is disabled for bootstrap asset XLM",
     );
     expect(mockCreateAccount).not.toHaveBeenCalled();
   });

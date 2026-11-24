@@ -12,7 +12,9 @@ export interface NormalizedIdentifier {
   value: string;
 }
 
-export function normalizeSecurityIdentifier(identifier: string | null | undefined): NormalizedIdentifier {
+export function normalizeSecurityIdentifier(
+  identifier: string | null | undefined,
+): NormalizedIdentifier {
   const trimmed = (identifier || "").trim();
   if (!trimmed) {
     return { kind: "anonymous", value: "anon" };

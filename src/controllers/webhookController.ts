@@ -14,6 +14,7 @@ function setFiatWebhookDeprecationHeaders(res: Response): void {
 }
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import { z } from "zod";
 import { config } from "../config/env";
 import { logger, logFinancialEvent } from "../config/logger";
 import { prisma } from "../config/database";
@@ -22,22 +23,88 @@ import { ErrorCodes } from "../types/errorCodes";
 import { reconcileBillsWebhook } from "../services/bills";
 import type { FinancialEventStatus } from "../types/logging";
 
+/** Determine whether the configured bypass is permitted in the active test profile. */
+export function isWebhookSignatureBypassEnabled(
+  rawValue: string | undefined = process.env.WEBHOOK_SIGNATURE_BYPASS,
+): boolean {
+  if (typeof rawValue !== "string" || rawValue.trim().toLowerCase() !== "true") {
+    return false;
+  }
+
+  const profiles = [
+    process.env.NODE_ENV,
+    process.env.APP_PROFILE,
+    process.env.APP_ENV,
+    process.env.ENVIRONMENT,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
+
+  return (
+    profiles.some((profile) => ["test", "testing", "ci"].includes(profile)) &&
+    !profiles.includes("production")
+  );
+}
+
+/** Fail closed when the bypass flag is set outside an explicit test profile. */
+export function assertWebhookSignatureBypassSafe(): void {
+  const requested =
+    typeof process.env.WEBHOOK_SIGNATURE_BYPASS === "string" &&
+    process.env.WEBHOOK_SIGNATURE_BYPASS.trim().toLowerCase() === "true";
+  if (!requested) return;
+
+  const profiles = [
+    process.env.NODE_ENV,
+    process.env.APP_PROFILE,
+    process.env.APP_ENV,
+    process.env.ENVIRONMENT,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
+
+  if (
+    !profiles.some((profile) => ["test", "testing", "ci"].includes(profile)) ||
+    profiles.includes("production")
+  ) {
+    throw new Error("WEBHOOK_SIGNATURE_BYPASS must only be enabled in an explicit test profile.");
+  }
+}
+
 // ── Dev/stage mock bypass ────────────────────────────────────────────────────
-// When WEBHOOK_SIGNATURE_BYPASS=true AND NODE_ENV is not production,
-// signature verification is skipped entirely. This allows local development
-// and CI environments to send test payloads without real secrets.
-// Never set this variable in production — the boot guard in env.ts will
-// reject a missing secret before this code is even reached.
-const isDev = config.nodeEnv !== "production";
-const bypassEnabled =
-  isDev && process.env.WEBHOOK_SIGNATURE_BYPASS === "true";
+// Evaluate the flag at request time. The startup guard in env.ts separately
+// rejects unsafe deployment configuration before the application listens.
+function isWebhookSignatureBypassAllowed(): boolean {
+  return isWebhookSignatureBypassEnabled();
+}
+
+/**
+ * Runtime production assertion, independent of NODE_ENV.
+ * Guards against a refactor that removes the boot-time check above, or a
+ * deployment that mislabels its environment. Called on every webhook request.
+ */
+function assertBypassNotInProduction(): void {
+  if (!isWebhookSignatureBypassAllowed()) return;
+  const looksLikeProduction =
+    process.env.NODE_ENV === "production" ||
+    process.env.APP_ENV === "production" ||
+    process.env.APP_PROFILE === "production";
+  if (looksLikeProduction) {
+    logger.error(
+      "WEBHOOK_SIGNATURE_BYPASS is active in a production-like environment — " +
+        "rejecting webhook. Signature verification must never be bypassed in production.",
+    );
+    throw new AppError("Webhook signature verification unavailable", 503, ErrorCodes.CONFIG_ERROR);
+  }
+}
 
 // Maximum allowed clock drift in seconds between the webhook timestamp and server time.
 // Rejects replayed webhooks that fall outside this window. Default: 300 s (±5 min).
-const WEBHOOK_TIMESTAMP_TOLERANCE_S = parseInt(
-  process.env.WEBHOOK_TIMESTAMP_TOLERANCE_S || "300",
-  10,
-);
+const WEBHOOK_TIMESTAMP_TOLERANCE_S = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(86400)
+  .parse(process.env.WEBHOOK_TIMESTAMP_TOLERANCE_S || "300");
 
 /**
  * Validate a webhook timestamp (Unix seconds or ISO-8601) against server time.
@@ -53,11 +120,42 @@ function isTimestampValid(raw: string | undefined): boolean {
   return Math.abs(nowS - eventS) <= WEBHOOK_TIMESTAMP_TOLERANCE_S;
 }
 
-if (bypassEnabled) {
+/**
+ * Validate that the request Content-Type is application/json.
+ * Rejects requests with multipart/form-data, text/xml, or other content types
+ * that could bypass JSON body parsing middleware.
+ */
+function isContentTypeJson(req: Request): boolean {
+  const contentType = req.headers["content-type"];
+  if (!contentType) return false;
+  // Accept application/json with or without charset parameter
+  return contentType.startsWith("application/json");
+}
+
+if (isWebhookSignatureBypassAllowed()) {
   logger.warn(
     "WEBHOOK_SIGNATURE_BYPASS is enabled — webhook signature verification " +
-      "is DISABLED. This must never be set in production.",
+      "is DISABLED for development/test only. Do not use this setting in a staging-facing deployment.",
   );
+}
+
+function getWebhookEventId(payload: Record<string, unknown>): string | undefined {
+  const eventId = payload.event_id;
+  return typeof eventId === "string" && eventId.trim() ? eventId.trim() : undefined;
+}
+
+function isWebhookEventIdConflict(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}
+
+function sendDuplicateWebhookResponse(res: Response): void {
+  setFiatWebhookDeprecationHeaders(res);
+  res.status(200).json({ status: "ok", duplicate: true, deprecated: true });
 }
 
 // ── Flutterwave Webhook ──────────────────────────────────────────────────────
@@ -69,9 +167,19 @@ export function verifyFlutterwaveSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when FLUTTERWAVE_WEBHOOK_SECRET is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
+    assertBypassNotInProduction();
     logger.warn("Flutterwave webhook signature check bypassed (dev/stage)");
     next();
+    return;
+  }
+
+  // #296: Enforce Content-Type to prevent bypass of JSON body parsing
+  if (!isContentTypeJson(req)) {
+    logger.warn("Flutterwave webhook rejected: invalid Content-Type", {
+      contentType: req.headers["content-type"],
+    });
+    res.status(415).json({ error: "Content-Type must be application/json" });
     return;
   }
 
@@ -88,7 +196,6 @@ export function verifyFlutterwaveSignature(
       503,
       ErrorCodes.CONFIG_ERROR,
     );
-
   }
 
   const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
@@ -115,10 +222,7 @@ export function verifyFlutterwaveSignature(
     return;
   }
 
-  const computed = crypto
-    .createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("hex");
+  const computed = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
 
   // Normalise to equal-length buffers before timingSafeEqual to prevent
   // length-leaking side channels. A mismatched length still fails below.
@@ -156,9 +260,19 @@ export function verifyPaystackSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when PAYSTACK_SECRET_KEY is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
+    assertBypassNotInProduction();
     logger.warn("Paystack webhook signature check bypassed (dev/stage)");
     next();
+    return;
+  }
+
+  // #296: Enforce Content-Type to prevent bypass of JSON body parsing
+  if (!isContentTypeJson(req)) {
+    logger.warn("Paystack webhook rejected: invalid Content-Type", {
+      contentType: req.headers["content-type"],
+    });
+    res.status(415).json({ error: "Content-Type must be application/json" });
     return;
   }
 
@@ -174,7 +288,6 @@ export function verifyPaystackSignature(
       503,
       ErrorCodes.CONFIG_ERROR,
     );
-
   }
 
   const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
@@ -201,10 +314,7 @@ export function verifyPaystackSignature(
     return;
   }
 
-  const computed = crypto
-    .createHmac("sha512", secret)
-    .update(rawBody)
-    .digest("hex");
+  const computed = crypto.createHmac("sha512", secret).update(rawBody).digest("hex");
 
   // Use timing-safe comparison (same pattern as Flutterwave above) to prevent
   // timing side-channel attacks. Paystack previously used string equality (===).
@@ -250,6 +360,7 @@ export async function handlePaystackWebhook(
     };
     const eventType = payload.event ?? "unknown";
     const data = payload.data ?? {};
+    const eventId = getWebhookEventId(payload as Record<string, unknown>);
     logger.warn("Paystack webhook received (deprecated path)", {
       eventType,
       reference: data.reference,
@@ -265,8 +376,24 @@ export async function handlePaystackWebhook(
     const paystackFinancialStatus: FinancialEventStatus =
       paystackStatusMap[data.status ?? ""] ?? "pending";
     const paystackCorrelationId =
-      (req.headers["x-request-id"] as string | undefined) ??
-      crypto.randomUUID();
+      (req.headers["x-request-id"] as string | undefined) ?? crypto.randomUUID();
+
+    try {
+      await prisma.webhook.create({
+        data: {
+          eventId,
+          eventType: `paystack:${String(eventType)}`,
+          payload: payload as object,
+          status: "processed",
+        },
+      });
+    } catch (error) {
+      if (eventId && isWebhookEventIdConflict(error)) {
+        sendDuplicateWebhookResponse(res);
+        return;
+      }
+      throw error;
+    }
 
     logFinancialEvent({
       event: "webhook.received",
@@ -275,23 +402,17 @@ export async function handlePaystackWebhook(
       transactionId: data.reference ?? paystackCorrelationId,
       userId: paystackCorrelationId,
       accountId: paystackCorrelationId,
-      idempotencyKey: data.reference ?? paystackCorrelationId,
+      idempotencyKey: eventId ?? data.reference ?? paystackCorrelationId,
       correlationId: paystackCorrelationId,
       amount: data.amount ?? 0,
       currency: data.currency ?? "NGN",
     });
 
-    await prisma.webhook.create({
-      data: {
-        eventType: `paystack:${String(eventType)}`,
-        payload: payload as object,
-        status: "processed",
-      },
-    });
-
     if (eventType === "charge.success" && data.status === "success") {
-      // Optional: create or update Transaction for deposit (mint flow)
-      // When reference links to a pending mint, update transaction
+      // W10-SEC-017: Audit log only. Minting is NOT triggered from this path.
+      // The authoritative mint-confirmation flow is POST /v1/mint/confirm with
+      // HMAC signature verification (MINT_CONFIRMATION_SECRET). Fiat webhook
+      // events are stored for reconciliation purposes only.
     }
 
     setFiatWebhookDeprecationHeaders(res);
@@ -330,6 +451,7 @@ export async function handleFlutterwaveWebhook(
     };
     const eventType = payload.event ?? payload.type ?? "unknown";
     const data = payload.data ?? {};
+    const eventId = getWebhookEventId(payload as Record<string, unknown>);
     logger.warn("Flutterwave webhook received (deprecated path)", {
       eventType,
       tx_ref: data.tx_ref,
@@ -343,11 +465,26 @@ export async function handleFlutterwaveWebhook(
       failed: "failed",
       reversed: "reversed",
     };
-    const flwFinancialStatus: FinancialEventStatus =
-      flwStatusMap[data.status ?? ""] ?? "pending";
+    const flwFinancialStatus: FinancialEventStatus = flwStatusMap[data.status ?? ""] ?? "pending";
     const flwCorrelationId =
-      (req.headers["x-request-id"] as string | undefined) ??
-      crypto.randomUUID();
+      (req.headers["x-request-id"] as string | undefined) ?? crypto.randomUUID();
+
+    try {
+      await prisma.webhook.create({
+        data: {
+          eventId,
+          eventType: String(eventType),
+          payload: payload as object,
+          status: "processed",
+        },
+      });
+    } catch (error) {
+      if (eventId && isWebhookEventIdConflict(error)) {
+        sendDuplicateWebhookResponse(res);
+        return;
+      }
+      throw error;
+    }
 
     logFinancialEvent({
       event: "webhook.received",
@@ -356,25 +493,18 @@ export async function handleFlutterwaveWebhook(
       transactionId: data.tx_ref ?? flwCorrelationId,
       userId: flwCorrelationId,
       accountId: flwCorrelationId,
-      idempotencyKey: data.tx_ref ?? flwCorrelationId,
+      idempotencyKey: eventId ?? data.tx_ref ?? flwCorrelationId,
       correlationId: flwCorrelationId,
       amount: data.amount ?? 0,
       currency: data.currency ?? "NGN",
       providerRef: data.flw_ref,
     });
 
-    await prisma.webhook.create({
-      data: {
-        eventType: String(eventType),
-        payload: payload as object,
-        status: "processed",
-      },
-    });
-
     if (eventType === "charge.completed" || data.status === "successful") {
-      // Optional: create or update Transaction for deposit (mint flow)
-      // When tx_ref links to a pending mint, update transaction and reserve history
-      // For now we only log and persist the webhook
+      // W10-SEC-017: Audit log only. Minting is NOT triggered from this path.
+      // The authoritative mint-confirmation flow is POST /v1/mint/confirm with
+      // HMAC signature verification (MINT_CONFIRMATION_SECRET). Fiat webhook
+      // events are stored for reconciliation purposes only.
     }
 
     setFiatWebhookDeprecationHeaders(res);
@@ -401,9 +531,19 @@ export function verifyBillsWebhookSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when BILLS_WEBHOOK_SECRET is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
+    assertBypassNotInProduction();
     logger.warn("Bills webhook signature check bypassed (dev/stage)");
     next();
+    return;
+  }
+
+  // #296: Enforce Content-Type to prevent bypass of JSON body parsing
+  if (!isContentTypeJson(req)) {
+    logger.warn("Bills webhook rejected: invalid Content-Type", {
+      contentType: req.headers["content-type"],
+    });
+    res.status(415).json({ error: "Content-Type must be application/json" });
     return;
   }
 
@@ -423,11 +563,7 @@ export function verifyBillsWebhookSignature(
 
   const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
   if (!rawBody || !Buffer.isBuffer(rawBody)) {
-    throw new AppError(
-      "Raw body required for verification",
-      400,
-      ErrorCodes.RAW_BODY_REQUIRED,
-    );
+    throw new AppError("Raw body required for verification", 400, ErrorCodes.RAW_BODY_REQUIRED);
   }
 
   const timestamp = req.headers["x-bills-timestamp"] as string | undefined;
@@ -442,11 +578,7 @@ export function verifyBillsWebhookSignature(
 
   const received = req.headers["x-bills-signature"] as string | undefined;
   if (!received) {
-    throw new AppError(
-      "Missing x-bills-signature header",
-      401,
-      ErrorCodes.MISSING_SIGNATURE,
-    );
+    throw new AppError("Missing x-bills-signature header", 401, ErrorCodes.MISSING_SIGNATURE);
   }
 
   const computed = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
@@ -465,7 +597,8 @@ export function verifyBillsWebhookSignature(
 
   if (!signatureValid) {
     logger.warn("Bills webhook signature mismatch");
-    throw new AppError("Invalid signature", 401, ErrorCodes.INVALID_SIGNATURE);
+    res.status(401).json({ error: "Invalid signature" });
+    return;
   }
   next();
 }
@@ -480,6 +613,7 @@ export async function handleBillsWebhook(
   next: NextFunction,
 ): Promise<void> {
   try {
+    assertBypassNotInProduction();
     const provider = String(req.params.provider || "")
       .trim()
       .toLowerCase();
@@ -500,9 +634,7 @@ export async function handleBillsWebhook(
     }
 
     const body = (req.body || {}) as Record<string, unknown>;
-    const transactionId = String(
-      body.transaction_id ?? body.transactionId ?? "",
-    ).trim();
+    const transactionId = String(body.transaction_id ?? body.transactionId ?? "").trim();
     const providerReference = String(
       body.provider_reference ?? body.providerReference ?? "",
     ).trim();
@@ -513,8 +645,7 @@ export async function handleBillsWebhook(
     const currency = String(body.currency ?? "NGN")
       .trim()
       .toUpperCase();
-    const reason =
-      body.reason == null ? undefined : String(body.reason).trim() || undefined;
+    const reason = body.reason == null ? undefined : String(body.reason).trim() || undefined;
 
     if (!transactionId) {
       throw new AppError("transaction_id is required", 400);
@@ -523,10 +654,7 @@ export async function handleBillsWebhook(
       throw new AppError("provider_reference is required", 400);
     }
     if (!["completed", "failed", "refunded"].includes(status)) {
-      throw new AppError(
-        "status must be one of completed, failed, refunded",
-        400,
-      );
+      throw new AppError("status must be one of completed, failed, refunded", 400);
     }
     if (!Number.isFinite(amount) || amount < 0) {
       throw new AppError("amount must be a non-negative number", 400);

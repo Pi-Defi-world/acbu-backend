@@ -26,9 +26,7 @@ function getActivationSettings(): {
   };
 }
 
-export async function ensureAccountActivated(
-  destination: string,
-): Promise<ActivationResult> {
+export async function ensureAccountActivated(destination: string): Promise<ActivationResult> {
   const server = stellarClient.getServer();
   const activation = getActivationSettings();
 
@@ -61,7 +59,7 @@ export async function ensureAccountActivated(
     destination,
     // createAccount always funds the network-native asset; the configured
     // fundingAssetCode is returned to callers so the UI/docs can match the
-    // target network bootstrap profile (for example PI vs XLM).
+    // target network bootstrap profile (defaults to XLM).
     startingBalance: activation.startingBalance,
   });
 

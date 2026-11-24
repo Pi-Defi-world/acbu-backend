@@ -15,48 +15,53 @@ DECLARE
 BEGIN
   SELECT COUNT(*) INTO invalid_count
   FROM users
-  WHERE "stellarAddress" IS NOT NULL
+  WHERE "stellar_address" IS NOT NULL
     AND (
       -- Invalid format: wrong length or doesn't start with G
-      LENGTH("stellarAddress") != 56
-      OR "stellarAddress" NOT LIKE 'G%'
+      LENGTH("stellar_address") != 56
+      OR "stellar_address" NOT LIKE 'G%'
       -- Placeholder patterns
-      OR "stellarAddress" ~ '^G[A]{55}$'
-      OR "stellarAddress" ~ '^G[B]{55}$'
-      OR "stellarAddress" ~ '^G[0]{55}$'
-      OR "stellarAddress" LIKE 'GTEST%'
-      OR "stellarAddress" LIKE 'GDUMMY%'
-      OR "stellarAddress" LIKE 'GPLACEHOLDER%'
-      OR "stellarAddress" LIKE 'GXXXXXXXX%'
+      OR "stellar_address" ~ '^G[A]{55}$'
+      OR "stellar_address" ~ '^G[B]{55}$'
+      OR "stellar_address" ~ '^G[0]{55}$'
+      OR "stellar_address" LIKE 'GTEST%'
+      OR "stellar_address" LIKE 'GDUMMY%'
+      OR "stellar_address" LIKE 'GPLACEHOLDER%'
+      OR "stellar_address" LIKE 'GXXXXXXXX%'
     );
 
   IF invalid_count > 0 THEN
-    RAISE EXCEPTION 'Found % users with invalid stellarAddress format. Please clean up data before applying constraint.', invalid_count;
+    RAISE EXCEPTION 'Found % users with invalid stellar_address format. Please clean up data before applying constraint.', invalid_count;
   END IF;
 END $$;
+
+-- Drop existing constraint if already created in baseline migration
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS chk_valid_stellar_address;
 
 -- Add CHECK constraint to enforce valid Stellar address format
 ALTER TABLE users
 ADD CONSTRAINT chk_valid_stellar_address
 CHECK (
-  "stellarAddress" IS NULL
+  "stellar_address" IS NULL
   OR (
     -- Valid format: 56 characters, starts with G, base32 characters only
-    LENGTH("stellarAddress") = 56
-    AND "stellarAddress" LIKE 'G%'
-    AND "stellarAddress" ~ '^[A-Z2-7]{56}$'
+    LENGTH("stellar_address") = 56
+    AND "stellar_address" LIKE 'G%'
+    AND "stellar_address" ~ '^[A-Z2-7]{56}$'
     -- Not a placeholder
-    AND "stellarAddress" !~ '^G[A]{55}$'
-    AND "stellarAddress" !~ '^G[B]{55}$'
-    AND "stellarAddress" !~ '^G[0]{55}$'
-    AND "stellarAddress" NOT LIKE 'GTEST%'
-    AND "stellarAddress" NOT LIKE 'GDUMMY%'
-    AND "stellarAddress" NOT LIKE 'GPLACEHOLDER%'
-    AND "stellarAddress" NOT LIKE 'GXXXXXXXX%'
+    AND "stellar_address" !~ '^G[A]{55}$'
+    AND "stellar_address" !~ '^G[B]{55}$'
+    AND "stellar_address" !~ '^G[0]{55}$'
+    AND "stellar_address" NOT LIKE 'GTEST%'
+    AND "stellar_address" NOT LIKE 'GDUMMY%'
+    AND "stellar_address" NOT LIKE 'GPLACEHOLDER%'
+    AND "stellar_address" NOT LIKE 'GXXXXXXXX%'
   )
 );
 
 -- Add index for faster validation queries
 CREATE INDEX IF NOT EXISTS idx_users_stellar_address_not_null
-ON users ("stellarAddress")
-WHERE "stellarAddress" IS NOT NULL;
+ON users ("stellar_address")
+WHERE "stellar_address" IS NOT NULL;
+

@@ -1,52 +1,47 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16.3-alpine
-    container_name: acbu-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-acbu}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acbu_password}
-      POSTGRES_DB: ${POSTGRES_DB:-acbu_db}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U acbu"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   mongodb:
     image: mongo:7.0.11
-    container_name: acbu-mongodb
     restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-acbu}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-acbu_password}
-      MONGO_INITDB_DATABASE: ${MONGO_DB:-acbu_cache}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?MONGO_INITDB_ROOT_USERNAME is required}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-acbu_db}
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand('ping')\""]
       interval: 10s
       timeout: 5s
       retries: 5
 
   rabbitmq:
     image: rabbitmq:3.13.4-management-alpine
-    container_name: acbu-rabbitmq
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-acbu}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-acbu_password}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
     ports:
-      - "5672:5672"   # AMQP port
-      - "15672:15672" # Management UI
+      - "5672:5672"
+      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -54,6 +49,76 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      SHADOW_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/${MONGO_DB:-acbu_db}?authSource=admin
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+    ports:
+      - "${PORT:-5000}:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ── Optional application services (compose profiles) ─────────────────
+  # The remaining pieces of the complete ACBU stack are behind profiles so
+  # a plain `docker compose up` is unaffected (CI starts services by name):
+  #
+  #   --profile frontend   Next.js frontend container (built from
+  #                        ./acbu-frontend via docker/frontend.Dockerfile)
+  #   --profile stellar    local Soroban sandbox (stellar/quickstart)
+  #   --profile full       frontend + stellar sandbox alongside the always-on
+  #                        infra + backend — the complete ACBU stack:
+  #                          docker compose --profile full up -d --wait
+
+  frontend:
+    build:
+      context: ./acbu-frontend
+      dockerfile: ../docker/frontend.Dockerfile
+    container_name: acbu-frontend
+    restart: unless-stopped
+    profiles: [frontend, full]
+    environment:
+      NODE_ENV: production
+      # The Next.js app runs in the browser, so this URL must be reachable
+      # from the host, not from inside the compose network.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api/v1}
+    ports:
+      - "3000:3000"
+
+  stellar-sandbox:
+    image: stellar/quickstart:latest
+    container_name: acbu-stellar-sandbox
+    restart: unless-stopped
+    profiles: [stellar, full]
+    # Ephemeral local Stellar network: stellar-core + Horizon + Soroban RPC.
+    # Horizon:      http://localhost:8000
+    # Soroban RPC:  http://localhost:8000/rpc
+    # Friendbot:    http://localhost:8000/friendbot
+    # Lab:          http://localhost:8000/lab
+    command: --local
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "supervisorctl", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
 
 volumes:
   postgres_data:

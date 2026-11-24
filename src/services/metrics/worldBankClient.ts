@@ -70,9 +70,7 @@ export async function fetchIndicatorValue(
 
     const records = data[1] as WorldBankResponseItem[];
     // Find the most recent record with a non-null value
-    const latestRecord = records.find(
-      (r) => r.value !== null && r.value !== undefined,
-    );
+    const latestRecord = records.find((r) => r.value !== null && r.value !== undefined);
 
     if (latestRecord && typeof latestRecord.value === "number") {
       return latestRecord.value;
@@ -101,9 +99,7 @@ export async function fetchGdpUsd(currency: string): Promise<number | null> {
 /**
  * Fetch total population for a country.
  */
-export async function fetchPopulation(
-  currency: string,
-): Promise<number | null> {
+export async function fetchPopulation(currency: string): Promise<number | null> {
   const iso2 = CURRENCY_TO_ISO2[currency];
   if (!iso2) return null;
   return fetchIndicatorValue(iso2, "SP.POP.TOTL");
@@ -114,9 +110,7 @@ export async function fetchPopulation(
  * NOTE: This returns units of local currency per 1 USD.
  * Our system uses USD per 1 unit of local currency.
  */
-export async function fetchExchangeRate(
-  currency: string,
-): Promise<number | null> {
+export async function fetchExchangeRate(currency: string): Promise<number | null> {
   const iso2 = CURRENCY_TO_ISO2[currency];
   if (!iso2) return null;
 

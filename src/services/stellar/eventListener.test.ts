@@ -63,11 +63,7 @@ describe("EventListener", () => {
 
   it("polls registered contract IDs through forContract instead of the broad effects stream", async () => {
     const listener = new EventListener();
-    listener.listenToContractEvents(
-      "contract-123",
-      ["contract_credited"],
-      async () => {},
-    );
+    listener.listenToContractEvents("contract-123", ["contract_credited"], async () => {});
 
     await listener.pollOnce();
 
@@ -79,13 +75,9 @@ describe("EventListener", () => {
     const listener = new EventListener();
     const received: unknown[] = [];
 
-    listener.listenToContractEvents(
-      "contract-123",
-      ["contract_credited"],
-      async (event) => {
-        received.push(event);
-      },
-    );
+    listener.listenToContractEvents("contract-123", ["contract_credited"], async (event) => {
+      received.push(event);
+    });
 
     await listener.dispatchRawEffect("contract-123", {
       contract: "contract-123",
@@ -101,11 +93,7 @@ describe("EventListener", () => {
 
   it("exposes Soroban event listener health status", async () => {
     const listener = new EventListener();
-    listener.listenToContractEvents(
-      "contract-123",
-      ["contract_credited"],
-      async () => {},
-    );
+    listener.listenToContractEvents("contract-123", ["contract_credited"], async () => {});
 
     await listener.pollOnce();
 
@@ -118,19 +106,13 @@ describe("EventListener", () => {
     const projectionStore: string[] = [];
     let attempts = 0;
 
-    listener.listenToContractEvents(
-      "contract-123",
-      ["contract_credited"],
-      async (event) => {
-        attempts += 1;
-        if (attempts === 1) {
-          throw new Error("temporary projection error");
-        }
-        projectionStore.push(
-          `${event.contractId}:${event.type}:${event.ledger}`,
-        );
-      },
-    );
+    listener.listenToContractEvents("contract-123", ["contract_credited"], async (event) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("temporary projection error");
+      }
+      projectionStore.push(`${event.contractId}:${event.type}:${event.ledger}`);
+    });
 
     await listener.dispatchRawEffect("contract-123", {
       contract: "contract-123",
@@ -158,9 +140,7 @@ describe("EventListener", () => {
       durable: true,
     });
     expect(mockSendToQueue).toHaveBeenCalledTimes(1);
-    const payload = JSON.parse(
-      (mockSendToQueue.mock.calls[0][1] as Buffer).toString("utf8"),
-    );
+    const payload = JSON.parse((mockSendToQueue.mock.calls[0][1] as Buffer).toString("utf8"));
     expect(payload).toMatchObject({
       reason: "parse_failure",
       registeredContractId: "contract-123",

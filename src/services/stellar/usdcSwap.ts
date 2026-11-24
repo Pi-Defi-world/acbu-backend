@@ -48,9 +48,7 @@ export interface SwapResult {
 export async function swapUsdcToXlm(usdcAmount: number): Promise<SwapResult> {
   const network = config.stellar.network;
   const usdcIssuer =
-    network === "mainnet"
-      ? config.stellar.usdcIssuerMainnet
-      : config.stellar.usdcIssuerTestnet;
+    network === "mainnet" ? config.stellar.usdcIssuerMainnet : config.stellar.usdcIssuerTestnet;
   const usdcAssetCode =
     network === "mainnet"
       ? config.stellar.usdcAssetCodeMainnet
@@ -76,13 +74,10 @@ export async function swapUsdcToXlm(usdcAmount: number): Promise<SwapResult> {
   const backendPublicKey = keypair.publicKey();
 
   // ── 1. Find the best strict-send path via Horizon ────────────────────────
-  const pathsResult = await server
-    .strictSendPaths(usdcAsset, sendAmountStr, [xlmAsset])
-    .call();
+  const pathsResult = await server.strictSendPaths(usdcAsset, sendAmountStr, [xlmAsset]).call();
 
   const bestPath = pathsResult.records.find(
-    (r: { destination_asset_type: string }) =>
-      r.destination_asset_type === "native",
+    (r: { destination_asset_type: string }) => r.destination_asset_type === "native",
   ) as { destination_amount: string } | undefined;
 
   if (!bestPath) {

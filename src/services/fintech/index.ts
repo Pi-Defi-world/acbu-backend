@@ -13,13 +13,5 @@ router.register("mtn_momo", simulatedFintechProvider);
 
 setFintechRouter(router);
 
-export {
-  getFintechRouter,
-  setFintechRouter,
-  FintechProviderRouter,
-} from "./router";
-export type {
-  FintechProvider,
-  FintechProviderId,
-  DisburseRecipient,
-} from "./types";
+export { getFintechRouter, setFintechRouter, FintechProviderRouter } from "./router";
+export type { FintechProvider, FintechProviderId, DisburseRecipient } from "./types";

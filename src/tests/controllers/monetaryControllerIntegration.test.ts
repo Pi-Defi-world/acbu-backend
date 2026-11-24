@@ -62,9 +62,7 @@ describe("Monetary Controller Integration Tests", () => {
         .set("Authorization", "Bearer test-api-key");
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toContain(
-        "must be positive with up to 7 decimal places",
-      );
+      expect(response.body.error).toContain("must be positive with up to 7 decimal places");
     });
 
     it("should reject scientific notation in USDC amounts", async () => {
@@ -77,9 +75,7 @@ describe("Monetary Controller Integration Tests", () => {
         .set("Authorization", "Bearer test-api-key");
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toContain(
-        "must be positive with up to 7 decimal places",
-      );
+      expect(response.body.error).toContain("must be positive with up to 7 decimal places");
     });
 
     it("should handle basket currency deposit with precision", async () => {
@@ -124,9 +120,7 @@ describe("Monetary Controller Integration Tests", () => {
 
       expect(secondResponse.status).toBe(409);
       expect(secondResponse.body.error?.code).toBe("DUPLICATE_FINTECH_TX_ID");
-      expect(secondResponse.body.error?.message).toContain(
-        "Duplicate fintech_tx_id detected",
-      );
+      expect(secondResponse.body.error?.message).toContain("Duplicate fintech_tx_id detected");
     });
 
     it("should reject invalid fintech_tx_id values in basket deposit mint flow", async () => {
@@ -141,9 +135,7 @@ describe("Monetary Controller Integration Tests", () => {
         .set("Authorization", "Bearer test-api-key");
 
       expect(response.status).toBe(400);
-      expect(response.body.error?.message).toContain(
-        "fintech_tx_id must not contain whitespace",
-      );
+      expect(response.body.error?.message).toContain("fintech_tx_id must not contain whitespace");
     });
   });
 
@@ -213,9 +205,7 @@ describe("Monetary Controller Integration Tests", () => {
         .set("Authorization", "Bearer test-api-key");
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toContain(
-        "must be positive with up to 7 decimal places",
-      );
+      expect(response.body.error).toContain("must be positive with up to 7 decimal places");
     });
 
     it("should handle ACBU burn at fee calculation boundaries", async () => {

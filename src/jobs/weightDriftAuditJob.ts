@@ -12,25 +12,31 @@
  * - Diff report includes per-currency analysis with thresholds
  * - Audit stored with "pending" status awaiting manual approval
  * - Audit log entries created for all policy drift events
+ *
+ * AB-026: Uses a distributed MongoDB lock so only one instance executes the
+ * audit per week under horizontal scaling.
  */
-
 import { logger } from "../config/logger";
 import { weightDriftAuditService } from "../services/reserve/WeightDriftAuditService";
 import { sendEmail } from "../services/notification";
 import { config } from "../config/env";
+import { Decimal } from "@prisma/client/runtime/library";
 
 const DEFAULT_INTERVAL_DAYS = 7; // Run weekly
 const INTERVAL_MS =
-  (parseInt(
-    process.env.WEIGHT_DRIFT_AUDIT_INTERVAL_DAYS || String(DEFAULT_INTERVAL_DAYS),
-    10,
-  ) || DEFAULT_INTERVAL_DAYS) *
+  (parseInt(process.env.WEIGHT_DRIFT_AUDIT_INTERVAL_DAYS || String(DEFAULT_INTERVAL_DAYS), 10) ||
+    DEFAULT_INTERVAL_DAYS) *
   24 *
   60 *
   60 *
   1000;
 
 const MAX_TIMEOUT_MS = 2147483647; // Max for 32-bit signed int
+
+const JOB_NAME = "weight-drift-audit";
+// Lock TTL is 6 days 22 h — expires well before the next weekly run so a
+// crashed instance can never block the following week's execution indefinitely.
+const LOCK_TTL_S = (6 * 24 + 22) * 60 * 60;
 
 let stopRequested = false;
 
@@ -71,9 +77,31 @@ async function longSleep(ms: number): Promise<void> {
 }
 
 /**
+ * Normalise the configured admin distribution list into individual recipients.
+ *
+ * The destination is `config.notification.alertEmail`, which is backed by the
+ * comma-separated `NOTIFICATION_ALERT_EMAIL` env var. Splitting on commas
+ * without trimming would happily send to " ops@example.com" (note the leading
+ * space) and count stray delimiters as recipients, so normalise once here.
+ */
+export function parseAlertRecipients(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((address) => address.trim())
+    .filter((address) => address.length > 0);
+}
+
+/**
  * Execute weight drift audit job once
  */
 export async function runWeightDriftAuditOnce(): Promise<void> {
+  const acquired = await acquireJobLock(JOB_NAME, LOCK_TTL_S);
+  if (!acquired) {
+    logger.info("Weight drift audit skipped — another instance holds the lock");
+    return;
+  }
+
   const startTime = Date.now();
 
   try {
@@ -103,7 +131,7 @@ export async function runWeightDriftAuditOnce(): Promise<void> {
     const driftSummary = audit.entries
       .map(
         (e) =>
-          `  ${e.currency}: Policy=${e.policyWeight}% | Actual=${e.actualWeight}% | Drift=${e.driftPercent > 0 ? "+" : ""}${e.driftPercent.toFixed(2)}%${
+          `  ${e.currency}: Policy=${e.policyWeight}% | Actual=${e.actualWeight}% | Drift=${new Decimal(e.driftPercent).gt(0) ? "+" : ""}${new Decimal(e.driftPercent).toFixed(2)}%${
             e.exceedsThreshold ? " ⚠️ EXCEEDS THRESHOLD" : ""
           }`,
       )
@@ -135,18 +163,22 @@ Created At: ${new Date().toISOString()}
 `;
 
     // 4. Send notification to admins (configurable via env)
-    if (config.ADMIN_NOTIFICATION_EMAIL) {
+    // AB-045 (#995): the destination is config.notification.alertEmail, backed by
+    // NOTIFICATION_ALERT_EMAIL in src/config/env.ts. The previously documented
+    // ADMIN_NOTIFICATION_EMAIL key never existed on the config object, so the
+    // audit report was silently never delivered.
+    const adminNotificationEmails = parseAlertRecipients(config.notification.alertEmail);
+    if (adminNotificationEmails.length > 0) {
       try {
-        await sendEmail({
-          to: config.ADMIN_NOTIFICATION_EMAIL,
-          subject: `[ACBU] Weekly Weight Drift Audit - ${audit.currenciesExceedingThreshold > 0 ? "ACTION REQUIRED" : "OK"}`,
-          body: emailBody,
-          html: `<pre>${emailBody}</pre>`,
-        });
+        await sendEmail(
+          adminNotificationEmails.join(","),
+          `[ACBU] Weekly Weight Drift Audit - ${audit.currenciesExceedingThreshold > 0 ? "ACTION REQUIRED" : "OK"}`,
+          emailBody,
+        );
 
         logger.info("Weight drift audit email sent", {
           auditId: audit.auditId,
-          recipientCount: config.ADMIN_NOTIFICATION_EMAIL.split(",").length,
+          recipientCount: adminNotificationEmails.length,
         });
       } catch (e) {
         logger.warn("Failed to send weight drift audit email", {
@@ -154,6 +186,12 @@ Created At: ${new Date().toISOString()}
           error: e,
         });
       }
+    } else {
+      // Surface the skipped notification instead of silently doing nothing, so a
+      // missing NOTIFICATION_ALERT_EMAIL is visible to operators in the logs.
+      logger.warn("Weight drift audit email skipped: NOTIFICATION_ALERT_EMAIL is not configured", {
+        auditId: audit.auditId,
+      });
     }
 
     const duration = Date.now() - startTime;
@@ -170,6 +208,8 @@ Created At: ${new Date().toISOString()}
     });
 
     // Don't re-throw; allow scheduler to continue
+  } finally {
+    await releaseJobLock(JOB_NAME);
   }
 }
 
@@ -185,9 +225,7 @@ export async function startWeightDriftAuditScheduler(): Promise<void> {
         // Run audit immediately on first boot if configured
         if (process.env.WEIGHT_DRIFT_AUDIT_RUN_ON_STARTUP === "true") {
           await runWeightDriftAuditOnce();
-          logger.info(
-            "Startup weight drift audit completed, scheduling next run",
-          );
+          logger.info("Startup weight drift audit completed, scheduling next run");
         }
 
         // Calculate next run (Monday 00:00 UTC by default)
@@ -218,6 +256,7 @@ export async function startWeightDriftAuditScheduler(): Promise<void> {
 
   logger.info("Weight drift audit scheduler started", {
     intervalDays: INTERVAL_MS / (24 * 60 * 60 * 1000),
+    lockTtlSeconds: LOCK_TTL_S,
   });
 }
 

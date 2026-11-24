@@ -18,14 +18,10 @@ const COLLECTION = "job_locks";
 export async function ensureJobLockIndex(): Promise<void> {
   try {
     const db = getMongoDB();
-    await db.collection(COLLECTION).createIndex(
-      { expiresAt: 1 },
-      { expireAfterSeconds: 0, background: true },
-    );
-    await db.collection(COLLECTION).createIndex(
-      { jobName: 1 },
-      { unique: true, background: true },
-    );
+    await db
+      .collection(COLLECTION)
+      .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, background: true });
+    await db.collection(COLLECTION).createIndex({ jobName: 1 }, { unique: true, background: true });
   } catch (err) {
     logger.warn("Failed to create job_locks indexes", { err });
   }
@@ -36,10 +32,7 @@ export async function ensureJobLockIndex(): Promise<void> {
  * Returns true if this instance acquired the lock, false if another instance holds it.
  * The lock expires automatically after `ttlSeconds` even without an explicit release.
  */
-export async function acquireJobLock(
-  jobName: string,
-  ttlSeconds: number,
-): Promise<boolean> {
+export async function acquireJobLock(jobName: string, ttlSeconds: number): Promise<boolean> {
   try {
     const db = getMongoDB();
     const now = new Date();

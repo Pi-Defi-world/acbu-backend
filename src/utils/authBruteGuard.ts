@@ -1,10 +1,7 @@
 import { cacheService, sanitizeKey } from "./cache";
 import { config } from "../config/env";
 import { logger } from "../config/logger";
-import {
-  maskSecurityIdentifier,
-  normalizeRateLimitIdentifier,
-} from "./identifier";
+import { maskSecurityIdentifier, normalizeRateLimitIdentifier } from "./identifier";
 
 const KEY_PREFIX = "brute:";
 

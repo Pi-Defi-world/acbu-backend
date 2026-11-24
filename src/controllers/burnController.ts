@@ -1,4 +1,4 @@
-/**
+/*
  * POST /v1/burn/acbu - Burn ACBU for local currency redemption.
  * Creates transaction record; invokes burning contract when configured.
  */
@@ -30,293 +30,247 @@ import {
 } from "../utils/decimalUtils";
 import { AppError } from "../middleware/errorHandler";
 import { getLatestAcbuRate } from "../services/rates/acbuRateCache";
-import { extractIdempotencyKey } from "../utils/idempotency";
+import { logger } from "../config/logger";
+import { assertValidRecipientAccount } from "../utils/stellar";
 
-/** Stringify a Decimal-like value from a Prisma model. Always returns a string. */
-function toStringDecimal(v: unknown): string {
-  if (v === null || v === undefined) return "0";
-  if (typeof v === "string") return v;
-  if (typeof v === "number") return String(v);
-  if (typeof v === "object" && v !== null && "toString" in v) {
-    return String((v as { toString: () => string }).toString());
-  }
-  return "0";
+function extractIdempotencyKey(req: AuthRequest): string | undefined {
+  const key = req.headers["idempotency-key"];
+  if (Array.isArray(key)) return key[0];
+  return typeof key === "string" ? key : undefined;
 }
 
-/** Best-effort stringify for Decimal-like values in Prisma models. */
-function toNullableStringDecimal(v: unknown): string | null {
-  if (v === null || v === undefined) return null;
-  if (typeof v === "string") return v;
-  if (typeof v === "number") return String(v);
-  if (typeof v === "object" && v !== null && "toString" in v) {
-    return String((v as { toString: () => string }).toString());
-  }
-  return null;
-}
-
-/** Formats an idempotent response using the existing burn transaction record. */
-function respondFromExistingBurnTx(
-  res: Response,
-  tx: any, // Using any to avoid type issues with Prisma client
-  blockchainTxHash: string | null | undefined,
-): void {
-  res.status(200).json({
-    transaction_id: tx.id,
-    acbu_amount: toStringDecimal(tx.acbuAmountBurned),
-    local_amount: toNullableStringDecimal(tx.localAmount),
-    currency: tx.localCurrency,
-    fee: toNullableStringDecimal(tx.fee),
-    rate:
-      tx.rateSnapshot ??
-      ({ acbu_ngn: null, timestamp: tx.createdAt.toISOString() } as const),
-    status: tx.status,
-    estimated_completion: null,
-    blockchain_tx_hash: blockchainTxHash ?? undefined,
-  });
-}
-
-const recipientAccountSchema = z.object({
-  type: z.enum(["bank", "mobile_money"]).optional(),
-  account_number: z.string().min(1),
-  bank_code: z.string().min(1),
-  account_name: z.string().min(1),
+const burnBodySchema = z.object({
+  acbu_amount: z.string().min(1),
+  currency: z.enum(["NGN", "KES", "RWF"]),
 });
 
-export const bodySchema = z.object({
-  acbu_amount: z
-    .string()
-    .min(1)
-    .refine(
-      (s) => /^\d+(\.\d{1,7})?$/.test(s.trim()) && parseFloat(s.trim()) > 0,
-      "must be positive with up to 7 decimal places",
-    ),
-  currency: z.string().length(3).toUpperCase(),
-  recipient_account: recipientAccountSchema,
-  blockchain_tx_hash: z
-    .string()
-    .regex(/^[a-fA-F0-9]{64}$/, "blockchain_tx_hash must be a 64-char hex hash")
-    .optional(),
-});
+type BurnRequest = z.infer<typeof burnBodySchema>;
 
-export async function burnAcbu(
+/**
+ * Burn ACBU for local currency redemption
+ * - Validates wallet has sufficient balance
+ * - Checks withdrawal limits and currency pause status
+ * - Creates burn transaction record
+ * - Invokes contract burning if configured
+ */
+export const burnAcbu = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction,
-): Promise<void> {
+): Promise<void> => {
   try {
-    const parsed = bodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new AppError("Invalid request", 400, "VALIDATION_ERROR", parsed.error.flatten());
+    // Validate API key is present and user is authenticated
+    if (!req.apiKey?.userId) {
+      throw new AppError("Authentication required", 401);
     }
-    const { acbu_amount, currency, recipient_account, blockchain_tx_hash } =
-      parsed.data;
 
     const idempotencyKey = extractIdempotencyKey(req);
-    if (idempotencyKey) {
-      const existingBurn = await prisma.transaction.findFirst({
-        where: {
-          idempotencyKey,
-          type: "burn",
-          userId: req.apiKey?.userId ?? undefined,
-          organizationId: req.apiKey?.organizationId ?? undefined,
-        },
+    if (!idempotencyKey) {
+      throw new AppError("Idempotency-Key header is required", 400);
+    }
+
+    // Parse and validate request body
+    const parsed = burnBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError("Invalid request body", 400);
+    }
+    const body: BurnRequest = parsed.data;
+
+    // Check if currency withdrawal is paused
+    if (await isCurrencyWithdrawalPaused(body.currency)) {
+      throw new AppError(`Withdrawals for ${body.currency} are temporarily paused`, 503);
+    }
+
+    // Parse ACBU amount
+    const acbuAmount = parseMonetaryString(body.acbu_amount);
+    if (acbuAmount.isNaN() || acbuAmount.isNegative()) {
+      throw new AppError("Invalid ACBU amount", 400);
+    }
+
+    // Load user's wallet
+    const wallet = await prisma.wallet.findUnique({
+      where: { userId: req.apiKey.userId },
+      select: {
+        id: true,
+        acbuBalance: true,
+        userId: true,
+      },
+    });
+
+    if (!wallet) {
+      throw new AppError("Wallet not found", 404);
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.apiKey.userId },
+      select: { stellarAddress: true },
+    });
+    if (!user?.stellarAddress) {
+      throw new AppError("Recipient Stellar account is not configured", 400);
+    }
+    try {
+      assertValidRecipientAccount(user.stellarAddress);
+    } catch {
+      throw new AppError("Recipient Stellar account is invalid", 400);
+    }
+    const recipientAddress = user.stellarAddress;
+
+    // **SECURITY FIX (AB-009)**: Verify sufficient balance before attempting burn
+    const currentBalance = new Decimal(wallet.acbuBalance as any);
+    if (currentBalance.lt(acbuAmount)) {
+      logger.warn("Burn rejected: insufficient balance", {
+        userId: req.apiKey.userId,
+        requested: acbuAmount.toString(),
+        available: currentBalance.toString(),
       });
-      if (existingBurn) {
-        respondFromExistingBurnTx(
-          res,
-          existingBurn,
-          existingBurn.blockchainTxHash ?? blockchain_tx_hash ?? null,
-        );
-        return;
-      }
-    }
-
-    const addresses = getContractAddresses();
-    const burningEnabled = Boolean(addresses.burning);
-    if (burningEnabled && blockchain_tx_hash) {
-      const existing = await prisma.transaction.findFirst({
-        where: { type: "burn", blockchainTxHash: blockchain_tx_hash },
-      });
-      if (existing) {
-        respondFromExistingBurnTx(res, existing, blockchain_tx_hash);
-        return;
-      }
-    }
-
-    const acbuDecimal = parseMonetaryString(acbu_amount, "acbu_amount");
-    const burnFeeBps = await getBurnFeeBps(currency);
-    const feeAcbuDecimal = calculateFee(acbuDecimal, burnFeeBps);
-    const acbuAmount7 = decimalToContractNumber(acbuDecimal).toString();
-
-    const acbuRateRecord = await getLatestAcbuRate();
-    const rateKey =
-      `acbu${currency.charAt(0).toUpperCase() + currency.slice(1).toLowerCase()}` as keyof typeof acbuRateRecord;
-    const acbuPerLocal = acbuRateRecord[rateKey];
-    if (
-      !acbuPerLocal ||
-      typeof acbuPerLocal !== "object" ||
-      !("toNumber" in acbuPerLocal)
-    ) {
-      throw new Error(`Rate not found for currency ${currency}`);
-    }
-    const acbuPerLocalDecimal = new Decimal(acbuPerLocal.toNumber());
-    const localDecimal = acbuDecimal.mul(acbuPerLocalDecimal);
-
-    // SECURITY: Always enforce circuit breaker and withdrawal limits
-    // Previously these checks were skipped when req.audience was undefined,
-    // allowing bypass of critical financial controls via direct /burn/acbu route
-    const paused = await isCurrencyWithdrawalPaused(currency);
-    if (paused) {
       throw new AppError(
-        `Single-currency withdrawals for ${currency} are temporarily paused (reserve below threshold). Basket withdrawals continue.`,
-        503,
-        "CIRCUIT_BREAKER",
+        `Insufficient ACBU balance. Available: ${currentBalance.toString()}, Requested: ${acbuAmount.toString()}`,
+        400,
       );
     }
 
-    // Apply withdrawal limits - use retail as default if no audience is set
-    const audience = req.audience || "retail";
-    await checkWithdrawalLimits(
-      audience,
-      acbuDecimal,
-      currency,
-      req.apiKey?.userId ?? null,
-      req.apiKey?.organizationId ?? null,
-    );
+    // Get burn fee and calculate total deduction
+    const feeBps = await getBurnFeeBps();
+    const fee = calculateFee(acbuAmount, feeBps);
+    const totalDeduction = acbuAmount.plus(fee);
 
-    let tx;
-    try {
-      tx = await prisma.transaction.create({
-        data: {
-          userId: req.apiKey?.userId ?? undefined,
-          organizationId: req.apiKey?.organizationId ?? undefined,
-          idempotencyKey,
-          type: "burn",
-          status: "pending",
-          acbuAmountBurned: new Decimal(acbuDecimal),
-          localCurrency: currency,
-          localAmount: new Decimal(localDecimal),
-          recipientAccount: recipient_account as object,
-          fee: new Decimal(feeAcbuDecimal),
-          rateSnapshot: {
-            acbu_ngn: null,
-            timestamp: new Date().toISOString(),
-          },
-          blockchainTxHash:
-            burningEnabled && blockchain_tx_hash ? blockchain_tx_hash : undefined,
-        },
+    // Final balance check with fees
+    if (currentBalance.lt(totalDeduction)) {
+      logger.warn("Burn rejected: insufficient balance for burn + fee", {
+        userId: req.apiKey.userId,
+        acbuAmount: acbuAmount.toString(),
+        fee: fee.toString(),
+        total: totalDeduction.toString(),
+        available: currentBalance.toString(),
       });
-    } catch (createError) {
-      if (
-        idempotencyKey &&
-        createError instanceof Prisma.PrismaClientKnownRequestError &&
-        createError.code === "P2002"
-      ) {
-        const existing = await prisma.transaction.findFirst({
-          where: {
-            idempotencyKey,
-            type: "burn",
-            userId: req.apiKey?.userId ?? undefined,
-            organizationId: req.apiKey?.organizationId ?? undefined,
-          },
-        });
-        if (existing) {
-          respondFromExistingBurnTx(
-            res,
-            existing,
-            existing.blockchainTxHash ?? blockchain_tx_hash ?? null,
-          );
-          return;
-        }
-      }
+      throw new AppError(
+        `Insufficient balance for burn and fees. Required: ${totalDeduction.toString()}, Available: ${currentBalance.toString()}`,
+        400,
+      );
+    }
 
-      const isDuplicateBurnHash =
-        burningEnabled &&
-        Boolean(blockchain_tx_hash) &&
-        createError instanceof Prisma.PrismaClientKnownRequestError &&
-        createError.code === "P2002";
+    // Check withdrawal limits
+    await checkWithdrawalLimits(req.apiKey.userId, acbuAmount);
 
-      if (!isDuplicateBurnHash || !blockchain_tx_hash) {
-        throw createError;
-      }
+    // Check for idempotency
+    const existingBurn = await prisma.burnTransaction.findUnique({
+      where: { idempotencyKey },
+    });
 
-      const existing = await prisma.transaction.findFirst({
-        where: { type: "burn", blockchainTxHash: blockchain_tx_hash },
+    if (existingBurn) {
+      res.status(200).json({
+        transaction_id: existingBurn.id,
+        status: existingBurn.status,
+        amount: existingBurn.acbuAmount,
+        fee: existingBurn.feeAmount,
       });
-      if (!existing) {
-        throw createError;
-      }
-
-      respondFromExistingBurnTx(res, existing, blockchain_tx_hash);
       return;
     }
 
-    await logAudit({
-      eventType: "transaction",
-      entityType: "transaction",
-      entityId: tx.id,
-      action: "burn_created",
-      newValue: { type: "burn", acbuAmount: acbuDecimal.toNumber(), currency },
-      performedBy: req.apiKey?.userId ?? undefined,
+    // Create burn transaction record
+    const burnTx = await prisma.burnTransaction.create({
+      data: {
+        userId: req.apiKey.userId,
+        acbuAmount: acbuAmount,
+        feeAmount: fee,
+        currency: body.currency,
+        idempotencyKey,
+        status: "PENDING",
+      },
     });
 
-    if (burningEnabled) {
-      if (blockchain_tx_hash) {
-        respondFromExistingBurnTx(res, tx, blockchain_tx_hash);
-        return;
-      }
-      try {
-        const sourceAccount = stellarClient.getKeypair()?.publicKey();
-        if (!sourceAccount) throw new Error("No source account available");
+    // Attempt to invoke contract if configured
+    const contractAddresses = getContractAddresses();
+    let transactionHash: string | null = null;
 
+    if (contractAddresses.burning) {
+      try {
         const result = await acbuBurningService.redeemSingle({
-          user: sourceAccount,
-          recipient: sourceAccount, // S-tokens go to backend's wallet for off-ramp processing
-          acbuAmount: acbuAmount7,
-          currency,
+          user: req.apiKey.userId,
+          recipient: recipientAddress,
+          acbuAmount: decimalToContractNumber(acbuAmount),
+          currency: body.currency,
+          idempotencyKey,
         });
-        const localNumFromContractDecimal = contractNumberToDecimal(Number(result.localAmount), 2);
-        await prisma.transaction.update({
-          where: { id: tx.id },
+
+        transactionHash = result.transactionHash;
+
+        // Update burn transaction with contract result
+        await prisma.burnTransaction.update({
+          where: { id: burnTx.id },
           data: {
-            status: "processing",
-            localAmount: new Decimal(localNumFromContractDecimal),
-            blockchainTxHash: result.transactionHash,
+            status: "CONFIRMED",
+            contractTxHash: transactionHash,
+            completedAt: new Date(),
           },
         });
-        res.status(200).json({
-          transaction_id: tx.id,
-          acbu_amount: acbuDecimal.toString(),
-          local_amount: localNumFromContractDecimal.toString(),
-          currency,
-          fee: feeAcbuDecimal.toString(),
-          rate: { acbu_ngn: null, timestamp: new Date().toISOString() },
-          status: "processing",
-          estimated_completion: null,
-          blockchain_tx_hash: result.transactionHash,
-        });
-        return;
-      } catch (err) {
-        await prisma.transaction.update({
-          where: { id: tx.id },
-          data: { status: "failed" },
-        });
-        next(err);
-        return;
-      }
-    }
 
-    res.status(200).json({
-      transaction_id: tx.id,
-      acbu_amount: acbuDecimal.toString(),
-      local_amount: null,
-      currency,
-      fee: feeAcbuDecimal.toString(),
-      rate: { acbu_ngn: null, timestamp: new Date().toISOString() },
-      status: "pending",
-      estimated_completion: null,
-    });
+        // Deduct from wallet balance
+        await prisma.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            acbuBalance: {
+              decrement: totalDeduction,
+            },
+          },
+        });
+
+        await logAudit({
+          eventType: "transaction",
+          entityType: "burn_transaction",
+          entityId: burnTx.id,
+          action: "burn_success",
+          newValue: {
+            userId: req.apiKey.userId,
+            acbuAmount: acbuAmount.toString(),
+            currency: body.currency,
+            txHash: transactionHash,
+          },
+          performedBy: req.apiKey.userId,
+        });
+
+        res.status(200).json({
+          transaction_id: burnTx.id,
+          status: "CONFIRMED",
+          amount: acbuAmount,
+          fee,
+          transaction_hash: transactionHash,
+        });
+      } catch (contractError) {
+        logger.error("Contract invocation failed", { burnTxId: burnTx.id, contractError });
+
+        // Update burn transaction to reflect contract failure
+        await prisma.burnTransaction.update({
+          where: { id: burnTx.id },
+          data: { status: "FAILED" },
+        });
+
+        await logAudit({
+          eventType: "transaction",
+          entityType: "burn_transaction",
+          entityId: burnTx.id,
+          action: "burn_failed",
+          newValue: {
+            userId: req.apiKey.userId,
+            acbuAmount: acbuAmount.toString(),
+            reason: contractError instanceof Error ? contractError.message : "Unknown error",
+          },
+          performedBy: req.apiKey.userId,
+        });
+
+        throw new AppError("Contract invocation failed. Please try again later.", 500);
+      }
+    } else {
+      // No contract configured - mark as pending and awaiting async processing
+      res.status(202).json({
+        transaction_id: burnTx.id,
+        status: "PENDING",
+        amount: acbuAmount,
+        fee,
+        message: "Burn transaction submitted and is being processed",
+      });
+    }
   } catch (error) {
     next(error);
   }
-}
+};

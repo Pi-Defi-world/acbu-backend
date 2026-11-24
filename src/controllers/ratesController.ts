@@ -9,11 +9,7 @@ import { basketService } from "../services/basket";
 import { getLatestAcbuRate } from "../services/rates/acbuRateCache";
 import { computeSyntheticBasketOneAcbuForBasket } from "../services/oracle/syntheticBasket";
 
-export async function getRates(
-  _req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function getRates(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     let latest: AcbuRate | null = null;
     try {
@@ -85,22 +81,22 @@ export async function getRatesQuote(
     }
 
     const equivalent: Record<string, string> = {};
-    const acbuUsd = latest.acbuUsd.toNumber();
+    const acbuUsd = Number(latest.acbuUsd.toString());
     equivalent.USD = (amount * acbuUsd).toFixed(2);
 
     const rates: { code: string; val: number | null }[] = [
-      { code: "EUR", val: latest.acbuEur?.toNumber() ?? null },
-      { code: "GBP", val: latest.acbuGbp?.toNumber() ?? null },
-      { code: "NGN", val: latest.acbuNgn?.toNumber() ?? null },
-      { code: "KES", val: latest.acbuKes?.toNumber() ?? null },
-      { code: "ZAR", val: latest.acbuZar?.toNumber() ?? null },
-      { code: "RWF", val: latest.acbuRwf?.toNumber() ?? null },
-      { code: "GHS", val: latest.acbuGhs?.toNumber() ?? null },
-      { code: "EGP", val: latest.acbuEgp?.toNumber() ?? null },
-      { code: "MAD", val: latest.acbuMad?.toNumber() ?? null },
-      { code: "TZS", val: latest.acbuTzs?.toNumber() ?? null },
-      { code: "UGX", val: latest.acbuUgx?.toNumber() ?? null },
-      { code: "XOF", val: latest.acbuXof?.toNumber() ?? null },
+      { code: "EUR", val: latest.acbuEur != null ? Number(latest.acbuEur.toString()) : null },
+      { code: "GBP", val: latest.acbuGbp != null ? Number(latest.acbuGbp.toString()) : null },
+      { code: "NGN", val: latest.acbuNgn != null ? Number(latest.acbuNgn.toString()) : null },
+      { code: "KES", val: latest.acbuKes != null ? Number(latest.acbuKes.toString()) : null },
+      { code: "ZAR", val: latest.acbuZar != null ? Number(latest.acbuZar.toString()) : null },
+      { code: "RWF", val: latest.acbuRwf != null ? Number(latest.acbuRwf.toString()) : null },
+      { code: "GHS", val: latest.acbuGhs != null ? Number(latest.acbuGhs.toString()) : null },
+      { code: "EGP", val: latest.acbuEgp != null ? Number(latest.acbuEgp.toString()) : null },
+      { code: "MAD", val: latest.acbuMad != null ? Number(latest.acbuMad.toString()) : null },
+      { code: "TZS", val: latest.acbuTzs != null ? Number(latest.acbuTzs.toString()) : null },
+      { code: "UGX", val: latest.acbuUgx != null ? Number(latest.acbuUgx.toString()) : null },
+      { code: "XOF", val: latest.acbuXof != null ? Number(latest.acbuXof.toString()) : null },
     ];
     for (const { code, val } of rates) {
       if (val != null && val > 0) {
