@@ -49,7 +49,7 @@ jobs:
           # migration lands upstream.
           - name: acbu-smart-contract
             ref: dev
-            check: cargo check --workspace --exclude acbu_minting --exclude acbu_reserve_tracker --exclude acbu_lending_pool --exclude acbu_oracle
+            check: cargo check --workspace --exclude acbu_minting --exclude acbu_reserve_tracker --exclude acbu_lending_pool --exclude acbu_oracle --exclude acbu_savings_vault --exclude acbu_escrow
             targets: wasm32-unknown-unknown
             needs-token-wasm: 'true'
           - name: acbu-zk
