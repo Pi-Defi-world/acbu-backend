@@ -246,6 +246,7 @@ function loadControllerWithEnv(
         },
       };
     });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- synchronous reload inside jest.isolateModules
     mod = require("./webhookController");
   });
   jest.dontMock("../config/env");
