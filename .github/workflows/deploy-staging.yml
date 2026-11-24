@@ -21,9 +21,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Resolve a branch/tag to a single immutable SHA before any gated deployment.
+  resolve-ref:
+    name: Resolve immutable deployment SHA
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Resolve requested ref
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_REF: ${{ github.event.inputs.ref || github.sha }}
+        run: |
+          set -euo pipefail
+          encoded_ref="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["REQUESTED_REF"], safe=""))')"
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${encoded_ref}" --jq '.sha')"
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Cannot resolve requested deployment ref to an immutable commit"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Deploying and verifying immutable revision $sha"
+
+  # W11-CAR-015: no staging deployment without nine verified contract WASMs.
+  wasm-integrity:
+    name: Approved contract WASM integrity
+    needs: resolve-ref
+    uses: ./.github/workflows/verify-wasm-integrity.yml
+    with:
+      backend-ref: ${{ needs.resolve-ref.outputs.sha }}
+
   # ── Gate: Secret scan must pass before we deploy ──────────────────────
   secret-scan:
     name: Secret Scan (gitleaks)
+    needs: resolve-ref
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -32,7 +67,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.resolve-ref.outputs.sha }}
           fetch-depth: 0
 
       - name: Install Gitleaks
@@ -52,7 +87,7 @@ jobs:
   # If the CI workflow hasn't run or failed, this job waits/blocks accordingly.
   deploy:
     name: Deploy to Staging
-    needs: [secret-scan]
+    needs: [resolve-ref, secret-scan, wasm-integrity]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -67,7 +102,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.resolve-ref.outputs.sha }}
 
       # ── Authenticate ────────────────────────────────────────────────────
       - name: Log in to GitHub Container Registry
@@ -82,7 +117,7 @@ jobs:
       - name: Set image tag
         id: tag
         run: |
-          SHORT_SHA=$(git rev-parse --short "${{ github.sha }}")
+          SHORT_SHA=$(git rev-parse --short HEAD)
           echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${{ github.repository }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
@@ -100,7 +135,7 @@ jobs:
             ${{ steps.tag.outputs.image }}
             ghcr.io/${{ github.repository }}:staging
           labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ needs.resolve-ref.outputs.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -197,6 +232,6 @@ jobs:
       - name: Notify deployment failure
         if: failure()
         run: |
-          echo "::error::Staging deploy FAILED for commit ${{ github.sha }}."
+          echo "::error::Staging deploy FAILED for commit ${{ needs.resolve-ref.outputs.sha }}."
           echo "Check the deploy step and health-check logs above."
           # Add Slack/PagerDuty/email notification here if needed.

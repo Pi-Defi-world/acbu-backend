@@ -1,107 +1,111 @@
 name: Verify WASM Integrity
 
+# W11-CAR-015: compile audited source and verify all nine contract binaries
+# against independently approved SHA-256 values. Missing artifacts must fail.
 on:
   push:
     branches: [main, dev, develop]
     paths:
-      - "contracts/**"
-      - "wasm/**"
-      - ".wasm-checksums"
-      - ".github/workflows/verify-wasm-integrity.yml"
+      - '.wasm-checksums'
+      - 'WASM_INTEGRITY.md'
+      - 'scripts/ci/verify-wasm-integrity.js'
+      - 'tests/wasmIntegrity.test.js'
+      - '.github/workflows/verify-wasm-integrity.yml'
   pull_request:
     branches: [main, dev, develop]
     paths:
-      - "contracts/**"
-      - "wasm/**"
-      - ".wasm-checksums"
-      - ".github/workflows/verify-wasm-integrity.yml"
-  # Allow manual runs to verify integrity on demand
+      - '.wasm-checksums'
+      - 'WASM_INTEGRITY.md'
+      - 'scripts/ci/verify-wasm-integrity.js'
+      - 'tests/wasmIntegrity.test.js'
+      - '.github/workflows/verify-wasm-integrity.yml'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      backend-ref:
+        description: Backend revision to validate
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
 
 jobs:
   verify-wasm-integrity:
-    name: Verify WASM Checksums
+    name: Verify nine pinned contract WASMs
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check for WASM artifacts
-        id: find-wasm
+      - name: Fetch backend source without broken gitlink initialization
+        shell: bash
+        env:
+          BACKEND_REPOSITORY: ${{ github.repository }}
+          BACKEND_REF: ${{ inputs.backend-ref || github.sha }}
         run: |
-          # Find all .wasm files tracked in the repository
-          WASM_FILES=$(find . -name "*.wasm" \
-            -not -path "./.git/*" \
-            -not -path "./node_modules/*" \
-            2>/dev/null || true)
+          set -euo pipefail
+          # This repository has an acbu-frontend gitlink without a .gitmodules
+          # entry. actions/checkout v7 runs git submodule foreach even with
+          # submodules: false, which aborts before integrity tests run.
+          # A GitHub source archive contains tracked backend files but never
+          # initializes Git submodules. No checksum values are generated here.
+          mkdir -p backend
+          # Encode the requested revision as one URL path segment. A raw '#'
+          # would otherwise be treated as a fragment and silently change ref.
+          encoded_ref="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["BACKEND_REF"], safe=""))')"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://api.github.com/repos/${BACKEND_REPOSITORY}/tarball/${encoded_ref}" \
+            | tar -xz --strip-components=1 -C backend
+          test -f backend/scripts/ci/verify-wasm-integrity.js
+          test -f backend/tests/wasmIntegrity.test.js
 
-          if [ -z "$WASM_FILES" ]; then
-            echo "No .wasm files found in repository. Nothing to verify."
-            echo "has_wasm=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Found WASM files:"
-            echo "$WASM_FILES"
-            echo "has_wasm=true" >> "$GITHUB_OUTPUT"
-            echo "wasm_files<<EOF" >> "$GITHUB_OUTPUT"
-            echo "$WASM_FILES" >> "$GITHUB_OUTPUT"
-            echo "EOF" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Run integrity verifier regression tests
+        run: node --test backend/tests/wasmIntegrity.test.js
 
-      - name: Verify checksums against .wasm-checksums
-        if: steps.find-wasm.outputs.has_wasm == 'true'
+      - name: Checkout audited contract source at immutable commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Pi-Defi-world/acbu-smart-contract
+          # Changes to this pin require an independently reviewed lock update.
+          ref: 3160312a7c9334447be81ebe17ca2f5e3fa83057
+          path: contract-source
+          persist-credentials: false
+
+      - name: Install pinned Rust and wasm32 target
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: '1.88.0'
+          targets: wasm32-unknown-unknown
+
+      - name: Verify vendored token WASM
+        working-directory: contract-source
+        run: bash scripts/fetch_token_wasm.sh && bash scripts/verify_wasm_hash.sh
+
+      - name: Build nine release WASMs from pinned source
+        working-directory: contract-source
+        env:
+          RUSTUP_TOOLCHAIN: '1.88.0'
         run: |
-          if [ ! -f ".wasm-checksums" ]; then
-            echo "::error::.wasm-checksums file is missing. WASM artifacts are present but have no recorded checksums."
-            echo "Run: sha256sum \$(find . -name '*.wasm' -not -path './.git/*' -not -path './node_modules/*') > .wasm-checksums"
-            echo "Then commit .wasm-checksums to the repository."
-            exit 1
-          fi
+          set -euo pipefail
+          cargo build --locked --release --target wasm32-unknown-unknown \
+            -p acbu_burning \
+            -p acbu_escrow \
+            -p acbu_lending_pool \
+            -p acbu_minting \
+            -p acbu_multisig \
+            -p acbu_oracle \
+            -p acbu_reserve_tracker \
+            -p acbu_savings_vault \
+            -p zk_verifier
 
-          echo "Verifying WASM file integrity against recorded checksums..."
-          sha256sum --check .wasm-checksums
-          echo "All WASM checksums verified successfully."
-
-      - name: Detect unregistered WASM files
-        if: steps.find-wasm.outputs.has_wasm == 'true'
+      - name: Generate candidate digests for independent security review
         run: |
-          # Ensure every .wasm file in the repo appears in .wasm-checksums
-          UNREGISTERED=""
-          while IFS= read -r wasm_file; do
-            # Strip leading ./ for consistent comparison
-            normalized="${wasm_file#./}"
-            if ! grep -q "$normalized" .wasm-checksums 2>/dev/null; then
-              UNREGISTERED="$UNREGISTERED $normalized"
-            fi
-          done <<< "${{ steps.find-wasm.outputs.wasm_files }}"
+          node backend/scripts/ci/verify-wasm-integrity.js \
+            --dir contract-source/target/wasm32-unknown-unknown/release \
+            --print-candidates > wasm-candidates.sha256
+          echo 'Candidate hashes need manual audit; do not auto-approve these.'
 
-          if [ -n "$UNREGISTERED" ]; then
-            echo "::error::The following WASM files are not registered in .wasm-checksums:$UNREGISTERED"
-            echo "Add them with: sha256sum$UNREGISTERED >> .wasm-checksums"
-            exit 1
-          fi
-
-          echo "All WASM files are registered in .wasm-checksums."
-
-      - name: Check for stale checksum entries
-        if: steps.find-wasm.outputs.has_wasm == 'true'
-        run: |
-          # Warn if .wasm-checksums references files that no longer exist
-          STALE=""
-          while IFS= read -r line; do
-            # Each line in sha256sum format: "<hash>  <path>"
-            recorded_path=$(echo "$line" | awk '{print $2}')
-            if [ ! -f "$recorded_path" ]; then
-              STALE="$STALE\n  $recorded_path"
-            fi
-          done < .wasm-checksums
-
-          if [ -n "$STALE" ]; then
-            echo "::warning::Stale entries in .wasm-checksums (files no longer exist):$STALE"
-            echo "Remove stale entries by regenerating: sha256sum \$(find . -name '*.wasm' ...) > .wasm-checksums"
-          fi
-
-      - name: Skip — no WASM artifacts present
-        if: steps.find-wasm.outputs.has_wasm == 'false'
+      - name: Require exact match with approved SHA-256 lock
         run: |
           echo "No WASM artifacts found. This is expected until Soroban contracts are compiled and committed."
           echo "See WASM_INTEGRITY.md for instructions on registering contract artifacts."
