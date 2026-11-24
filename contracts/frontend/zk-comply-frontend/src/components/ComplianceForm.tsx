@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { Keypair } from "@stellar/stellar-sdk";
 import { useIdentity } from "../hooks/useIdentity";
 import type { Credential } from "../types";
 import {
@@ -380,12 +381,19 @@ function ProvingStep({
           countryCode: identity.countryCode,
           salt: BigInt(salt),
         };
+        const signingAddress = Keypair.fromSecret(signerSecret).publicKey();
+        if (signingAddress !== identity.stellarAddress) {
+          throw new Error(
+            "The signing key must belong to the Stellar address on your verified identity."
+          );
+        }
 
         setStatus("Generating UltraHonk ZK proof…");
         const artifacts = await generateProof({
           credential: cred,
           requiredKyc,
           allowedCountry,
+          walletAddress: signingAddress,
         });
         if (cancelled) return;
 
