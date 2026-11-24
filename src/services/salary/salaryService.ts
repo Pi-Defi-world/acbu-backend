@@ -8,7 +8,7 @@ import { AppError } from "../../middleware/errorHandler";
 import { getInitialDailyMidnight, getNextDailyMidnight } from "../../utils/dateUtils";
 import { retryWithBackoff } from "../../utils/retry";
 import crypto from "crypto";
-import { decimalToNumber } from "../../utils/decimalUtils";
+import { currencyAmountToSmallestUnit } from "../../utils/decimalUtils";
 
 /**
  * Creates a new salary batch with items. Supports idempotency via idempotencyKey.
@@ -78,7 +78,7 @@ export async function createSalaryBatch(
     userId: userId ?? batch.id,
     accountId: organizationId ?? userId ?? batch.id,
     idempotencyKey: idempotencyKey ?? batch.id,
-    amount: Math.round(decimalToNumber(calculatedTotal) * 100),
+    amount: currencyAmountToSmallestUnit(calculatedTotal.toString(), currency || "ACBU"),
     currency: currency || "ACBU",
     correlationId: salaryCorrelationId,
   });
@@ -213,7 +213,7 @@ export async function processSalaryBatch(batchId: string): Promise<void> {
     userId: batch.userId ?? batchId,
     accountId: batch.organizationId ?? batch.userId ?? batchId,
     idempotencyKey: batch.idempotencyKey ?? batchId,
-    amount: Math.round(decimalToNumber(batch.totalAmount) * 100),
+    amount: currencyAmountToSmallestUnit(batch.totalAmount.toString(), batch.currency),
     currency: batch.currency,
     correlationId: crypto.randomUUID(),
   });
