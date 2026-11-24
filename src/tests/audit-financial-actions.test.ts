@@ -121,7 +121,7 @@ jest.mock("../services/stellar/feeManager", () => ({
 }));
 
 // Mock recipient resolver
-jest.mock("../recipient/recipientResolver", () => ({
+jest.mock("../services/recipient/recipientResolver", () => ({
   normalizeRecipientQuery: jest.fn((to: string) => {
     if (to.startsWith("G") && to.length === 56) {
       return { kind: "address" as const, value: to };
