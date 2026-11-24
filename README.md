@@ -23,7 +23,15 @@ Backend API server for the ACBU (African Currency Basket Unit) platform.
 
 ### 1. Clone and Install
 
+This repository is the single home for the whole platform (see [MONOREPO.md](MONOREPO.md)):
+the backend lives at the repository root, the web frontend in [`frontend/`](frontend/)
+and the Soroban smart contracts in [`contracts/`](contracts/). Clone this one repository only;
+the former `acbu-frontend` and `acbu-smart-contract` repositories are being archived and should
+not be cloned or pushed to.
+
 ```bash
+git clone https://github.com/Pi-Defi-world/acbu-backend.git
+cd acbu-backend
 pnpm install
 ```
 
@@ -141,6 +149,8 @@ backend/
 │   └── types/           # TypeScript type definitions
 ├── tests/               # Test files
 ├── prisma/              # Prisma schema and migrations
+├── frontend/            # Web frontend (formerly the acbu-frontend repo)
+├── contracts/           # Soroban smart contracts (formerly the acbu-smart-contract repo)
 ├── scripts/             # Utility scripts
 ├── docker-compose.yml   # Docker services configuration
 └── package.json
