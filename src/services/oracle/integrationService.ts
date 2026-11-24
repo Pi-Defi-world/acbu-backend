@@ -227,7 +227,7 @@ export async function fetchAndStoreRates(): Promise<void> {
             sources: sourcesForContract,
             timestamp: timestampUnix,
           });
-          logger.info("Oracle: rate updated on-chain", {
+          logger.info("Oracle: validator rate submitted on-chain", {
             currency,
             rate: rate7,
           });
