@@ -48,12 +48,14 @@ CREATE TABLE IF NOT EXISTS "refresh_tokens" (
 -- create a UNIQUE constraint using a name already occupied by that index.
 DO $$
 BEGIN
-    IF to_regclass('public.refresh_tokens_token_hash_key') IS NULL
-       AND NOT EXISTS (
-           SELECT 1 FROM pg_constraint
-           WHERE conname = 'refresh_tokens_token_hash_key'
-             AND conrelid = '"refresh_tokens"'::regclass
-       ) THEN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'refresh_tokens_token_hash_key'
+    ) AND NOT EXISTS (
+        -- 20260129000000_init created this as a plain unique INDEX, not a
+        -- constraint; ADD CONSTRAINT would collide with that index name (42P07).
+        SELECT 1 FROM pg_class WHERE relname = 'refresh_tokens_token_hash_key'
+    ) THEN
         ALTER TABLE "refresh_tokens"
             ADD CONSTRAINT "refresh_tokens_token_hash_key" UNIQUE ("token_hash");
     END IF;

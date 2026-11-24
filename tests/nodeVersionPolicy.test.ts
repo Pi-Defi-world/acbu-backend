@@ -14,6 +14,37 @@ describe("Node version policy", () => {
     expect(packageJson.engines?.node).toBe("22.x");
   });
 
+  it("keeps .tool-versions aligned with .nvmrc", () => {
+    const toolVersions = fs
+      .readFileSync(path.join(repositoryRoot, ".tool-versions"), "utf8")
+      .trim();
+
+    expect(toolVersions).toBe("nodejs 22");
+  });
+
+  it("does not keep competing Node version pins in subdirectories", () => {
+    const nestedVersionFiles: string[] = [];
+
+    const walk = (directory: string) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name === "node_modules" || entry.name === ".git") {
+          continue;
+        }
+        const nestedPath = path.join(directory, entry.name);
+        for (const fileName of [".nvmrc", ".node-version"]) {
+          if (fs.existsSync(path.join(nestedPath, fileName))) {
+            nestedVersionFiles.push(path.relative(repositoryRoot, path.join(nestedPath, fileName)));
+          }
+        }
+        walk(nestedPath);
+      }
+    };
+
+    walk(repositoryRoot);
+
+    expect(nestedVersionFiles).toEqual([]);
+  });
+
   it("uses Node 22 in every setup-node workflow step", () => {
     const workflowsDirectory = path.join(repositoryRoot, ".github", "workflows");
     const workflowFiles = fs

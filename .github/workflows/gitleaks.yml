@@ -30,12 +30,13 @@ jobs:
           sudo mv gitleaks /usr/local/bin/
           gitleaks version
 
-      - name: Run gitleaks on introduced commits
-        env:
-          GITLEAKS_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - name: Run gitleaks
         run: |
-          if [[ -z "$GITLEAKS_BASE_SHA" || "$GITLEAKS_BASE_SHA" =~ ^0+$ ]]; then
-            echo "::error::Unable to determine the base commit for the Gitleaks range."
-            exit 1
+          # A depth-0 checkout fetches every branch, so an unscoped scan also
+          # reports findings from unrelated branch history. On pull requests,
+          # scan only the commits the PR would add.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gitleaks detect --verbose --redact --log-opts="origin/${{ github.base_ref }}..HEAD"
+          else
+            gitleaks detect --verbose --redact
           fi
-          gitleaks detect --source . --config .gitleaks.toml --log-opts="$GITLEAKS_BASE_SHA..$GITHUB_SHA" --verbose --redact
