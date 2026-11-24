@@ -63,7 +63,9 @@ lockfiles, and specific files containing known fake fixtures. Do not allowlist
 whole documentation or source/test directories.
 
 Semgrep scans the repository with `.semgrep.yml`, the OWASP Top Ten rules, and
-the security-audit rules. The existing backend rules are scoped to backend
+the security-audit rules. It compares findings against the PR target branch (or
+previous push) and blocks newly introduced findings while retaining existing
+findings in the baseline. The existing backend rules are scoped to backend
 source, tests, scripts, and shared code.
 Additional rules are scoped to `frontend/` (and the current `acbu-frontend/`
 workspace) for TypeScript/React risks and `contracts/` for Rust/Soroban risks.
@@ -113,7 +115,7 @@ This repository uses **gitleaks** to detect secrets in the git history and block
 
 ### CI Workflow
 - **gitleaks.yml**: Runs on every push and PR to block new secrets from entering the codebase
-- Full fetch (`fetch-depth: 0`) ensures the entire commit history is scanned on each PR
+- Full fetch (`fetch-depth: 0`) allows Gitleaks to scan the exact commits introduced by each PR or push, avoiding unrelated historical findings
 
 ### Manual History Scan (Maintainers Only)
 For a comprehensive audit of existing history, maintainers can run:

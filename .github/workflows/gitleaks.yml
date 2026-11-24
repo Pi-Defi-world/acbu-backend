@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history so gitleaks can scan the PR range / recent commits
+          # Required to inspect the exact PR/push commit range.
           fetch-depth: 0
 
       - name: Install Gitleaks
@@ -30,5 +30,12 @@ jobs:
           sudo mv gitleaks /usr/local/bin/
           gitleaks version
 
-      - name: Run gitleaks
-        run: gitleaks detect --source . --config .gitleaks.toml --verbose --redact
+      - name: Run gitleaks on introduced commits
+        env:
+          GITLEAKS_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$GITLEAKS_BASE_SHA" || "$GITLEAKS_BASE_SHA" =~ ^0+$ ]]; then
+            echo "::error::Unable to determine the base commit for the Gitleaks range."
+            exit 1
+          fi
+          gitleaks detect --source . --config .gitleaks.toml --log-opts="$GITLEAKS_BASE_SHA..$GITHUB_SHA" --verbose --redact
