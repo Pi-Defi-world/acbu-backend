@@ -162,7 +162,7 @@ export function verifyFlutterwaveSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when FLUTTERWAVE_WEBHOOK_SECRET is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
     assertBypassNotInProduction();
     logger.warn("Flutterwave webhook signature check bypassed (dev/stage)");
     next();
@@ -255,7 +255,7 @@ export function verifyPaystackSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when PAYSTACK_SECRET_KEY is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
     assertBypassNotInProduction();
     logger.warn("Paystack webhook signature check bypassed (dev/stage)");
     next();
@@ -526,7 +526,7 @@ export function verifyBillsWebhookSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when BILLS_WEBHOOK_SECRET is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
     assertBypassNotInProduction();
     logger.warn("Bills webhook signature check bypassed (dev/stage)");
     next();
