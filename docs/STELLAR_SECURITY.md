@@ -43,7 +43,7 @@ const transaction = await stellarClient.buildTransaction(
 
 1. **Multi-signature Setup** - Configure the Stellar account with multiple signers so no single compromised key can authorize treasury operations
 2. **Stellar Signers Threshold** - Set the master weight and threshold such that treasury operations require multiple signatures
-3. **Key Rotation** - Regularly rotate the `STELLAR_SECRET_KEY` and implement key management best practices
+3. **HSM / Custodial Signing & Key Rotation** - Transition production issuer, distribution, and treasury signing to an HSM or multi-sig custodial service via `StellarTransactionSigner`, and follow [STELLAR_KEY_ROTATION_RUNBOOK.md](./security/STELLAR_KEY_ROTATION_RUNBOOK.md) after any key exposure
 4. **Monitoring** - Alert on any attempt to use forbidden operations in logs (`Forbidden treasury operation attempted`)
 5. **Network-level Controls** - Restrict outbound connections to only approved Stellar Horizon endpoints
 

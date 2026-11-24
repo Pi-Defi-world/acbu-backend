@@ -145,6 +145,7 @@ This file documents the environment variables required by the ACBU backend and t
 
 ### Oracle
 
+- `ORACLE_VALIDATOR_ADDRESSES` - required by oracle initialization scripts; five unique Stellar account public keys, comma-separated. The contract is initialized with a 3-of-5 minimum.
 - `ORACLE_UPDATE_INTERVAL_HOURS` - defaults to `6`
 - `ORACLE_EMERGENCY_THRESHOLD` - defaults to `0.05`
 - `ORACLE_MAX_DEVIATION_PER_UPDATE` - defaults to `0.05`
@@ -203,6 +204,36 @@ This file documents the environment variables required by the ACBU backend and t
 
 - `CORS_ORIGIN`
   - Comma-separated list of allowed origins.
+
+### Frontend (`acbu-frontend` submodule)
+
+The root `.env.example` is the canonical local setup template for both the
+backend and the checked-out frontend. Copy it to `.env`, then expose the
+frontend values to the frontend process as `.env.local` when running the
+submodule independently. Do not commit either runtime file.
+
+- `NEXT_PUBLIC_API_BASE_URL` - browser API base URL, normally `http://localhost:5000/api/v1` locally.
+- `NEXT_PUBLIC_API_URL` - legacy frontend alias used only when the base URL is unset.
+- `NEXT_PUBLIC_API_TIMEOUT` - browser request timeout in milliseconds.
+- `NEXT_PUBLIC_BILLS_ENABLED` - enables the bills experience (`true`/`false`).
+- `NEXT_PUBLIC_STELLAR_NETWORK` - `TESTNET` or `PUBLIC`.
+- `NEXT_PUBLIC_STELLAR_HORIZON_URL` - Horizon endpoint used by the browser.
+- `NEXT_PUBLIC_SOROBAN_RPC_URL` - optional Soroban RPC endpoint.
+- `NEXT_PUBLIC_SUPPORT_INTAKE_URL` / `SUPPORT_INTAKE_URL` - optional support form/API endpoints.
+- `NEXT_PUBLIC_ACBU_ASSET_CODE` / `NEXT_PUBLIC_ACBU_ASSET_ISSUER` - optional ACBU asset display configuration.
+
+### Smart-contract deployment
+
+Contract addresses belong in the same root template so backend, frontend, and
+deployment tooling can be configured together:
+
+- `CONTRACT_ORACLE`
+- `CONTRACT_RESERVE_TRACKER`
+- `CONTRACT_MINTING`
+- `CONTRACT_BURNING`
+- `CONTRACT_SAVINGS_VAULT`
+- `CONTRACT_LENDING_POOL`
+- `CONTRACT_ESCROW`
 
 ## Notes
 

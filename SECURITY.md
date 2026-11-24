@@ -72,6 +72,14 @@ summary rather than showing a plain, unexplained green check. Snyk is a
 **supplementary** scan — the two checks above are what actually block a merge
 when Snyk itself does not run.
 
+## Software Bill of Materials (SBOM)
+
+Release artifacts published by the release workflow (`.github/workflows/release.yml`) ship with a Software Bill of Materials (SBOM) so consumers can independently verify dependency provenance and monitor for newly disclosed CVEs.
+
+- SBOM manifests are generated in **CycloneDX** and **SPDX** formats with `syft` (or `trivy`) for each release.
+- Manifests are attached to the corresponding **GitHub Release** and signed alongside the release artifacts.
+- Consumers can feed the SBOM into their own vulnerability scanners to track newly disclosed CVEs against the exact dependency set shipped.
+
 ## Secret Scanning (Gitleaks)
 
 This repository uses **gitleaks** to detect secrets in the git history and block commits containing credentials.
@@ -96,6 +104,10 @@ This script:
 - Use `git-filter-repo` to remove commits containing secrets (requires careful coordination)
 - Force push to rewrite history (notify the team before doing this)
 
+## Administrative & Audit Event Monitoring
+
+GitHub organization and repository administrative events (collaborator/membership changes, repository changes, and branch protection modifications) are monitored via external security webhooks (Slack, Discord, or SIEM) and the `.github/workflows/security-audit-alerts.yml` workflow. See [docs/SECURITY_AUDIT_WEBHOOKS.md](docs/SECURITY_AUDIT_WEBHOOKS.md) for webhook configuration, automated verification (`scripts/ci/configure-security-webhooks.js`), and incident triage procedures.
+
 ### Safe Harbor
 
 We consider good-faith security research to be helpful. Please avoid:
@@ -106,3 +118,9 @@ We consider good-faith security research to be helpful. Please avoid:
 - Exfiltrating secrets, credentials, or personal data
 
 If you accidentally encounter sensitive information during testing, stop immediately and report it through the private channel above.
+
+## Compromised Developer Credential Rotation (W11-INC-002)
+
+If a developer workstation may have executed untrusted repository automation, treat accessible credentials and sessions as potentially compromised. Follow the [Credential Rotation Attestation procedure](docs/security/CREDENTIAL_ROTATION_ATTESTATION.md). The procedure requires each in-scope team member and service owner to attest through the private incident tracker after applicable GitHub, npm, SSH, AWS/cloud, browser, and identity-provider credentials have been reviewed and revoked or rotated.
+
+Credential revocation is performed in the relevant provider consoles by authorized owners; a repository commit cannot perform or verify those provider-side actions. Keep attestations and audit evidence in the private incident tracker. Never commit token values, private keys, credential IDs, or individual attestation records to this repository.

@@ -1,0 +1,29 @@
+{
+  // Knip configuration for dead code detection.
+  // Run with `npm run deadcode` (or `npx knip`).
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "app/**/{page,layout,template,loading,error,not-found,route,default}.{js,jsx,ts,tsx}",
+    "next.config.{js,mjs,ts}",
+    "middleware.{js,ts}"
+  ],
+  "project": [
+    "app/**/*.{js,jsx,ts,tsx}",
+    "components/**/*.{js,jsx,ts,tsx}",
+    "lib/**/*.{js,jsx,ts,tsx}",
+    "hooks/**/*.{js,jsx,ts,tsx}",
+    "**/*.{test,spec}.{js,jsx,ts,tsx}"
+  ],
+  "ignore": [
+    "**/*.d.ts",
+    ".next/**",
+    "node_modules/**",
+    "public/**"
+  ],
+  "ignoreDependencies": [
+    "tailwindcss",
+    "postcss",
+    "autoprefixer",
+    "eslint-config-next"
+  ]
+}
