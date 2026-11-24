@@ -592,7 +592,8 @@ export function verifyBillsWebhookSignature(
 
   if (!signatureValid) {
     logger.warn("Bills webhook signature mismatch");
-    throw new AppError("Invalid signature", 401, ErrorCodes.INVALID_SIGNATURE);
+    res.status(401).json({ error: "Invalid signature" });
+    return;
   }
   next();
 }
