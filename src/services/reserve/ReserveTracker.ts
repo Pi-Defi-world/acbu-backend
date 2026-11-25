@@ -13,10 +13,14 @@ import { getAcbuAssetConfig } from "../../config/acbuAsset";
 import { Decimal } from "@prisma/client/runtime/library";
 import { stellarClient } from "../stellar/client";
 import { contractClient, ContractClient } from "../stellar/contractClient";
+import {
+  OraclePriceError,
+  assertPositiveOraclePrice,
+  computeReserveValueUsd,
+} from "../contracts/oraclePrice";
 
 /** Contract uses 7 decimals (10^7) for reserve amount and value_usd */
 const RESERVE_DECIMALS = 1e7;
-const RESERVE_DECIMALS_BIGINT = 10_000_000n;
 
 /** Build the Soroban `CurrencyCode` tuple-struct ScVal: scvVec([scvVec([scvString(code)])]). */
 function currencyCodeToScVal(code: string): xdr.ScVal {
@@ -44,7 +48,7 @@ async function readOnChainCustody(currency: string): Promise<{
   const rateRes = await contractClient.readContract(addresses.oracle, "get_rate", [
     currencyCodeToScVal(currency),
   ]);
-  const rateUsdAtomic = BigInt(ContractClient.fromScVal(rateRes).toString());
+  const rateUsdAtomic = assertPositiveOraclePrice(ContractClient.fromScVal(rateRes), currency);
 
   const sTokenRes = await contractClient.readContract(addresses.oracle, "get_s_token_address", [
     currencyCodeToScVal(currency),
@@ -55,8 +59,14 @@ async function readOnChainCustody(currency: string): Promise<{
     ContractClient.toScVal(addresses.minting),
   ]);
   const amountAtomic = BigInt(ContractClient.fromScVal(balRes).toString());
+  if (amountAtomic < 0n) {
+    throw new OraclePriceError(`Custody balance for ${currency} is negative: ${amountAtomic}`);
+  }
 
-  const valueUsdAtomic = (amountAtomic * rateUsdAtomic) / RESERVE_DECIMALS_BIGINT;
+  // Checked math: requires a strictly positive oracle price (W11-CAR-030).
+  // A zero/missing price throws instead of producing a 0-USD reserve value
+  // that would flip is_reserve_sufficient to false or panic the contract.
+  const valueUsdAtomic = computeReserveValueUsd(amountAtomic, rateUsdAtomic, currency);
 
   return { amountAtomic, rateUsdAtomic, valueUsdAtomic };
 }
@@ -134,10 +144,8 @@ export class ReserveTracker {
               if (custody) {
                 onChainAmountAtomic = custody.amountAtomic;
                 onChainValueUsdAtomic = custody.valueUsdAtomic;
-                balance = new Decimal(custody.amountAtomic.toString()).div(RESERVE_DECIMALS);
-                reserveValueUsd = new Decimal(custody.valueUsdAtomic.toString()).div(
-                  RESERVE_DECIMALS,
-                );
+                balance = Number(custody.amountAtomic) / RESERVE_DECIMALS;
+                reserveValueUsd = Number(custody.valueUsdAtomic) / RESERVE_DECIMALS;
               }
             } catch (e) {
               logger.warn(
@@ -149,11 +157,9 @@ export class ReserveTracker {
 
           if (onChainAmountAtomic === null) {
             // Fallback path (non-custodial deployments with real fintech partners).
-            balance = new Decimal(
-              await withRetry(
-                async () => (await fintechRouter.getProvider(currency)).getBalance(currency),
-                `getBalance(${currency})`,
-              ),
+            balance = await withRetry(
+              async () => (await fintechRouter.getProvider(currency)).getBalance(currency),
+              `getBalance(${currency})`,
             );
             const rate = new Decimal(
               await withRetry(() => this.getCurrencyRate(currency), `getCurrencyRate(${currency})`),
@@ -163,9 +169,8 @@ export class ReserveTracker {
 
           const targetWeight = await basketService.getTargetWeight(currency);
           const totalReserveValue = await this.getTotalReserveValue();
-          const actualWeight = totalReserveValue.gt(0)
-            ? reserveValueUsd.div(totalReserveValue).mul(100)
-            : new Decimal(0);
+          const actualWeight =
+            totalReserveValue > 0 ? (reserveValueUsd / totalReserveValue) * 100 : 0;
 
           // Store reserve snapshot (off-chain) for transactions segment
           await prisma.reserve.create({
@@ -275,11 +280,12 @@ export class ReserveTracker {
       if (latestReserve) {
         currencyStatuses.push({
           currency,
-          targetWeight: new Decimal(latestReserve.targetWeight),
-          actualWeight: new Decimal(latestReserve.actualWeight),
-          reserveAmount: new Decimal(latestReserve.reserveAmount),
-          reserveValueUsd: new Decimal(latestReserve.reserveValueUsd),
-          weightDrift: new Decimal(latestReserve.actualWeight).sub(latestReserve.targetWeight),
+          targetWeight: latestReserve.targetWeight.toNumber(),
+          actualWeight: latestReserve.actualWeight.toNumber(),
+          reserveAmount: latestReserve.reserveAmount.toNumber(),
+          reserveValueUsd: latestReserve.reserveValueUsd.toNumber(),
+          weightDrift:
+            latestReserve.actualWeight.toNumber() - latestReserve.targetWeight.toNumber(),
         });
       }
     }
@@ -411,7 +417,7 @@ export class ReserveTracker {
 
     try {
       const server = stellarClient.getServer();
-      const assets = await server.assets().forCode(code).forIssuer(issuer).call();
+      const assets = await server.assets().forCode(assetCode).forIssuer(issuer).call();
 
       if (assets.records.length === 0) {
         return ledgerSupply;
@@ -463,6 +469,10 @@ export class ReserveTracker {
 
   /**
    * Get currency exchange rate from Oracle
+   *
+   * Validated per W11-CAR-030: the rate must be strictly positive before it
+   * is used to value reserves; a zero rate would zero out reserve value and
+   * break sufficiency assertions downstream.
    */
   private async getCurrencyRate(currency: string): Promise<number> {
     const latestRate = await prisma.oracleRate.findFirst({
@@ -471,7 +481,13 @@ export class ReserveTracker {
     });
 
     if (latestRate) {
-      return Number(latestRate.rateUsd.toString());
+      const rate = latestRate.rateUsd.toNumber();
+      if (!(rate > 0)) {
+        throw new Error(
+          `Oracle rate for ${currency} is ${rate}; a positive rate is required to value reserves`,
+        );
+      }
+      return rate;
     }
 
     throw new Error(`Oracle rate not available for ${currency}`);

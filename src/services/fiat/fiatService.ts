@@ -5,7 +5,8 @@ import { getLatestAcbuRate } from "../rates/acbuRateCache";
 import { acbuBurningService, acbuMintingService, acbuOracleService } from "../contracts";
 import { stellarClient } from "../stellar/client";
 import { getContractAddresses } from "../../config/contracts";
-import { getAcbuAssetCode, getAcbuIssuer } from "../../config/acbuAsset";
+import { decryptUserStellarSecret } from "../wallet/stellarSecretService";
+import { ensureAcbuTrustline, ensureDemoFiatTrustline } from "../stellar/trustlineService";
 import { ensureAccountActivated } from "../stellar/activationService";
 import {
   InvalidCurrencyError,
@@ -68,7 +69,7 @@ function divCeil(a: bigint, b: bigint): bigint {
 async function validateDemoMintAmount(currency: string, fiatAmountI128: string): Promise<void> {
   try {
     const rate = BigInt(await acbuOracleService.getRate(currency));
-    if (rate <= 0n) return; // Let on-chain path surface invalid-rate if needed.
+    // getRate throws on zero/missing rates (W11-CAR-030), so rate > 0 here.
 
     const fiat = BigInt(fiatAmountI128);
     const usdGross = (fiat * rate) / DECIMALS_7_BIGINT;
@@ -224,8 +225,18 @@ export async function requestFaucet(
       amount: amountI128,
     }));
   } catch (e) {
-    if (isTrustlineMissing(e)) {
-      throw trustlineMissingError(currency.trim().toUpperCase());
+    // If the user has no trustline yet, try to add it (if passcode available) and retry once.
+    if (passcode && e instanceof Error && e.message.includes("trustline entry is missing")) {
+      const secret = await decryptUserStellarSecret(userId, passcode);
+      if (!secret) throw e;
+      await ensureDemoFiatTrustline({ userSecret: secret, currency });
+      ({ transactionHash } = await acbuMintingService.adminDripDemoFiat({
+        recipient: stellarAddress,
+        currency,
+        amount: amountI128,
+      }));
+    } else {
+      throw e;
     }
     if (e instanceof Error && e.message.includes("non-existent contract function")) {
       throw new NonExistentContractFunctionError();
@@ -335,6 +346,35 @@ export async function simulateOnRamp(
       blockchain_tx_hash: result.transactionHash,
     };
   } catch (err: unknown) {
+    // Retry once after auto-adding ACBU trustline (same resilience pattern as faucet).
+    if (passcode && err instanceof Error && err.message.includes("trustline entry is missing")) {
+      const secret = await decryptUserStellarSecret(userId, passcode);
+      if (secret) {
+        await ensureAcbuTrustline({ userSecret: secret });
+        const retry = await acbuMintingService.mintFromDemoFiat({
+          operator: sourceAccount,
+          recipient: user.stellarAddress,
+          currency,
+          fiatAmount: fiatAmountI128,
+        });
+        const acbuNum = Number(retry.acbuAmount) / DECIMALS_7;
+        await prisma.transaction.update({
+          where: { id: tx.id },
+          data: {
+            status: "completed",
+            acbuAmount: new Decimal(acbuNum),
+            blockchainTxHash: retry.transactionHash,
+            completedAt: new Date(),
+          },
+        });
+        return {
+          transactionId: tx.id,
+          acbuAmount: acbuNum,
+          blockchain_tx_hash: retry.transactionHash,
+        };
+      }
+    }
+
     const message = err instanceof Error ? err.message : String(err);
     await prisma.transaction.update({
       where: { id: tx.id },

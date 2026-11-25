@@ -1,6 +1,7 @@
 import { contractClient, ContractClient } from "../stellar/contractClient";
 import { stellarClient } from "../stellar/client";
 import { logger } from "../../config/logger";
+import { assertValidUpdateReservePayload } from "./oraclePrice";
 import { xdr } from "@stellar/stellar-sdk";
 
 /** Soroban `CurrencyCode` — tuple struct with one string field. */
@@ -38,6 +39,10 @@ export class ReserveTrackerService {
 
   /**
    * Update reserve for a currency (backend function)
+   *
+   * Guarded per W11-CAR-030: a positive custody amount with a zero USD value
+   * means the oracle price was zero or missing, which would feed the
+   * contract's `is_reserve_sufficient` a corrupted (zero) basket value.
    */
   async updateReserve(params: UpdateReserveParams): Promise<string> {
     try {
@@ -48,13 +53,28 @@ export class ReserveTrackerService {
         throw new Error("No source account available");
       }
 
+      // Validate amount/valueUsd before touching the chain: both must be
+      // non-negative integers, and a positive amount requires a positive
+      // USD value (i.e. a valid, non-zero oracle price was used).
+      let amountAtomic: bigint;
+      let valueUsdAtomic: bigint;
+      try {
+        amountAtomic = BigInt(params.amount);
+        valueUsdAtomic = BigInt(params.valueUsd);
+      } catch {
+        throw new Error(
+          `update_reserve amount/valueUsd must be integer strings (got amount=${params.amount}, valueUsd=${params.valueUsd})`,
+        );
+      }
+      assertValidUpdateReservePayload(amountAtomic, valueUsdAtomic, params.currency);
+
       // Build function arguments: [updater, currency, amount, value_usd]
       const currencyScVal = currencyCodeToScVal(params.currency);
       const args = [
         ContractClient.toScVal(params.updater), // Address
         currencyScVal,
-        ContractClient.toScVal(BigInt(params.amount)),
-        ContractClient.toScVal(BigInt(params.valueUsd)),
+        ContractClient.toScVal(amountAtomic),
+        ContractClient.toScVal(valueUsdAtomic),
       ];
 
       // Invoke contract
