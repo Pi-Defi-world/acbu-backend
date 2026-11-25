@@ -6,6 +6,10 @@ This record is for the incident lead to collect a separate attestation from ever
 
 A repository change cannot revoke credentials held by GitHub, npm, AWS, cloud providers, identity providers, or browser sessions. The affected credentials must be revoked or rotated in those provider consoles by an authorized owner. Do not treat this document or a checked box as proof that a provider-side action occurred: retain the provider audit event or ticket reference.
 
+## Related incident record
+
+The attack timeline, affected commits, purge verification hashes, and permanent guardrails for this incident are documented in [INCIDENT_RESPONSE_WAVE11.md](INCIDENT_RESPONSE_WAVE11.md) (W11-INC-013). Use that document as the authoritative post-mortem; this attestation covers only the per-person credential actions.
+
 ## Required response
 
 1. Stop using potentially affected workstations for credential administration. Perform recovery from a trusted, clean device.

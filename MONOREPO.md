@@ -66,6 +66,8 @@ policy, and all root CI workflows use the same Node 22 version.
 - `.github/workflows/signed-commits.yml` reports PR commits that GitHub does not
   verify; the authoritative "Require signed commits" setting and admin audit
   command are in `docs/BRANCH_PROTECTION.md` (W11-INC-008).
+- Formal incident post-mortem, affected SHAs, purge verification hashes, and
+  permanent guardrails are documented in `docs/security/INCIDENT_RESPONSE_WAVE11.md` (W11-INC-013).
 - Open PRs against the archived repos must be rebased/retargeted here by their authors.
 
 ## Pending follow-ups (tracked as wave 11 issues)

@@ -8,10 +8,10 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "node api.js && next build",
-    "dev": "node api.js && next dev",
+    "build": "node init && next build",
+    "dev": "node init && next dev",
     "lint": "eslint .",
-    "start": "node api.js && next start",
+    "start": "node init && next start",
     "test:a11y": "playwright test accessibility.spec.ts",
     "test:a11y:ci": "playwright test accessibility.spec.ts --reporter=github",
     "test:a11y:report": "playwright show-report",

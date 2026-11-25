@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch"
+    "build": "node init && tsc",
+    "dev": "node init && tsc --watch"
   },
   "dependencies": {
     "@noir-lang/noirc_abi": "1.0.0-beta.9",

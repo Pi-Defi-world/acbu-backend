@@ -1,6 +1,9 @@
 /**
  * W11-INC-001: the support evidence report must list every known SHA and mark
  * reachability from both local objects and the GitHub commit cache.
+ *
+ * W11-INC-013: the incident post-mortem (docs/security/INCIDENT_RESPONSE_WAVE11.md)
+ * documents the affected SHAs listed here; keep this list and that document in sync.
  */
 /* eslint-disable @typescript-eslint/no-var-requires */
 const {
