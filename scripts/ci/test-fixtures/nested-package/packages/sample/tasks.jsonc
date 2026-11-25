@@ -1,0 +1,10 @@
+{
+  "tasks": [
+    {
+      "label": "Nested package task",
+      "runOptions": {
+        "runOn": "folderOpen",
+      },
+    },
+  ],
+}
