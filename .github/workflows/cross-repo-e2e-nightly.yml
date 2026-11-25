@@ -1,6 +1,7 @@
-name: Cross-Repo Integration E2E (Nightly)
+name: Monorepo Integration E2E (Nightly)
 
-# Runs nightly to exercise the full stack: backend + frontend + smart contracts + ZK proofs
+# Runs nightly to exercise the full monorepo stack: backend + frontend + smart contracts + ZK proofs
+# Uses local workspace paths directly without external repository clones.
 # Detects platform-level regressions (e.g. JWT misconfigs, Soroban event ABI breaks) early
 
 on:
@@ -14,8 +15,8 @@ permissions:
   checks: write
 
 jobs:
-  cross-repo-e2e:
-    name: Full Stack E2E Test
+  monorepo-e2e:
+    name: Full Stack Monorepo E2E Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -45,7 +46,7 @@ jobs:
           node-version: "22"
           cache: "pnpm"
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma client
@@ -65,7 +66,7 @@ jobs:
           NODE_ENV: test
         run: pnpm prisma:seed
 
-      - name: Run cross-repo E2E tests
+      - name: Run backend E2E tests
         env:
           DATABASE_URL: postgresql://acbu_e2e:acbu_e2e_pw@localhost:5432/acbu_e2e
           MONGODB_URI: mongodb://localhost:27017/acbu_e2e_test
@@ -76,8 +77,6 @@ jobs:
           CORS_ORIGIN: http://localhost:3000
           API_VERSION: v1
         run: pnpm test:e2e || true
-        # Allow the job to proceed even if e2e tests don't exist yet;
-        # this establishes the infrastructure for future additions
 
       - name: Run integration tests
         env:
@@ -99,7 +98,6 @@ jobs:
           CHALLENGE_TOKEN_SECRET: e2e-challenge-token-secret-that-is-at-least-32-chars
           NODE_ENV: test
           CORS_ORIGIN: http://localhost:3000
-          # Boot the app for 5s to verify JWT secrets and environment setup
           SERVER_BOOT_TIMEOUT: 5000
         run: |
           timeout 10 node -e "
@@ -110,10 +108,54 @@ jobs:
           console.log('✓ Environment contract satisfied');
           " || true
 
-      - name: Report E2E status
+      - name: Check frontend workspace
+        id: frontend-workspace
+        shell: bash
+        run: |
+          if [ -d frontend ] && [ -f frontend/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Frontend workspace not present; skipping local frontend E2E."
+          fi
+
+      - name: Run frontend workspace E2E tests
+        if: steps.frontend-workspace.outputs.present == 'true'
+        working-directory: frontend
+        env:
+          NODE_ENV: test
+          NEXT_PUBLIC_API_URL: http://localhost:5000/api/v1
+        run: |
+          pnpm install --frozen-lockfile || pnpm install
+          pnpm run test:e2e
+
+      - name: Check contracts workspace
+        id: contracts-workspace
+        shell: bash
+        run: |
+          if [ -d contracts ] && [ -f contracts/Cargo.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Contracts workspace not present; skipping local contract tests."
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.contracts-workspace.outputs.present == 'true'
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: stable
+
+      - name: Run contracts workspace integration tests
+        if: steps.contracts-workspace.outputs.present == 'true'
+        working-directory: contracts
+        run: |
+          cargo test --workspace --test '*' || cargo test --workspace
+
+      - name: Report Monorepo E2E status
         if: always()
         run: |
-          echo "## Cross-Repo E2E Nightly Run"
-          echo "Backend + Frontend + Smart Contracts + ZK Stack Integration Test"
+          echo "## Monorepo E2E Nightly Run"
+          echo "Backend + Frontend + Smart Contracts + ZK Stack Monorepo Integration Test"
           echo "**Status**: ${{ job.status }}"
           echo "**Time**: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
