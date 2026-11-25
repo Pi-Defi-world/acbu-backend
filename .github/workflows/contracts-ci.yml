@@ -1,0 +1,65 @@
+
+name: Soroban Contract CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
+
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  contract-tests:
+    name: Contract Unit & Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: contracts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-contracts-${{ hashFiles('contracts/Cargo.lock', 'contracts/rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-contracts-
+
+      - name: Fetch token WASM artifact
+        run: bash scripts/fetch_token_wasm.sh
+
+      - name: Verify committed Cargo lockfile
+        run: cargo metadata --locked --format-version 1 > /dev/null
+
+      - name: Run contract unit and integration tests
+        run: cargo test --locked --workspace --lib --tests -- --nocapture
