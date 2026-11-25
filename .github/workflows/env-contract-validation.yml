@@ -39,9 +39,9 @@ jobs:
           NODE_ENV: ci
           CORS_ORIGIN: http://localhost:3000
         run: |
-          node -e "
+          node -r ts-node/register -e "
           try {
-            require('./src/config/env');
+            require('./src/config/env.ts');
             console.log('✓ Environment schema validation passed');
           } catch (e) {
             console.error('✗ Environment schema validation failed:', e.message);
@@ -51,8 +51,8 @@ jobs:
 
       - name: Validate CORS configuration
         run: |
-          node -e "
-          const { parseCorsOrigins } = require('./src/config/corsOrigins');
+          node -r ts-node/register -e "
+          const { parseCorsOrigins } = require('./src/config/corsOrigins.ts');
           const tests = [
             { input: 'http://localhost:3000', env: 'development', expect: ['http://localhost:3000'] },
             { input: 'https://app.acbu.io,https://www.acbu.io', env: 'production', expect: ['https://app.acbu.io', 'https://www.acbu.io'] },

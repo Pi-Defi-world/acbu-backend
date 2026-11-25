@@ -14,7 +14,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
       - name: 'Dependency Review'
-        uses: actions/dependency-review-action@v5
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5
         # continue-on-error: the action hard-fails when GitHub Dependency Graph is
         # disabled on the repository (a repo settings toggle). Until it is enabled
         # under Settings → Security & analysis → Dependency graph, treat this as

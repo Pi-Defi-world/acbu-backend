@@ -3,9 +3,9 @@
 use acbu_minting::{MintingContract, MintingContractClient};
 use shared::{CurrencyCode, MintEvent, DECIMALS};
 use soroban_sdk::{
-    bytesn, contract, contractimpl, symbol_short,
+    bytesn, symbol_short,
     testutils::{Address as _, Events},
-    Address, BytesN, Env, FromVal, IntoVal, String as SorobanString, Symbol, Vec,
+    Address, BytesN, Env, FromVal, IntoVal, String as SorobanString, Symbol,
 };
 
 // Include snapshot validation module
@@ -114,7 +114,7 @@ fn init_mint_client(
         treasury: treasury.clone(),
         fee_rate_bps: fee_rate,
         fee_single_bps: fee_single,
-        operator: admin.clone(),
+        operator: Address::generate(env),
         operator_pub_key: BytesN::from_array(env, &[0u8; 32]),
     };
     client.initialize(&config);
@@ -255,7 +255,7 @@ fn test_mint_from_usdc() {
     );
 
     let mint_amount = 50 * DECIMALS;
-    let acbu_minted = client.mint_from_usdc(&user, &mint_amount, &user);
+    let acbu_minted = client.mint_from_usdc(&user, &mint_amount, &user, &None);
 
     let expected_fee = 15_000_000;
     let expected_acbu = 485_000_000;
@@ -313,7 +313,7 @@ fn test_mint_from_usdc_below_min() {
         100,
     );
 
-    client.mint_from_usdc(&user, &tiny_amount, &user);
+    client.mint_from_usdc(&user, &tiny_amount, &user, &None);
 }
 
 #[test]
@@ -347,7 +347,6 @@ fn test_mint_from_basket() {
     );
 
     let acbu_amt = 100 * DECIMALS;
-    let proof = SorobanString::from_str(&env, "basket_proof_001");
     let proof_id = soroban_sdk::String::from_str(&env, "proof_1");
     let net = client.mint_from_basket(&user, &user, &acbu_amt, &proof_id);
     assert!(net > 0);
@@ -393,7 +392,7 @@ fn test_mint_insufficient_reserves() {
     let usdc_sac = soroban_sdk::token::StellarAssetClient::new(&env, &usdc_token);
     usdc_sac.mint(&user, &DECIMALS);
 
-    client.mint_from_usdc(&user, &DECIMALS, &user);
+    client.mint_from_usdc(&user, &DECIMALS, &user, &None);
 }
 
 #[test]
@@ -429,7 +428,6 @@ fn test_mint_from_demo_fiat() {
     let fiat_amount = 50 * DECIMALS;
     let acbu_client = soroban_sdk::token::Client::new(&env, &acbu_token_id);
     let proof = SorobanString::from_str(&env, "demo_proof_001");
-    let tx_id = soroban_sdk::String::from_str(&env, "tx_1");
     let acbu = client.mint_from_demo_fiat(
         &admin,
         &recipient,
@@ -474,7 +472,6 @@ fn test_mint_from_demo_fiat_wrong_operator() {
         100,
     );
 
-    let tx_id = soroban_sdk::String::from_str(&env, "tx_bad");
     let proof = SorobanString::from_str(&env, "proof_bad");
     client.mint_from_demo_fiat(
         &attacker,
@@ -482,7 +479,6 @@ fn test_mint_from_demo_fiat_wrong_operator() {
         &CurrencyCode::new(&env, "NGN"),
         &(10 * DECIMALS),
         &proof,
-        &tx_id,
     );
 }
 
@@ -521,7 +517,6 @@ fn test_set_operator_and_mint_demo_fiat() {
     assert_eq!(client.get_operator(), operator, "client.get_operator() should equal operator");
 
     let proof = SorobanString::from_str(&env, "demo_proof_operator");
-    let tx_id = soroban_sdk::String::from_str(&env, "tx_ok");
     let acbu = client.mint_from_demo_fiat(
         &operator,
         &recipient,
@@ -559,7 +554,7 @@ fn test_mint_from_usdc_exceeds_max() {
         100,
     );
 
-    client.mint_from_usdc(&user, &huge_amount, &user);
+    client.mint_from_usdc(&user, &huge_amount, &user, &None);
 }
 
 #[test]
@@ -599,7 +594,6 @@ fn test_mint_from_demo_fiat_exceeds_max() {
     let huge_fiat_amount = 2_000_000_000_000;
     // huge_fiat_amount converted to USD gross will exceed max (given 1:1 rate in MockOracle)
     let proof = SorobanString::from_str(&env, "demo_proof_huge");
-    let tx_id = soroban_sdk::String::from_str(&env, "tx_huge");
     client.mint_from_demo_fiat(
         &operator,
         &recipient,
@@ -702,7 +696,7 @@ fn test_upgrade_accepts_single_step() {
     assert_eq!(client.get_version(), 1);
     // Use the current contract's own WASM hash — valid for testing the version
     // guard; the WASM itself doesn't change in the test environment.
-    let current_hash = env.deployer().get_contract_wasm_hash(&client.address);
+    let current_hash = BytesN::from_array(&env, &[0u8; 32]);
     client.upgrade(&current_hash, &2u32);
     assert_eq!(client.get_version(), 2);
 }

@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { AppError } from "../middleware/errorHandler";
 
 /**
  * Decimal configuration for monetary calculations with high precision
@@ -10,6 +11,12 @@ Decimal.set({
   toExpNeg: -7,
   toExpPos: 21,
 });
+
+const TOKEN_DECIMALS: Record<string, number> = {
+  ACBU: 7,
+  XLM: 7,
+  USDC: 7,
+};
 
 /**
  * Parse a string to Decimal with validation for monetary amounts
@@ -45,24 +52,72 @@ export function parseMonetaryString(value: string, fieldName = "amount"): Decima
 }
 
 /**
- * Convert Decimal to number for Soroban contract calls with explicit rounding
+ * Convert Decimal to an exact integer string for Soroban contract calls.
  * @param decimal - Decimal value
  * @param decimals - Number of decimal places for the contract (default 7)
- * @returns Number formatted for contract
+ * @returns Integer amount in the contract's smallest unit
  */
 export function decimalToContractNumber(decimal: Decimal, decimals: number = 7): number {
+  if (!decimal.isFinite() || decimal.isNegative()) {
+    throw new AppError("Contract amount must be a finite non-negative value", 400);
+  }
+  if (!Number.isSafeInteger(decimals) || decimals < 0) {
+    throw new AppError("Contract decimal precision must be a non-negative integer", 500);
+  }
+
   const scaled = decimal.mul(new Decimal(10).pow(decimals));
-  return scaled.toDecimalPlaces(0, Decimal.ROUND_DOWN).toNumber();
+  const contractInteger = scaled.toDecimalPlaces(0, Decimal.ROUND_DOWN);
+  if (!contractInteger.isFinite() || contractInteger.abs().gt(Number.MAX_SAFE_INTEGER)) {
+    throw new AppError("Amount exceeds the safe integer range supported for contract calls", 400);
+  }
+
+  return contractInteger.toNumber();
 }
 
 /**
- * Convert contract number back to Decimal
- * @param contractNumber - Number from contract
+ * Convert a contract integer amount back to Decimal.
+ * @param contractAmount - Integer amount from contract
  * @param decimals - Number of decimal places the contract uses (default 7)
  * @returns Decimal instance
  */
-export function contractNumberToDecimal(contractNumber: number, decimals: number = 7): Decimal {
-  return new Decimal(contractNumber).div(new Decimal(10).pow(decimals));
+export function contractNumberToDecimal(
+  contractAmount: string | number | bigint,
+  decimals: number = 7,
+): Decimal {
+  return new Decimal(contractAmount.toString()).div(new Decimal(10).pow(decimals));
+}
+
+/**
+ * Convert a monetary amount to the currency's smallest indivisible unit.
+ * Soroban assets use seven decimals; fiat currencies use their ISO 4217 scale.
+ */
+export function currencyAmountToSmallestUnit(amount: string | number, currency: string): number {
+  const normalizedCurrency = currency.trim().toUpperCase();
+  const tokenDecimals = TOKEN_DECIMALS[normalizedCurrency];
+  let decimals: number;
+
+  if (tokenDecimals !== undefined) {
+    decimals = tokenDecimals;
+  } else {
+    let fractionDigits: number | undefined;
+    try {
+      fractionDigits = new Intl.NumberFormat("en", {
+        style: "currency",
+        currency: normalizedCurrency,
+      }).resolvedOptions().maximumFractionDigits;
+    } catch {
+      throw new Error(`Unsupported currency code: ${currency}`);
+    }
+    if (fractionDigits === undefined) {
+      throw new Error(`No fraction digit configuration for currency: ${currency}`);
+    }
+    decimals = fractionDigits;
+  }
+
+  return new Decimal(amount.toString())
+    .mul(new Decimal(10).pow(decimals))
+    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+    .toNumber();
 }
 
 /**
@@ -72,7 +127,19 @@ export function contractNumberToDecimal(contractNumber: number, decimals: number
  * @returns Fee amount as Decimal
  */
 export function calculateFee(amount: Decimal, feeBps: number): Decimal {
-  return amount.mul(new Decimal(feeBps)).div(new Decimal(10000));
+  if (!amount.isFinite() || amount.isNegative()) {
+    throw new AppError("Fee amount must be a finite non-negative value", 400);
+  }
+  if (!Number.isSafeInteger(feeBps) || feeBps < 0 || feeBps > 10000) {
+    throw new AppError("Fee rate must be an integer between 0 and 10000 basis points", 500);
+  }
+
+  const fee = amount.mul(new Decimal(feeBps)).div(new Decimal(10000));
+  if (!fee.isFinite() || fee.isNegative()) {
+    throw new AppError("Fee calculation exceeded the supported numeric range", 500);
+  }
+
+  return fee;
 }
 
 /**

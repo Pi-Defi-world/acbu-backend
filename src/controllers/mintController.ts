@@ -37,7 +37,7 @@ import { assertUserWalletAddress } from "../services/wallet/walletService";
 import { logger } from "../config/logger";
 import {
   parseMonetaryString,
-  decimalToContractNumber,
+  decimalToContractAmount,
   contractNumberToDecimal,
   calculateFee,
 } from "../utils/decimalUtils";
@@ -175,7 +175,7 @@ export async function mintFromUsdcInternal(
 ): Promise<{ transactionId: string; acbuAmount: string }> {
   const usdcDecimal = new Decimal(usdcAmount);
   const feeUsdcDecimal = calculateFee(usdcDecimal, MINT_FEE_BPS);
-  const usdcAmount7 = decimalToContractNumber(usdcDecimal).toString();
+  const usdcAmount7 = decimalToContractAmount(usdcDecimal);
   const tx = await prisma.transaction.create({
     data: {
       userId: userId ?? undefined,
@@ -222,7 +222,7 @@ export async function mintFromUsdcInternal(
       usdcAmount: usdcAmount7,
       recipient: walletAddress,
     });
-    const acbuDecimal = contractNumberToDecimal(Number(result.acbuAmount));
+    const acbuDecimal = contractNumberToDecimal(result.acbuAmount);
 
     try {
       await prisma.transaction.update({
@@ -553,9 +553,9 @@ export async function depositFromBasketCurrency(
         txId: tx.id,
         user: sourceAccount,
         recipient: wallet_address,
-        acbuAmount: decimalToContractNumber(acbuAmountInfo.acbuEquivalent).toString(),
+        acbuAmount: decimalToContractAmount(acbuAmountInfo.acbuEquivalent),
       });
-      const acbuNum = contractNumberToDecimal(Number(mintResult.acbuAmount));
+      const acbuNum = contractNumberToDecimal(mintResult.acbuAmount);
 
       await prisma.transaction.update({
         where: { id: tx.id },
@@ -788,11 +788,7 @@ export function verifyMintConfirmationSignature(
  *  - Circuit-breaker respected: rejects if reserve ratio is below threshold.
  *  - No minting is possible via deprecated Flutterwave/Paystack webhook paths.
  */
-export async function confirmMint(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function confirmMint(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const parsed = mintConfirmBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -880,7 +876,7 @@ export async function confirmMint(
       data: {
         status: "processing",
         rateSnapshot: {
-          ...(tx.rateSnapshot as object | null ?? {}),
+          ...((tx.rateSnapshot as object | null) ?? {}),
           partner_reference,
           confirmed_at: new Date(confirmed_at * 1000).toISOString(),
           confirmation_received_at: new Date().toISOString(),
@@ -906,7 +902,7 @@ export async function confirmMint(
           blockchainTxHash: mintResult.transactionHash,
           completedAt: new Date(),
           rateSnapshot: {
-            ...(tx.rateSnapshot as object | null ?? {}),
+            ...((tx.rateSnapshot as object | null) ?? {}),
             partner_reference,
             confirmed_at: new Date(confirmed_at * 1000).toISOString(),
             confirmed_amount: amount,
@@ -961,7 +957,7 @@ export async function confirmMint(
         data: {
           status: "failed",
           rateSnapshot: {
-            ...(tx.rateSnapshot as object | null ?? {}),
+            ...((tx.rateSnapshot as object | null) ?? {}),
             partner_reference,
             confirmed_at: new Date(confirmed_at * 1000).toISOString(),
             error: message,

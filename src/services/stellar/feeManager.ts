@@ -19,6 +19,11 @@
  *   top of the live base fee and clamps the result to a fee ceiling, so a
  *   transaction is not underpriced by a fee surge that happens after it was built
  *   (AB-052 / #1002).
+ *
+ * Horizon failover (W11-AUD-006):
+ * - Dynamic fee fetches go through `stellarClient.getServer()`, which is backed by
+ *   the Horizon endpoint pool with automatic failover and circuit breaking, so a
+ *   single rate-limited or unhealthy Horizon host does not break fee resolution.
  */
 import { config } from "../../config/env";
 import { stellarClient } from "./client";

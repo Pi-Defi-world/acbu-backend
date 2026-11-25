@@ -6,6 +6,9 @@ import {
   postLendingDeposit,
   postLendingWithdraw,
   getLendingBalance,
+  postLendingBorrow,
+  postLendingRepay,
+  postLendingLiquidate,
 } from "../controllers/lendingController";
 
 const router: IRouter = Router();
@@ -18,5 +21,8 @@ router.use(apiKeyRateLimiter);
 router.post("/deposit", postLendingDeposit);
 router.post("/withdraw", postLendingWithdraw);
 router.get("/balance", getLendingBalance);
+router.post("/borrow", postLendingBorrow);
+router.post("/repay", postLendingRepay);
+router.post("/liquidate", postLendingLiquidate);
 
 export default router;

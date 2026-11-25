@@ -34,24 +34,37 @@ measure and to ensure the codebase remains correct if the token interface evolve
 
 ## Contract-by-Contract Findings
 
-### 1. `acbu_burning` — `redeem_single` ✅ Sound
+### 1. `acbu_burning` — `redeem_single` ✅ Fixed (W11-CAR-010 / AC-008)
 
-**Order (before fix):**
+**Order (before W11-CAR-010 fix):**
 ```
-1. Checks: pause, min amount, oracle freshness, reserve check (invoke_contract × 3)
-2. Interactions: acbu_client.burn(&user, &acbu_amount)
-3. Interactions: token.transfer_from(&spender, &vault, &recipient, &stoken_out)
-4. Events
+1. Checks: pause, min amount, oracle freshness, slippage
+2. Interactions: acquire_guard                               ← guard acquired
+3. Interactions: check_reserves (invoke_contract × 2)       ← reads inside guard ❌
+4. Interactions: acbu_client.burn + notify_minting_burn
+5. Interactions: token.transfer_from
 ```
 
-**Assessment:** The burning contract holds no mutable per-user accounting state.
-The ACBU burn reduces token supply before the s-token payout, which is the correct
-sequence. Reserve check reads supply *before* the burn (conservative — worst case
-supply), which is safe. No CEI fix required.
+**Problem:** `check_reserves` performs two read-only cross-contract calls
+(token total supply + reserve tracker query). Running them inside the guarded
+critical section unnecessarily extended the section to include pure-read
+cross-contract calls and obscured the CEI boundary.
+
+**Fix applied (W11-CAR-010):** `check_reserves` moved to the Checks phase,
+*before* `acquire_guard`. Guard now wraps only the state-mutating Interactions:
+`acbu_client.burn`, `notify_minting_burn`, `token.transfer_from`.
+
+**Order after fix:**
+```
+1. Checks:  pause, min amount, oracle freshness, slippage, reserve ratio ✅
+2. Lock:    acquire_guard                                   ← narrowed critical section ✅
+3. Interactions: acbu_client.burn + notify_minting_burn
+4. Interactions: token.transfer_from
+```
 
 ---
 
-### 2. `acbu_burning` — `redeem_basket` ⚠️ Noted — Partial-Failure Risk
+### 2. `acbu_burning` — `redeem_basket` ✅ Fixed (W11-CAR-010 / AC-008)
 
 **Order:**
 ```
@@ -62,13 +75,23 @@ supply), which is safe. No CEI fix required.
        token.transfer_from(&spender, &vault, &recipient, &native_i)   ← per-currency payout
 ```
 
-**Assessment:** Not a reentrancy issue (no local state to corrupt), but there is a
-**partial-execution risk**: if any `transfer_from` in the loop panics (e.g., vault
-has insufficient balance for one currency), the user's ACBU has already been burned
-but they receive only some of their s-tokens. This is an atomic-batch concern, not a
-reentrancy concern. Tracked separately from C-036; noted here for completeness.
+**Order after fix (W11-CAR-010):**
+```
+1. Checks:  pause, min amount, oracle freshness, pre-flight slippage, reserve ratio ✅
+2. Lock:    acquire_guard                                   ← narrowed critical section ✅
+3. Interactions: acbu_client.burn + notify_minting_burn
+4. Loop:    per-currency oracle reads + transfer_from
+```
 
-No CEI fix applied to this function.
+**Cross-function reentrancy:** Because both `redeem_single` and `redeem_basket`
+use the **same** guard storage key (`symbol_short!("REENTRANT")`), holding the
+guard from either path blocks entry into the other. Two new tests in
+`tests/reentrancy.rs` verify this:
+- `redeem_single_blocked_while_basket_guard_held`
+- `redeem_basket_blocked_while_single_guard_held`
+
+A third test (`redeem_basket_releases_guard`) proves the guard is released on
+successful completion, mirroring the existing `redeem_single_releases_guard` test.
 
 ---
 
@@ -173,8 +196,8 @@ moved to before the `client.transfer(...)` call so the escrow cannot be double-r
 
 | Contract | Function | Status | Finding |
 |---|---|---|---|
-| `acbu_burning` | `redeem_single` | ✅ Sound | CEI satisfied; no fix needed |
-| `acbu_burning` | `redeem_basket` | ⚠️ Noted | Partial-execution risk (not reentrancy); separate issue |
+| `acbu_burning` | `redeem_single` | ✅ Fixed (W11-CAR-010) | `check_reserves` moved before guard; cross-function reentrancy tested |
+| `acbu_burning` | `redeem_basket` | ✅ Fixed (W11-CAR-010) | `check_reserves` moved before guard; guard-release test added |
 | `acbu_savings_vault` | `deposit` | ✅ Fixed | Storage update moved before token transfers |
 | `acbu_savings_vault` | `withdraw` | ✅ Sound | CEI already satisfied |
 | `acbu_lending_pool` | `deposit` | ⚠️ Noted | No per-lender state; functional gap, not reentrancy |

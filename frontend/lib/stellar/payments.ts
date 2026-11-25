@@ -1,6 +1,7 @@
+// W11-AUD-023: Import only the core primitives statically; Horizon is loaded
+// dynamically to enable Next.js code-splitting for this heavy module.
 import {
   Asset,
-  Horizon,
   Keypair,
   Operation,
   TransactionBuilder,
@@ -13,6 +14,7 @@ const TESTNET_HORIZON_URL =
   process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ??
   "https://horizon-testnet.stellar.org";
 const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
+export const TRANSACTION_TIMEOUT_SECONDS = 60;
 
 async function resolveHorizonUrl(): Promise<string> {
   try {
@@ -60,6 +62,8 @@ export async function submitAcbuPaymentClient(params: {
   const horizonUrl = await resolveHorizonUrl();
   const networkPassphrase = await resolveNetworkPassphrase();
   const asset = await resolveAcbuAsset();
+  // W11-AUD-023: dynamic import for Horizon to enable code-splitting
+  const { Horizon } = await import("@stellar/stellar-sdk");
   const server = new Horizon.Server(horizonUrl);
 
   const sourceAddress = params.external?.address
@@ -88,7 +92,7 @@ export async function submitAcbuPaymentClient(params: {
         amount: params.amount,
       }),
     )
-    .setTimeout(0)
+    .setTimeout(TRANSACTION_TIMEOUT_SECONDS)
     .build();
 
   if (params.external?.kit) {

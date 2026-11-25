@@ -9,6 +9,7 @@ import { checkWithdrawalLimits, isCurrencyWithdrawalPaused } from "../limits/lim
 import { enqueueWebhook } from "../webhook";
 import type { TransactionStatus } from "../../utils/transactionStateMachine";
 import { simulatedBillsPartner } from "./simulatedBillsPartner";
+import { currencyAmountToSmallestUnit } from "../../utils/decimalUtils";
 import type {
   BillPaymentRequest,
   BillPaymentResult,
@@ -120,7 +121,8 @@ export async function payBill(request: BillPaymentRequest): Promise<BillPaymentR
   }
   if (
     product.fixedAmount !== undefined &&
-    Math.round(request.amount * 100) !== Math.round(product.fixedAmount * 100)
+    currencyAmountToSmallestUnit(request.amount, product.currency) !==
+      currencyAmountToSmallestUnit(product.fixedAmount, product.currency)
   ) {
     throw new AppError(
       `Amount must equal ${product.fixedAmount} ${product.currency} for ${product.name}`,
@@ -200,7 +202,7 @@ export async function payBill(request: BillPaymentRequest): Promise<BillPaymentR
     accountId: request.userId ?? transaction.id,
     idempotencyKey: transaction.id,
     correlationId,
-    amount: Math.round(request.amount * 100),
+    amount: currencyAmountToSmallestUnit(request.amount, product.currency),
     currency: product.currency,
     provider: provider.providerId,
   });
@@ -239,7 +241,7 @@ export async function payBill(request: BillPaymentRequest): Promise<BillPaymentR
       accountId: request.userId ?? transaction.id,
       idempotencyKey: transaction.id,
       correlationId,
-      amount: Math.round(request.amount * 100),
+      amount: currencyAmountToSmallestUnit(request.amount, product.currency),
       currency: product.currency,
       provider: provider.providerId,
       providerRef: providerResult.providerReference,
@@ -479,7 +481,7 @@ export async function refundBillPayment(request: BillsRefundRequest): Promise<Bi
     accountId: transaction.userId ?? transaction.id,
     idempotencyKey: transaction.id,
     correlationId: crypto.randomUUID(),
-    amount: Math.round(localAmount * 100),
+    amount: currencyAmountToSmallestUnit(localAmount, currency),
     currency,
     provider: refundResponse.provider,
     providerRef: refundResponse.providerReference,

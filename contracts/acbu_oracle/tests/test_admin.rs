@@ -28,7 +28,7 @@ fn advance_time(env: &Env, delta: u64) {
     let now = env.ledger().timestamp();
     env.ledger().set(LedgerInfo {
         timestamp: now + delta,
-        protocol_version: 20,
+        protocol_version: 21,
         sequence_number: env.ledger().sequence(),
         network_id: Default::default(),
         base_reserve: 10,
@@ -172,7 +172,7 @@ fn test_update_rate_meets_quorum_succeeds() {
 
     env.ledger().set(LedgerInfo {
         timestamp: 1,
-        protocol_version: 20,
+        protocol_version: 21,
         sequence_number: 1,
         network_id: Default::default(),
         base_reserve: 10,

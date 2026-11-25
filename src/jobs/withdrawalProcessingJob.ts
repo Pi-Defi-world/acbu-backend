@@ -10,6 +10,7 @@ import { prisma } from "../config/database";
 import { getFintechRouter } from "../services/fintech";
 import type { DisburseRecipient } from "../services/fintech/types";
 import { getQueueMaxRetries } from "./queueConfig";
+import { currencyAmountToSmallestUnit } from "../utils/decimalUtils";
 
 export interface WithdrawalPayload {
   transactionId: string;
@@ -107,7 +108,7 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
           userId: tx.userId ?? "",
           accountId: tx.userId ?? "",
           idempotencyKey: transactionId,
-          amount: Math.round(amount * 100),
+          amount: currencyAmountToSmallestUnit(amount, currency),
           currency,
           provider: providerName,
           correlationId,
@@ -156,7 +157,7 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
             userId: tx.userId ?? "",
             accountId: tx.userId ?? "",
             idempotencyKey: transactionId,
-            amount: Math.round(amount * 100),
+            amount: currencyAmountToSmallestUnit(amount, currency),
             currency,
             provider: providerName,
             correlationId,
@@ -184,7 +185,7 @@ export async function startWithdrawalProcessingConsumer(): Promise<void> {
               userId: tx.userId ?? "",
               accountId: tx.userId ?? "",
               idempotencyKey: transactionId,
-              amount: Math.round(amount * 100),
+              amount: currencyAmountToSmallestUnit(amount, currency),
               currency,
               provider: providerName,
               correlationId,

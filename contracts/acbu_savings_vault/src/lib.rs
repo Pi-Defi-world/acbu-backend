@@ -770,7 +770,7 @@ impl SavingsVault {
 
     /// Return the current admin address.
     pub fn get_admin(env: Env) -> Address {
-        env.storage().instance().get(&DATA_KEY.admin).unwrap()
+        env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(Error::NotInitialized))
     }
 
     /// Return the stored contract version (0 if never set).

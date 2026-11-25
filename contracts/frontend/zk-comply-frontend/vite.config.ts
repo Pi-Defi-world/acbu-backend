@@ -6,6 +6,13 @@ import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), wasm(), topLevelAwait()],
+  // W11-AUD-010: build Web Worker bundles as ES modules so they can use the
+  // same wasm + topLevelAwait plugins and import @aztec/bb.js / @noir-lang/*
+  // correctly from inside the worker context.
+  worker: {
+    format: "es",
+    plugins: () => [wasm(), topLevelAwait()],
+  },
   optimizeDeps: {
     exclude: ["@aztec/bb.js", "@noir-lang/noir_wasm"],
   },

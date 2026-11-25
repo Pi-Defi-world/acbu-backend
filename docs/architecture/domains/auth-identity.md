@@ -126,7 +126,7 @@ An `ApiKey` belongs to **either** a `User` or an `Organization`, never both simu
 Each row represents a single-use challenge sent via `sms` or `email`. The `usedAt` timestamp marks consumption; `expiresAt` marks expiry. Rows are not deleted on use — they serve as an audit trail.
 
 ### RefreshToken rotation
-Tokens are organized into families via `tokenFamilyId`. When a token is rotated, the old row gets `revokedAt` set and `replacedByToken` populated. Detecting reuse of a revoked token triggers revocation of the entire family.
+Tokens are organized into families via `tokenFamilyId`. When a token is rotated, the old row gets `revokedAt` set and `replacedByToken` populated. A revoked token marked as rotated is accepted for a 10-second grace period to tolerate concurrent refresh requests; after that, reuse is rejected.
 
 ### RecoveryAttempt
 `RecoveryAttempt` has no FK constraint on `userId` — it stores the UUID string but does not enforce referential integrity. This allows recovery audit records to survive even if a user account is hard-deleted. `identifier` holds the contact value used (email or phone) during the attempt.
