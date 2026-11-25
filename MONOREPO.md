@@ -63,6 +63,9 @@ policy, and all root CI workflows use the same Node 22 version.
 - `.github/workflows/malware-ioc-scan.yml` fails any PR or push that reintroduces
   the IoC files or strings listed above.
 - Branch protection should require this check plus "branches up to date" on `dev`/`main`.
+- `.github/workflows/signed-commits.yml` reports PR commits that GitHub does not
+  verify; the authoritative "Require signed commits" setting and admin audit
+  command are in `docs/BRANCH_PROTECTION.md` (W11-INC-008).
 - Open PRs against the archived repos must be rebased/retargeted here by their authors.
 
 ## Pending follow-ups (tracked as wave 11 issues)
@@ -73,6 +76,9 @@ policy, and all root CI workflows use the same Node 22 version.
   `docs/incident/W11-INC-001-github-support-request.md`; an org owner must file
   it because GitHub Support cannot be contacted from a PR. Reachability can be
   verified with `scripts/ci/check-orphaned-attacker-commits.js`.
+- Enable "Require signed commits" in branch protection for `main`/`dev`/`develop`
+  and confirm with `scripts/ci/check-branch-protection-signing.js`; this is a
+  GitHub admin setting, not a change a PR can apply (W11-INC-008 / #1321).
 - Re-point CI pipelines to `frontend/` and `contracts/` paths (nested workflows are inert).
 - Dependabot findings on the imported frontend snapshot (34 at import time).
 - Retire the stale `acbu-frontend` gitlink (submodule pointer, no `.gitmodules`).

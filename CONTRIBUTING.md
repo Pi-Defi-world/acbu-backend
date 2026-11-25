@@ -7,6 +7,7 @@ Thank you for your interest in contributing! Please read this guide before openi
 - [Getting Started](#getting-started)
 - [Branch Naming](#branch-naming)
 - [Commit Messages](#commit-messages)
+- [Commit Signing (Required)](#commit-signing-required)
 - [Testing Requirements](#testing-requirements)
 - [Pull Request Process](#pull-request-process)
 - [Code Style](#code-style)
@@ -73,6 +74,53 @@ Closes #478
 
 ---
 
+## Commit Signing (Required)
+
+All commits in pull requests to `main`, `dev` or `develop` must carry a GPG or
+SSH signature that GitHub reports as **Verified**. The author name and email in
+a commit header are self-asserted; a verified signature is the proof of origin
+required by the branch protection rule (W11-INC-008). Commits signed with an
+unknown, untrusted or revoked key are treated the same as unsigned commits.
+
+### GPG
+
+```bash
+# Generate a key and add its public key to GitHub → Settings → Keys and secrets → GPG keys
+gpg --full-generate-key
+gpg --list-secret-keys --keyid-format=long
+
+git config --global user.signingkey <KEY_ID>
+git config --global commit.gpgsign true
+```
+
+### SSH
+
+```bash
+# Generate a key and add its .pub file to GitHub → Settings → Keys and secrets → SSH keys
+ssh-keygen -t ed25519 -C "you@example.com"
+
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+```
+
+### Verify locally
+
+```bash
+git commit -m "fix: example"
+git log --show-signature -1
+git verify-commit HEAD
+```
+
+The `Signed Commits / Verify signed commits` CI check lists every commit in the
+PR and reports any commit that GitHub does not verify. Branch protection is the
+blocking control once an admin enables **Require signed commits**. See
+[BRANCH_PROTECTION.md](docs/BRANCH_PROTECTION.md#commit-signature-enforcement-w11-inc-008)
+for the required repository setting, the admin audit command and how to promote
+the CI report to a required check.
+
+---
+
 ## Testing Requirements
 
 - Every new feature or bug fix **must** include tests.
@@ -97,7 +145,7 @@ pnpm test:coverage  # optional but appreciated
 4. Request a review from at least one maintainer.
 5. For **destructive database migrations**, add the `allow-destructive-migration` label; the CI pipeline will block the merge otherwise.
 6. A PR is merged only after:
-   - CI passes (lint, tests, build, migration validation)
+   - CI passes (lint, tests, build, migration validation, verified commits)
    - At least one approving review
 
 ---

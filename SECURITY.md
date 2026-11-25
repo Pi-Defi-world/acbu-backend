@@ -145,6 +145,10 @@ This script:
 
 GitHub organization and repository administrative events (collaborator/membership changes, repository changes, and branch protection modifications) are monitored via external security webhooks (Slack, Discord, or SIEM) and the `.github/workflows/security-audit-alerts.yml` workflow. See [docs/SECURITY_AUDIT_WEBHOOKS.md](docs/SECURITY_AUDIT_WEBHOOKS.md) for webhook configuration, automated verification (`scripts/ci/configure-security-webhooks.js`), and incident triage procedures.
 
+### Verified Commit Origin (W11-INC-008)
+
+Git author headers are self-asserted and cannot prove who wrote a commit. Protected branches must enable **Require signed commits**, and maintainers must sign commits with GPG or SSH keys registered on GitHub. CI additionally checks every PR commit for a GitHub-verified signature. The required repository setting, audit command and key setup are documented in [docs/BRANCH_PROTECTION.md](docs/BRANCH_PROTECTION.md#commit-signature-enforcement-w11-inc-008) and [CONTRIBUTING.md](CONTRIBUTING.md#commit-signing-required). Because the setting lives in GitHub, an organisation owner or repository admin must apply it; a repository commit alone cannot.
+
 ### Safe Harbor
 
 We consider good-faith security research to be helpful. Please avoid:
