@@ -124,10 +124,10 @@ jobs:
         working-directory: frontend
         env:
           NODE_ENV: test
-          NEXT_PUBLIC_API_URL: http://localhost:3001
+          NEXT_PUBLIC_API_URL: http://localhost:5000/api/v1
         run: |
           pnpm install --frozen-lockfile || pnpm install
-          pnpm run test:e2e || true
+          pnpm run test:e2e
 
       - name: Check contracts workspace
         id: contracts-workspace
@@ -150,7 +150,7 @@ jobs:
         if: steps.contracts-workspace.outputs.present == 'true'
         working-directory: contracts
         run: |
-          cargo test --workspace --test '*' || cargo test --workspace || true
+          cargo test --workspace --test '*' || cargo test --workspace
 
       - name: Report Monorepo E2E status
         if: always()
