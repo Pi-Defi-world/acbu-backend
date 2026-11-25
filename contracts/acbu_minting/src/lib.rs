@@ -2057,22 +2057,62 @@ fn mark_proof_used(env: &Env, proof_id: &SorobanString) {
         .extend_ttl(&key, PROOF_TTL_THRESHOLD, PROOF_TTL);
 }
 
+
 // ---------------------------------------------------------------------------
-// AC-024: Fintech tx ID deduplication helpers: prevent double-spend in mint_from_fiat.
-// Uses per-key persistent storage instead of growing an unbounded Map in instance storage.
+// AC-024: Fintech transaction ID replay protection.
+//
+// Each processed transaction ID is stored as an individual temporary-storage
+// entry rather than a growing instance-storage map or a persistent entry.
+//
+// The transaction ID is hashed with SHA-256 before being used as a storage
+// key. This keeps the key compact and avoids storing the original ID as part
+// of the storage key.
+//
+// Temporary entries expire automatically after the configured replay window.
 // ---------------------------------------------------------------------------
-fn is_fintech_tx_id_processed(env: &Env, tx_id: &SorobanString) -> bool {
-    let key = (DATA_KEY.processed_fintech_tx_ids, tx_id.clone());
-    env.storage().persistent().has(&key)
+
+/// Maximum lifetime of a processed fintech transaction ID.
+///
+/// Soroban ledgers advance approximately every five seconds.
+/// 1,036,800 ledgers represents approximately 60 days.
+const FINTECH_TX_ID_TTL: u32 = 1_036_800;
+
+/// Renew the entry when its remaining TTL falls below approximately 30 days.
+const FINTECH_TX_ID_TTL_THRESHOLD: u32 = 518_400;
+
+/// Generate a compact storage key for a normalized fintech transaction ID.
+fn fintech_tx_id_storage_key(
+    env: &Env,
+    tx_id: &SorobanString,
+) -> (Symbol, BytesN<32>) {
+    let tx_id_hash = env.crypto().sha256(&tx_id.clone().to_xdr(env));
+
+    (DATA_KEY.processed_fintech_tx_ids, tx_id_hash)
 }
 
-fn mark_fintech_tx_id_processed(env: &Env, tx_id: &SorobanString) {
-    let key = (DATA_KEY.processed_fintech_tx_ids, tx_id.clone());
-    env.storage().persistent().set(&key, &true);
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, 5184000, 5184000);
+/// Check whether a fintech transaction ID has already been processed.
+fn is_fintech_tx_id_processed(env: &Env, tx_id: &SorobanString) -> bool {
+    let key = fintech_tx_id_storage_key(env, tx_id);
+
+    env.storage().temporary().has(&key)
 }
+
+/// Mark a fintech transaction ID as processed.
+///
+/// The entry is stored temporarily and expires automatically after its
+/// configured TTL, preventing indefinite growth of replay-protection storage.
+fn mark_fintech_tx_id_processed(env: &Env, tx_id: &SorobanString) {
+    let key = fintech_tx_id_storage_key(env, tx_id);
+
+    env.storage().temporary().set(&key, &true);
+
+    env.storage().temporary().extend_ttl(
+        &key,
+        FINTECH_TX_ID_TTL_THRESHOLD,
+        FINTECH_TX_ID_TTL,
+    );
+}
+
 
 // ---------------------------------------------------------------------------
 // C-039: fintech_tx_id validation
