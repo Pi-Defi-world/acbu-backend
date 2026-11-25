@@ -16,6 +16,8 @@ export function RetryErrorBlock({
   return (
     <div
       role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
       className={`rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive${className ? ` ${className}` : ""}`}
     >
       <p className="font-medium">{message}</p>

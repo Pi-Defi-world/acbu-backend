@@ -5,14 +5,22 @@ const CARD_NUMBER_PATTERN = /\b\d{13,19}\b/g;
 const SENSITIVE_KEY_PATTERN =
   /pass(?:word|code|wd)|secret|token|authorization|api[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?key|secret[_-]?access[_-]?key|\bpin\b|cvv|cvc|ssn|bvn|credit[_-]?card|card[_-]?number|cookie|mnemonic|\bseed\b|\bjwt\b/i;
 
+/**
+ * National ID and bank account identifiers (W11-AUD-025). Matched separately
+ * so short keys such as `nin` only match as a whole key or key prefix
+ * (`nin`, `ninNumber`, `nin_number`) and never inside words like `mining`.
+ */
+const PII_KEY_PATTERN =
+  /^nin(?:[_-]?(?:number|no))?$|national[_-]?id|id[_-]?number|passport[_-]?number|tax[_-]?id|\btin\b|(?:bank[_-]?)?account[_-]?(?:number|no)$|bank[_-]?account|\biban\b|routing[_-]?number|sort[_-]?code/i;
+
 const REDACTED = "[REDACTED]";
 
 export function redactPii(value: string): string {
   return value.replace(CARD_NUMBER_PATTERN, REDACTED);
 }
 
-function isSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEY_PATTERN.test(key);
+export function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEY_PATTERN.test(key) || PII_KEY_PATTERN.test(key);
 }
 
 /**
