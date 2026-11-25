@@ -31,6 +31,7 @@ import webhookRoutes from "./routes/webhookRoutes";
 import { ErrorCodes } from "./types/errorCodes";
 import {
   registerGracefulShutdown,
+  setBalanceWebSocketServer,
   setHttpServer,
   setMemoryMonitorHandle,
 } from "./gracefulShutdown";
@@ -463,11 +464,13 @@ async function startServer() {
       await startMintEventListener();
       const { startBurnEventListener } = await import("./jobs/acbu_burning_event_listener");
       await startBurnEventListener();
-      const { startSavingsVaultEventListener } =
-        await import("./jobs/acbu_savings_vault_event_listener");
+      const { startSavingsVaultEventListener } = await import(
+        "./jobs/acbu_savings_vault_event_listener"
+      );
       await startSavingsVaultEventListener();
-      const { startLendingPoolEventListener } =
-        await import("./jobs/acbu_lending_pool_event_listener");
+      const { startLendingPoolEventListener } = await import(
+        "./jobs/acbu_lending_pool_event_listener"
+      );
       await startLendingPoolEventListener();
       // Start Stellar event listener (runs in background; depends on RabbitMQ for event dispatch)
       const { eventListener } = await import("./services/stellar/eventListener");
@@ -492,6 +495,11 @@ async function startServer() {
       }
     });
     setHttpServer(server);
+
+    // W11-AUD-013: WebSocket server for balance updates with heartbeat.
+    const { createBalanceWebSocketServer } = await import("./services/websocket/server");
+    const balanceWsServer = createBalanceWebSocketServer(server);
+    setBalanceWebSocketServer(balanceWsServer);
   } catch (error) {
     logger.error("Failed to start server", error);
     process.exit(1);

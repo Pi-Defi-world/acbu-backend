@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 
 const POLL_INTERVAL_MS = 60_000; // check every 60 s
-const WARN_BEFORE_MS = 120_000; // show warning 2 min before expiry
 
 export type SessionStatus = 'valid' | 'expiring' | 'expired';
 
@@ -33,10 +32,11 @@ export function useSessionGuard(): SessionGuard {
   const [status, setStatus] = useState<SessionStatus>('valid');
   const [warningDismissed, setWarningDismissed] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastValidRef = useRef<number>(Cate.now());
+  const lastValidRef = useRef<number>(-POLL_INTERVAL_MS);
 
   const validate = useCallback(async (): Promise<boolean> => {
     if (!isAuthenticated) return false;
+    if (Date.now() - lastValidRef.current < POLL_INTERVAL_MS) return true;
 
     try {
       const { getMe } = await import('@/lib/api/user');
@@ -64,17 +64,9 @@ export function useSessionGuard(): SessionGuard {
       return;
     }
 
-    lastValidRef.current = Date.now();
-
     const tick = async () => {
       const timeSinceValid = Date.now() - lastValidRef.current;
-
-      // If we haven't successfully validated in WARN_BEFORE_MS, do an eager check
-      if (timeSinceValid >= WARN_BEFORE_MS) {
-        await validate();
-      } else {
-        await validate();
-      }
+      if (timeSinceValid >= POLL_INTERVAL_MS) await validate();
     };
 
     intervalRef.current = setInterval(tick, POLL_INTERVAL_MS);

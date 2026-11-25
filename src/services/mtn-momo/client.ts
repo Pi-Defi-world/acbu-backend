@@ -4,6 +4,7 @@
  */
 import crypto from "crypto";
 import { AxiosInstance } from "axios";
+import { randomUUID } from "node:crypto";
 import { config } from "../../config/env";
 import { logger } from "../../config/logger";
 import { CircuitBreaker } from "../../utils/circuitBreaker";

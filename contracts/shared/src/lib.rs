@@ -205,7 +205,7 @@ impl CurrencyCode {
         CurrencyCode(SorobanString::from_str(env, code))
     }
 
-    /// Borrow the underlying currency code string (e.g. `"NGN"`).
+    /// Borrow the underlying currency code string (e.g. "NGN").
     pub fn code(&self) -> &SorobanString {
         &self.0
     }
@@ -450,6 +450,10 @@ pub enum ContractError {
     /// before redemption.
     VaultAllowanceInsufficient = 24,
 
+    /// The prover risk score encoded in public_inputs exceeds the maximum
+    /// risk threshold configured in the on-chain compliance policy (AZ-001 / #1358).
+    RiskScoreTooHigh = 25,
+
     Unknown = 9999,
 }
 
@@ -473,6 +477,7 @@ impl core::fmt::Display for ContractError {
             ContractError::VaultAllowanceInsufficient => {
                 write!(f, "vault allowance insufficient")
             }
+            ContractError::RiskScoreTooHigh => write!(f, "risk score exceeds maximum allowed policy threshold (#1358)"),
             ContractError::InvalidCircuitPeer => write!(f, "invalid circuit-breaker peer"),
             ContractError::CommitmentAlreadyAttested => write!(f, "commitment already attested"),
             ContractError::CommitmentNotAttested => write!(f, "commitment not attested"),
@@ -623,14 +628,14 @@ pub fn calculate_amount_after_fee(amount: i128, fee_rate_bps: i128) -> Result<i1
 /// stranded. Both halves of the flow use this one predicate so their
 /// stranding protection cannot drift apart (AC-031). Callers panic with their
 /// own `InvalidRecipient` error so contract error codes stay unchanged.
+///
+/// W11-CAR-033: uses the XDR `ScAddress` discriminant rather than a strkey
+/// heuristic (length-56 + leading `G`), which could pass for malformed keys.
 pub fn is_account_address(address: &Address) -> bool {
-    let strkey = address.to_string();
-    if strkey.len() != 56 {
-        return false;
-    }
-    let mut buf = [0u8; 56];
-    strkey.copy_into_slice(&mut buf);
-    buf[0] == b'G'
+    matches!(
+        soroban_sdk::xdr::ScAddress::from(address),
+        soroban_sdk::xdr::ScAddress::Account(_)
+    )
 }
 
 /// Calculate median using in-place quickselect algorithm

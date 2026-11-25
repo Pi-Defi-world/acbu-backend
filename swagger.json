@@ -10,8 +10,8 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5000",
-      "description": "Development server"
+      "url": "http://localhost:5000/api",
+      "description": "Development server (the API is mounted under /api)"
     }
   ],
   "components": {
@@ -25,6 +25,11 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      },
+      "AdminKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Admin-Key"
       }
     }
   },
@@ -34,259 +39,1053 @@
     }
   ],
   "tags": [
-    { "name": "Authentication", "description": "User authentication and session management" },
-    { "name": "Transfers", "description": "ACBU transfer operations between users" },
-    { "name": "Transactions", "description": "Transaction history and lookup" },
-    { "name": "Users", "description": "User profile and wallet management" },
-    { "name": "Fiat", "description": "Fiat currency operations (on-ramp, off-ramp, faucet)" },
-    { "name": "Mint", "description": "Asset minting and deposits" },
-    { "name": "Burn", "description": "Asset burning and redemptions" },
-    { "name": "Recovery", "description": "Account recovery operations" },
-    { "name": "Salary", "description": "Salary disbursement and scheduling" },
-    { "name": "Investment", "description": "Investment withdrawal management" },
-    { "name": "Onramp", "description": "Stellar USDC/XLM on-ramp registration" },
-    { "name": "Reserves", "description": "Reserve management and tracking" }
+    {
+      "name": "Health",
+      "description": "Health, readiness, and operational metrics"
+    },
+    {
+      "name": "Meta",
+      "description": "API metadata and version history"
+    },
+    {
+      "name": "Authentication",
+      "description": "User authentication, sessions, and privileged key lifecycle"
+    },
+    {
+      "name": "Reserves",
+      "description": "Reserve tracking and status"
+    },
+    {
+      "name": "Recipient",
+      "description": "Recipient alias resolution"
+    },
+    {
+      "name": "Transfers",
+      "description": "ACBU transfer operations"
+    },
+    {
+      "name": "Transactions",
+      "description": "Transaction history and lookup"
+    },
+    {
+      "name": "Users",
+      "description": "User profile and wallet management"
+    },
+    {
+      "name": "Recovery",
+      "description": "Account recovery operations"
+    },
+    {
+      "name": "Mint",
+      "description": "Asset minting and deposits"
+    },
+    {
+      "name": "Burn",
+      "description": "Asset burning and redemptions"
+    },
+    {
+      "name": "Rates",
+      "description": "ACBU exchange rates and quotes"
+    },
+    {
+      "name": "P2P",
+      "description": "Person-to-person transfer operations"
+    },
+    {
+      "name": "SME",
+      "description": "SME segment transfer and statement operations"
+    },
+    {
+      "name": "International",
+      "description": "International segment rates, minting, and burning"
+    },
+    {
+      "name": "Salary",
+      "description": "Salary disbursement and scheduling"
+    },
+    {
+      "name": "Enterprise",
+      "description": "Enterprise bulk transfers and treasury views"
+    },
+    {
+      "name": "Savings",
+      "description": "Savings vault operations"
+    },
+    {
+      "name": "Lending",
+      "description": "Lending pool operations"
+    },
+    {
+      "name": "Gateway",
+      "description": "Escrow gateway charge operations"
+    },
+    {
+      "name": "Bills",
+      "description": "Bill payment and refund operations"
+    },
+    {
+      "name": "Onramp",
+      "description": "Stellar USDC/XLM on-ramp registration"
+    },
+    {
+      "name": "Retail",
+      "description": "Retail audience minting and burning"
+    },
+    {
+      "name": "Business",
+      "description": "Business audience minting and burning"
+    },
+    {
+      "name": "Government",
+      "description": "Government audience minting, burning, and treasury views"
+    },
+    {
+      "name": "Investment",
+      "description": "Investment withdrawal management"
+    },
+    {
+      "name": "Fiat",
+      "description": "Fiat currency operations"
+    },
+    {
+      "name": "Config",
+      "description": "Public asset configuration"
+    },
+    {
+      "name": "KYC",
+      "description": "KYC document and validator reward operations"
+    },
+    {
+      "name": "Reports",
+      "description": "Statement and transaction exports"
+    },
+    {
+      "name": "Compliance",
+      "description": "Data export and account deletion"
+    },
+    {
+      "name": "Privacy",
+      "description": "Consent preference management"
+    },
+    {
+      "name": "Admin",
+      "description": "Administrative operations"
+    },
+    {
+      "name": "Webhooks",
+      "description": "Provider callback endpoints"
+    }
   ],
   "paths": {
+    "/v1/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Shallow health check",
+        "operationId": "get_v1_health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is running"
+          }
+        }
+      }
+    },
+    "/v1/changelog": {
+      "get": {
+        "tags": [
+          "Meta"
+        ],
+        "summary": "List API version history",
+        "operationId": "get_v1_changelog",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/v1/health/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness probe",
+        "operationId": "get_v1_health_ready",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "All critical dependencies are ready"
+          }
+        }
+      }
+    },
+    "/v1/health/deep": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Deep dependency health check",
+        "operationId": "get_v1_health_deep",
+        "security": [
+          {
+            "AdminKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/health/metrics": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Extended health and reserve metrics",
+        "operationId": "get_v1_health_metrics",
+        "security": [
+          {
+            "AdminKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/metrics": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Prometheus metrics",
+        "operationId": "get_v1_metrics",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "description": "Prometheus-compatible metrics. When METRICS_SCRAPE_TOKEN is configured, callers must send Authorization: Bearer <token>."
+      }
+    },
     "/v1/auth/signup": {
       "post": {
-        "tags": ["Authentication"],
+        "tags": [
+          "Authentication"
+        ],
         "summary": "Create a new user account",
-        "description": "Register a new user with username and passcode. No email required.",
+        "operationId": "post_v1_auth_signup",
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["username", "passcode"],
                 "properties": {
                   "username": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 64,
-                    "description": "Unique username"
+                    "maxLength": 64
                   },
                   "passcode": {
                     "type": "string",
                     "minLength": 8,
-                    "maxLength": 64,
-                    "description": "User passcode (minimum 8 characters)"
+                    "maxLength": 64
                   }
-                }
+                },
+                "required": [
+                  "username",
+                  "passcode"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "201": {
-            "description": "Account created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "user_id": { "type": "string", "format": "uuid" },
-                    "message": { "type": "string" }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "description": "Invalid input" },
-          "409": { "description": "Username already taken" }
         }
       }
     },
     "/v1/auth/signin": {
       "post": {
-        "tags": ["Authentication"],
-        "summary": "User login",
-        "description": "Authenticate user with identifier and passcode. May require 2FA.",
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Sign in",
+        "operationId": "post_v1_auth_signin",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["identifier", "passcode"],
                 "properties": {
                   "identifier": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Username, email, or E.164 phone number"
+                    "maxLength": 320
                   },
                   "passcode": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "User passcode"
+                    "minLength": 1
                   },
                   "captcha_token": {
-                    "type": "string",
-                    "description": "Optional CAPTCHA token"
+                    "type": "string"
                   },
                   "issue_refresh_token": {
-                    "type": "boolean",
-                    "description": "Whether to issue a refresh token"
+                    "type": "boolean"
                   }
-                }
+                },
+                "required": [
+                  "identifier",
+                  "passcode"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "200": { "description": "Authentication successful or 2FA required" },
-          "401": { "description": "Invalid credentials" }
         }
       }
     },
     "/v1/auth/signin/verify-2fa": {
       "post": {
-        "tags": ["Authentication"],
-        "summary": "Verify 2FA code",
-        "description": "Complete 2FA challenge during login with OTP code.",
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Verify a 2FA challenge",
+        "operationId": "post_v1_auth_signin_verify_2fa",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["challenge_token", "code"],
                 "properties": {
                   "challenge_token": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "Challenge token from signin response"
+                    "minLength": 1
                   },
                   "code": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "OTP code from 2FA method"
+                    "minLength": 1
                   },
                   "issue_refresh_token": {
-                    "type": "boolean",
-                    "description": "Whether to issue a refresh token"
+                    "type": "boolean"
                   }
-                }
+                },
+                "required": [
+                  "challenge_token",
+                  "code"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "200": { "description": "2FA verification successful" },
-          "401": { "description": "Invalid or expired code" }
         }
       }
     },
     "/v1/auth/signout": {
       "post": {
-        "tags": ["Authentication"],
-        "summary": "User logout",
-        "description": "Revoke the current API key and end the session.",
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Revoke the current API key",
+        "operationId": "post_v1_auth_signout",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "Logout successful" },
-          "401": { "description": "API key required" }
+          "204": {
+            "description": "API key revoked"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
         }
       }
     },
-    "/v1/transfers": {
+    "/v1/auth/admin/challenge": {
       "post": {
-        "tags": ["Transfers"],
-        "summary": "Create a new ACBU transfer",
-        "description": "Transfer ACBU from current user to recipient.",
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Create an admin MFA challenge",
+        "operationId": "post_v1_auth_admin_challenge",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/auth/keys/admin": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Issue an admin API key",
+        "operationId": "post_v1_auth_keys_admin",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["to", "amount_acbu"],
                 "properties": {
-                  "to": {
+                  "challenge_token": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
+                  },
+                  "reason": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Recipient alias or Stellar address"
-                  },
-                  "amount_acbu": {
-                    "type": "string",
-                    "description": "Amount in ACBU"
-                  },
-                  "blockchain_tx_hash": {
-                    "type": "string",
-                    "description": "Optional blockchain transaction hash (64-char hex)"
+                    "maxLength": 255
                   }
-                }
+                },
+                "required": [
+                  "challenge_token",
+                  "code",
+                  "permissions",
+                  "reason"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "201": { "description": "Transfer created successfully" },
-          "400": { "description": "Invalid input or insufficient balance" },
-          "401": { "description": "User-scoped API key required" }
         }
-      },
-      "get": {
-        "tags": ["Transfers"],
-        "summary": "List user's transfers",
-        "description": "Get paginated list of current user's transfers.",
-        "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [
+      }
+    },
+    "/v1/auth/keys/break-glass": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Issue a break-glass API key",
+        "operationId": "post_v1_auth_keys_break_glass",
+        "security": [
           {
-            "in": "query",
-            "name": "limit",
-            "schema": { "type": "string" },
-            "description": "Number of results per page"
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "schema": { "type": "string" },
-            "description": "Cursor for next page"
+            "ApiKeyAuth": []
           }
         ],
         "responses": {
-          "200": { "description": "List of transfers retrieved" },
-          "401": { "description": "User-scoped API key required" }
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "challenge_token": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": []
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "ttl_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60
+                  }
+                },
+                "required": [
+                  "challenge_token",
+                  "code",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
         }
+      }
+    },
+    "/v1/auth/keys/privileged": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "List privileged API keys",
+        "operationId": "get_v1_auth_keys_privileged",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/auth/keys/{id}/revoke": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Revoke a privileged API key",
+        "operationId": "post_v1_auth_keys_id_revoke",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Privileged API key ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh-token": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Refresh an access token",
+        "operationId": "post_v1_auth_refresh_token",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refresh_token": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "refresh_token"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh-token/revoke": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Revoke a refresh token",
+        "operationId": "post_v1_auth_refresh_token_revoke",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refresh_token": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "refresh_token"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reserves": {
+      "get": {
+        "tags": [
+          "Reserves"
+        ],
+        "summary": "Get current reserve status",
+        "operationId": "get_v1_reserves",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/reserves/track": {
+      "post": {
+        "tags": [
+          "Reserves"
+        ],
+        "summary": "Trigger reserve tracking",
+        "operationId": "post_v1_reserves_track",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/recipient": {
+      "get": {
+        "tags": [
+          "Recipient"
+        ],
+        "summary": "Resolve a recipient alias",
+        "operationId": "get_v1_recipient",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "description": "Resolve @username, phone number, email address, or Stellar address.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/v1/transfers": {
+      "post": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Create a transfer",
+        "operationId": "post_v1_transfers",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated key used to make this money-moving request idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount_acbu": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "blockchain_tx_hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "to",
+                  "amount_acbu"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "List transfers",
+        "operationId": "get_v1_transfers",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/transfers/{id}": {
+      "get": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Get a transfer by ID",
+        "operationId": "get_v1_transfers_id",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Transfer transaction ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/v1/transactions": {
       "get": {
-        "tags": ["Transactions"],
-        "summary": "List user's transactions",
-        "description": "Get paginated list of current user's transactions with cursor-based pagination.",
-        "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "List transactions",
+        "operationId": "get_v1_transactions",
+        "security": [
           {
-            "in": "query",
-            "name": "limit",
-            "schema": { "type": "string" },
-            "description": "Number of results per page"
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "schema": { "type": "string" },
-            "description": "Cursor for next page (last transaction_id from previous page)"
+            "ApiKeyAuth": []
           }
         ],
         "responses": {
-          "200": { "description": "List of transactions retrieved" },
-          "401": { "description": "User-scoped API key required" }
-        }
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/transactions/{id}": {
+      "get": {
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Get a transaction by ID",
+        "operationId": "get_v1_transactions_id",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Transaction ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/v1/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get the current user's profile",
+        "operationId": "get_v1_users_me",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      },
       "patch": {
-        "tags": ["Users"],
-        "summary": "Update current user profile",
-        "description": "Update username, email, phone, privacy settings, or passcode.",
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update the current user's profile",
+        "operationId": "patch_v1_users_me",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -299,68 +1098,455 @@
                   },
                   "email": {
                     "type": "string",
+                    "format": "email",
+                    "maxLength": 255,
                     "nullable": true
                   },
                   "phone_e164": {
                     "type": "string",
-                    "nullable": true,
-                    "description": "E.164 phone number"
+                    "nullable": true
                   },
                   "privacy_hide_from_search": {
                     "type": "boolean"
+                  },
+                  "current_passcode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
                   },
                   "passcode": {
                     "type": "string",
                     "minLength": 8,
                     "maxLength": 64
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
-        },
+        }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Delete the current user's account",
+        "operationId": "delete_v1_users_me",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "Profile updated successfully" },
-          "401": { "description": "User-scoped API key required" }
+          "204": {
+            "description": "Account deleted"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
         }
       }
     },
-    "/v1/users/me/contacts": {
-      "post": {
-        "tags": ["Users"],
-        "summary": "Add a contact",
-        "description": "Add a contact (allowed senders when privacy_hide_from_search is true).",
-        "security": [{ "ApiKeyAuth": [] }],
+    "/v1/users/me/receive": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get receive alias and payment URI",
+        "operationId": "get_v1_users_me_receive",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/users/me/receive/qrcode": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get a receive QR code",
+        "operationId": "get_v1_users_me_receive_qrcode",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/users/me/balance": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get wallet balances",
+        "operationId": "get_v1_users_me_balance",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/users/me/wallet": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get wallet state and ETag",
+        "operationId": "get_v1_users_me_wallet",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Replace the wallet address",
+        "operationId": "put_v1_users_me_wallet",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current wallet ETag. Required for optimistic concurrency control.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["contact_user_id"],
                 "properties": {
-                  "contact_user_id": {
+                  "stellar_address": {
                     "type": "string",
-                    "format": "uuid",
-                    "description": "UUID of the user to add as contact"
+                    "minLength": 56,
+                    "maxLength": 56
                   }
-                }
+                },
+                "required": [
+                  "stellar_address"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "201": { "description": "Contact added" },
-          "401": { "description": "User-scoped API key required" }
         }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Detach the wallet",
+        "operationId": "delete_v1_users_me_wallet",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current wallet ETag. Required for optimistic concurrency control.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/users/me/wallet/enroll": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Enroll a client-generated wallet",
+        "operationId": "post_v1_users_me_wallet_enroll",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current wallet ETag. Required for optimistic concurrency control.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stellar_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "wrapped_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "wrap_algorithm": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "wrap_kdf": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "stellar_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users/me/wallet/activate": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Activate the wallet on-chain",
+        "operationId": "post_v1_users_me_wallet_activate",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current wallet ETag. Required for optimistic concurrency control.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/users/me/contacts": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Add a contact",
+        "operationId": "post_v1_users_me_contacts",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "contact_user_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "contact_user_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List contacts",
+        "operationId": "get_v1_users_me_contacts",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/users/me/contacts/{id}": {
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Remove a contact",
+        "operationId": "delete_v1_users_me_contacts_id",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Contact removed"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Contact ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/v1/users/me/guardians": {
       "post": {
-        "tags": ["Users"],
-        "summary": "Add a guardian",
-        "description": "Add a guardian for Tier-2 recovery (2-of-N must approve).",
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Users"
+        ],
+        "summary": "Add a recovery guardian",
+        "operationId": "post_v1_users_me_guardians",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
@@ -374,350 +1560,179 @@
                   },
                   "guardian_email": {
                     "type": "string",
-                    "format": "email"
+                    "format": "email",
+                    "maxLength": 255
                   },
                   "guardian_phone": {
-                    "type": "string",
-                    "description": "E.164 phone number"
+                    "type": "string"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "201": { "description": "Guardian added" },
-          "401": { "description": "User-scoped API key required" }
         }
-      }
-    },
-    "/v1/users/me/wallet/enroll": {
-      "post": {
-        "tags": ["Users"],
-        "summary": "Enroll a client-generated wallet",
-        "description": "Binds a keypair generated in the client. The backend never generates, receives or stores a usable private key; wrapped_key is an opaque backup only the client can open.",
-        "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [
+      },
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List recovery guardians",
+        "operationId": "get_v1_users_me_guardians",
+        "security": [
           {
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": { "type": "string" },
-            "description": "Current wallet ETag"
+            "ApiKeyAuth": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["stellar_address"],
-                "properties": {
-                  "stellar_address": {
-                    "type": "string",
-                    "minLength": 56,
-                    "maxLength": 56,
-                    "description": "Stellar public key generated in the client"
-                  },
-                  "wrapped_key": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 512,
-                    "description": "Client-encrypted key backup, base64; unreadable by the backend"
-                  },
-                  "wrap_algorithm": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64,
-                    "description": "Encryption algorithm the client used"
-                  },
-                  "wrap_kdf": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64,
-                    "description": "Key derivation function the client used"
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
-          "200": { "description": "Wallet enrolled" },
-          "400": { "description": "Invalid address, or key material that is not client-encrypted" },
-          "401": { "description": "User-scoped API key required" },
-          "409": { "description": "A different wallet is already enrolled" }
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
         }
       }
     },
-    "/v1/fiat/faucet": {
-      "post": {
-        "tags": ["Fiat"],
-        "summary": "Request test currency from faucet",
-        "security": [{ "ApiKeyAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["currency", "amount"],
-                "properties": {
-                  "currency": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 3
-                  },
-                  "amount": {
-                    "type": "number"
-                  },
-                  "recipient": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
+    "/v1/users/me/guardians/{id}": {
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Remove a recovery guardian",
+        "operationId": "delete_v1_users_me_guardians_id",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Guardian removed"
+          },
+          "401": {
+            "description": "Authentication required"
           }
         },
-        "responses": {
-          "200": { "description": "Faucet request successful" }
-        }
-      }
-    },
-    "/v1/fiat/onramp": {
-      "post": {
-        "tags": ["Fiat"],
-        "summary": "Simulate on-ramp (Fiat to ACBU)",
-        "security": [{ "ApiKeyAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["currency", "amount"],
-                "properties": {
-                  "currency": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 3
-                  },
-                  "amount": {
-                    "type": "number"
-                  }
-                }
-              }
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Guardian ID",
+            "schema": {
+              "type": "string"
             }
           }
-        },
-        "responses": {
-          "200": { "description": "On-ramp simulation successful" }
-        }
-      }
-    },
-    "/v1/fiat/offramp": {
-      "post": {
-        "tags": ["Fiat"],
-        "summary": "Simulate off-ramp (ACBU to Fiat)",
-        "security": [{ "ApiKeyAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["currency", "amount"],
-                "properties": {
-                  "currency": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 3
-                  },
-                  "amount": {
-                    "type": "number"
-                  },
-                  "blockchain_tx_hash": {
-                    "type": "string",
-                    "description": "Optional 64-char hex blockchain tx hash"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Off-ramp simulation successful" }
-        }
-      }
-    },
-    "/v1/mint/usdc": {
-      "post": {
-        "tags": ["Mint"],
-        "summary": "Mint ACBU from USDC",
-        "description": "Accept USDC deposit, convert to XLM in backend, and mint ACBU.",
-        "security": [{ "ApiKeyAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["usdc_amount", "wallet_address"],
-                "properties": {
-                  "usdc_amount": {
-                    "type": "string"
-                  },
-                  "wallet_address": {
-                    "type": "string"
-                  },
-                  "currency_preference": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": { "description": "Mint request accepted" }
-        }
-      }
-    },
-    "/v1/mint/deposit": {
-      "post": {
-        "tags": ["Mint"],
-        "summary": "Deposit basket currency to mint ACBU",
-        "description": "Deposit local currency (NGN, KES, etc.) to mint ACBU.",
-        "security": [{ "ApiKeyAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["currency", "amount", "wallet_address"],
-                "properties": {
-                  "currency": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 3
-                  },
-                  "amount": {
-                    "type": "string"
-                  },
-                  "wallet_address": {
-                    "type": "string"
-                  },
-                  "fintech_tx_id": {
-                    "type": "string",
-                    "description": "Optional external payment transaction ID for idempotency"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": { "description": "Deposit request accepted" }
-        }
-      }
-    },
-    "/v1/burn/acbu": {
-      "post": {
-        "tags": ["Burn"],
-        "summary": "Burn ACBU for local currency redemption",
-        "description": "Burn ACBU tokens to receive local currency.",
-        "security": [{ "ApiKeyAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["acbu_amount", "currency", "recipient_account"],
-                "properties": {
-                  "acbu_amount": {
-                    "type": "string",
-                    "description": "Amount of ACBU to burn"
-                  },
-                  "currency": {
-                    "type": "string",
-                    "description": "Target fiat currency code (3 chars)"
-                  },
-                  "recipient_account": {
-                    "type": "object",
-                    "description": "Bank or mobile money account to receive funds",
-                    "properties": {
-                      "type": { "type": "string" },
-                      "account_number": { "type": "string" },
-                      "bank_code": { "type": "string" },
-                      "account_name": { "type": "string" }
-                    }
-                  },
-                  "blockchain_tx_hash": {
-                    "type": "string",
-                    "description": "Optional 64-char hex blockchain tx hash"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": { "description": "Burn request accepted" }
-        }
+        ]
       }
     },
     "/v1/recovery/unlock": {
       "post": {
-        "tags": ["Recovery"],
-        "summary": "Unlock app via recovery",
-        "description": "Initiate account recovery unlock using identifier and passcode.",
+        "tags": [
+          "Recovery"
+        ],
+        "summary": "Start account recovery",
+        "operationId": "post_v1_recovery_unlock",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["identifier", "passcode"],
                 "properties": {
                   "identifier": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "User identifier"
+                    "minLength": 1
                   },
                   "passcode": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "User passcode"
+                    "minLength": 1
                   },
                   "device_fingerprint": {
                     "type": "object",
-                    "description": "Optional device fingerprint"
+                    "properties": {
+                      "user_agent": {
+                        "type": "string"
+                      },
+                      "ip": {
+                        "type": "string"
+                      },
+                      "accept_language": {
+                        "type": "string"
+                      },
+                      "accept_encoding": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      },
+                      "screen_resolution": {
+                        "type": "string"
+                      },
+                      "platform": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
                   }
-                }
+                },
+                "required": [
+                  "identifier",
+                  "passcode"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "200": { "description": "OTP sent for verification" }
         }
       }
     },
     "/v1/recovery/unlock/verify": {
       "post": {
-        "tags": ["Recovery"],
-        "summary": "Verify recovery OTP",
-        "description": "Verify OTP code to complete account recovery.",
+        "tags": [
+          "Recovery"
+        ],
+        "summary": "Verify a recovery OTP",
+        "operationId": "post_v1_recovery_unlock_verify",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["challenge_token", "code"],
                 "properties": {
                   "challenge_token": {
                     "type": "string",
@@ -729,34 +1744,1067 @@
                   },
                   "device_fingerprint": {
                     "type": "object",
-                    "description": "Optional device fingerprint"
+                    "properties": {
+                      "user_agent": {
+                        "type": "string"
+                      },
+                      "ip": {
+                        "type": "string"
+                      },
+                      "accept_language": {
+                        "type": "string"
+                      },
+                      "accept_encoding": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      },
+                      "screen_resolution": {
+                        "type": "string"
+                      },
+                      "platform": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
                   },
                   "trust_device": {
                     "type": "boolean"
                   }
-                }
+                },
+                "required": [
+                  "challenge_token",
+                  "code"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "200": { "description": "Recovery OTP verified" }
         }
       }
     },
-    "/v1/salary/disburse": {
+    "/v1/mint/usdc": {
       "post": {
-        "tags": ["Salary"],
-        "summary": "Disburse salary batch",
-        "description": "Batch salary disbursement. Supports idempotency and async processing.",
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Mint"
+        ],
+        "summary": "Mint ACBU from USDC",
+        "operationId": "post_v1_mint_usdc",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["items"],
+                "properties": {
+                  "usdc_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "currency_preference": {
+                    "type": "string",
+                    "enum": [
+                      "auto"
+                    ]
+                  }
+                },
+                "required": [
+                  "usdc_amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/mint/deposit": {
+      "post": {
+        "tags": [
+          "Mint"
+        ],
+        "summary": "Deposit basket currency to mint ACBU",
+        "operationId": "post_v1_mint_deposit",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "fintech_tx_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "currency",
+                  "amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/mint/confirm": {
+      "post": {
+        "tags": [
+          "Mint"
+        ],
+        "summary": "Confirm a partner mint",
+        "operationId": "post_v1_mint_confirm",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "x-mint-signature",
+            "in": "header",
+            "required": true,
+            "description": "Hex-encoded HMAC-SHA256 signature of the raw request body.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-mint-timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp (seconds) used for replay protection.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "transaction_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "partner_reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "confirmed_at": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "transaction_id",
+                  "partner_reference",
+                  "amount",
+                  "currency",
+                  "confirmed_at"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/burn/acbu": {
+      "post": {
+        "tags": [
+          "Burn"
+        ],
+        "summary": "Burn ACBU for local currency",
+        "operationId": "post_v1_burn_acbu",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated key used to make this money-moving request idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "acbu_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "NGN",
+                      "KES",
+                      "RWF"
+                    ]
+                  }
+                },
+                "required": [
+                  "acbu_amount",
+                  "currency"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/rates": {
+      "get": {
+        "tags": [
+          "Rates"
+        ],
+        "summary": "Get current ACBU rates",
+        "operationId": "get_v1_rates",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/rates/quote": {
+      "get": {
+        "tags": [
+          "Rates"
+        ],
+        "summary": "Quote an ACBU amount",
+        "operationId": "get_v1_rates_quote",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "amount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/rates/basket": {
+      "get": {
+        "tags": [
+          "Rates"
+        ],
+        "summary": "Get basket-equivalent local amounts",
+        "operationId": "get_v1_rates_basket",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/p2p/send": {
+      "post": {
+        "tags": [
+          "P2P"
+        ],
+        "summary": "Send a P2P transfer",
+        "operationId": "post_v1_p2p_send",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated key used to make this money-moving request idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount_acbu": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "blockchain_tx_hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "to",
+                  "amount_acbu"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/p2p/history": {
+      "get": {
+        "tags": [
+          "P2P"
+        ],
+        "summary": "List P2P transfer history",
+        "operationId": "get_v1_p2p_history",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/p2p/{id}": {
+      "get": {
+        "tags": [
+          "P2P"
+        ],
+        "summary": "Get a P2P transfer by ID",
+        "operationId": "get_v1_p2p_id",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Transfer transaction ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/sme/transfers": {
+      "post": {
+        "tags": [
+          "SME"
+        ],
+        "summary": "Create an SME transfer",
+        "operationId": "post_v1_sme_transfers",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated key used to make this money-moving request idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount_acbu": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "blockchain_tx_hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "to",
+                  "amount_acbu"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "SME"
+        ],
+        "summary": "List SME transfers",
+        "operationId": "get_v1_sme_transfers",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/sme/transfers/{id}": {
+      "get": {
+        "tags": [
+          "SME"
+        ],
+        "summary": "Get an SME transfer by ID",
+        "operationId": "get_v1_sme_transfers_id",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Transfer transaction ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/sme/statements": {
+      "get": {
+        "tags": [
+          "SME"
+        ],
+        "summary": "List SME statements",
+        "operationId": "get_v1_sme_statements",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/international/quote": {
+      "get": {
+        "tags": [
+          "International"
+        ],
+        "summary": "Get an international quote",
+        "operationId": "get_v1_international_quote",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/international/mint/usdc": {
+      "post": {
+        "tags": [
+          "International"
+        ],
+        "summary": "Mint from USDC",
+        "operationId": "post_v1_international_mint_usdc",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "usdc_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "currency_preference": {
+                    "type": "string",
+                    "enum": [
+                      "auto"
+                    ]
+                  }
+                },
+                "required": [
+                  "usdc_amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/international/mint/deposit": {
+      "post": {
+        "tags": [
+          "International"
+        ],
+        "summary": "Mint from basket currency",
+        "operationId": "post_v1_international_mint_deposit",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "fintech_tx_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "currency",
+                  "amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/international/mint/confirm": {
+      "post": {
+        "tags": [
+          "International"
+        ],
+        "summary": "Confirm a partner mint",
+        "operationId": "post_v1_international_mint_confirm",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "x-mint-signature",
+            "in": "header",
+            "required": true,
+            "description": "Hex-encoded HMAC-SHA256 signature of the raw request body.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-mint-timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp (seconds) used for replay protection.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "transaction_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "partner_reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "confirmed_at": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "transaction_id",
+                  "partner_reference",
+                  "amount",
+                  "currency",
+                  "confirmed_at"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/international/burn/acbu": {
+      "post": {
+        "tags": [
+          "International"
+        ],
+        "summary": "Burn ACBU for local currency",
+        "operationId": "post_v1_international_burn_acbu",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated key used to make this money-moving request idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "acbu_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "NGN",
+                      "KES",
+                      "RWF"
+                    ]
+                  }
+                },
+                "required": [
+                  "acbu_amount",
+                  "currency"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/salary/disburse": {
+      "post": {
+        "tags": [
+          "Salary"
+        ],
+        "summary": "Create a salary disbursement batch",
+        "operationId": "post_v1_salary_disburse",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
                 "properties": {
                   "organization_id": {
                     "type": "string",
@@ -766,42 +2814,78 @@
                     "type": "string"
                   },
                   "currency": {
-                    "type": "string"
+                    "type": "string",
+                    "default": "ACBU"
                   },
                   "idempotency_key": {
                     "type": "string"
                   },
                   "items": {
                     "type": "array",
-                    "description": "Salary line items",
                     "items": {
-                      "type": "object"
-                    }
+                      "type": "object",
+                      "properties": {
+                        "recipient_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "recipient_address": {
+                          "type": "string",
+                          "minLength": 56,
+                          "maxLength": 56
+                        },
+                        "amount": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "recipient_address",
+                        "amount"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1
                   }
-                }
+                },
+                "required": [
+                  "items"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "202": { "description": "Salary batch queued" },
-          "401": { "description": "User-scoped API key required" }
         }
       }
     },
     "/v1/salary/schedule": {
       "post": {
-        "tags": ["Salary"],
-        "summary": "Schedule recurring salary",
-        "description": "Create a recurring salary schedule.",
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Salary"
+        ],
+        "summary": "Create a recurring salary schedule",
+        "operationId": "post_v1_salary_schedule",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["name", "cron", "amount_config"],
                 "properties": {
                   "organization_id": {
                     "type": "string",
@@ -816,161 +2900,2876 @@
                     "minLength": 1
                   },
                   "currency": {
-                    "type": "string"
+                    "type": "string",
+                    "default": "ACBU"
                   },
                   "amount_config": {
                     "type": "array",
-                    "items": { "type": "object" }
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "recipient_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "recipient_address": {
+                          "type": "string",
+                          "minLength": 56,
+                          "maxLength": 56
+                        },
+                        "amount": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "recipient_address",
+                        "amount"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "name",
+                  "cron",
+                  "amount_config"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/salary/batches": {
+      "get": {
+        "tags": [
+          "Salary"
+        ],
+        "summary": "List salary batches",
+        "operationId": "get_v1_salary_batches",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/salary/schedules": {
+      "get": {
+        "tags": [
+          "Salary"
+        ],
+        "summary": "List salary schedules",
+        "operationId": "get_v1_salary_schedules",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/enterprise/bulk-transfer": {
+      "post": {
+        "tags": [
+          "Enterprise"
+        ],
+        "summary": "Upload a bulk transfer CSV",
+        "operationId": "post_v1_enterprise_bulk_transfer",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
                   }
                 }
               }
             }
           }
-        },
-        "responses": {
-          "201": { "description": "Salary schedule created" },
-          "401": { "description": "User-scoped API key required" }
         }
       }
     },
-    "/v1/investment/withdraw/request": {
+    "/v1/enterprise/treasury": {
+      "get": {
+        "tags": [
+          "Enterprise"
+        ],
+        "summary": "Get enterprise treasury data",
+        "operationId": "get_v1_enterprise_treasury",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/savings/deposit": {
       "post": {
-        "tags": ["Investment"],
-        "summary": "Request investment withdrawal",
-        "description": "Request withdrawal from investment pool. Funds available in 24h.",
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Savings"
+        ],
+        "summary": "Deposit into savings",
+        "operationId": "post_v1_savings_deposit",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["amount_acbu", "audience"],
                 "properties": {
-                  "amount_acbu": {
+                  "amount": {
                     "type": "string",
-                    "description": "Amount to withdraw in ACBU"
+                    "minLength": 1
                   },
-                  "audience": {
-                    "type": "string",
-                    "enum": ["retail", "business"]
-                  },
-                  "forced_removal": {
-                    "type": "boolean"
+                  "term_seconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0
                   }
-                }
+                },
+                "required": [
+                  "amount",
+                  "term_seconds"
+                ],
+                "additionalProperties": false
               }
             }
           }
-        },
-        "responses": {
-          "202": { "description": "Withdrawal request submitted" },
-          "401": { "description": "User or organization context required" }
         }
       }
     },
-    "/v1/investment/withdraw/requests": {
-      "get": {
-        "tags": ["Investment"],
-        "summary": "List investment withdrawal requests",
-        "description": "Get paginated list of investment withdrawal requests.",
-        "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [
+    "/v1/savings/withdraw": {
+      "post": {
+        "tags": [
+          "Savings"
+        ],
+        "summary": "Withdraw from savings",
+        "operationId": "post_v1_savings_withdraw",
+        "security": [
           {
-            "in": "query",
-            "name": "limit",
-            "schema": { "type": "string" },
-            "description": "Number of results per page"
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "schema": { "type": "string" },
-            "description": "Cursor for next page"
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "schema": { "type": "string" },
-            "description": "Filter by status"
+            "ApiKeyAuth": []
           }
         ],
         "responses": {
-          "200": { "description": "List of withdrawal requests" },
-          "401": { "description": "Authentication required" }
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "term_seconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "amount",
+                  "term_seconds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/savings/positions": {
+      "get": {
+        "tags": [
+          "Savings"
+        ],
+        "summary": "List savings positions",
+        "operationId": "get_v1_savings_positions",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "term_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "minimum": 0
+            }
+          }
+        ]
+      }
+    },
+    "/v1/savings/next-withdrawal-date": {
+      "get": {
+        "tags": [
+          "Savings"
+        ],
+        "summary": "Get the next withdrawal date",
+        "operationId": "get_v1_savings_next_withdrawal_date",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/lending/deposit": {
+      "post": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Deposit into the lending pool",
+        "operationId": "post_v1_lending_deposit",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lender": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "lender",
+                  "amount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/lending/withdraw": {
+      "post": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Withdraw from the lending pool",
+        "operationId": "post_v1_lending_withdraw",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lender": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "lender",
+                  "amount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/lending/balance": {
+      "get": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Get a lending pool balance",
+        "operationId": "get_v1_lending_balance",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "lender",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/v1/lending/borrow": {
+      "post": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Borrow from the lending pool",
+        "operationId": "post_v1_lending_borrow",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "borrower": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lender": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "collateralAmount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "loanId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "borrower",
+                  "lender",
+                  "amount",
+                  "collateralAmount",
+                  "loanId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/lending/repay": {
+      "post": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Repay a lending loan",
+        "operationId": "post_v1_lending_repay",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "borrower": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "loanId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "borrower",
+                  "amount",
+                  "loanId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/lending/liquidate": {
+      "post": {
+        "tags": [
+          "Lending"
+        ],
+        "summary": "Liquidate an unhealthy lending loan",
+        "operationId": "post_v1_lending_liquidate",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "liquidator": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "borrower": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "loanId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "liquidator",
+                  "borrower",
+                  "loanId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/gateway/charges": {
+      "post": {
+        "tags": [
+          "Gateway"
+        ],
+        "summary": "Create an escrow charge",
+        "operationId": "post_v1_gateway_charges",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "payer": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "payee": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "amount": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "escrow_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "payer",
+                  "payee",
+                  "amount",
+                  "escrow_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/gateway/confirm": {
+      "post": {
+        "tags": [
+          "Gateway"
+        ],
+        "summary": "Release or refund an escrow charge",
+        "operationId": "post_v1_gateway_confirm",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "escrow_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "release",
+                      "refund"
+                    ]
+                  },
+                  "payer": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "escrow_id",
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/bills/catalog": {
+      "get": {
+        "tags": [
+          "Bills"
+        ],
+        "summary": "List the bills catalog",
+        "operationId": "get_v1_bills_catalog",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/bills/pay": {
+      "post": {
+        "tags": [
+          "Bills"
+        ],
+        "summary": "Pay a bill",
+        "operationId": "post_v1_bills_pay",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "biller_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "product_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "customer_reference": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 64
+                  },
+                  "amount": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "biller_id",
+                  "product_id",
+                  "customer_reference",
+                  "amount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/bills/refund": {
+      "post": {
+        "tags": [
+          "Bills"
+        ],
+        "summary": "Refund a bill payment",
+        "operationId": "post_v1_bills_refund",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "transaction_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "transaction_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
         }
       }
     },
     "/v1/onramp/register": {
       "post": {
-        "tags": ["Onramp"],
-        "summary": "Register USDC/XLM on-ramp swap",
-        "description": "Register a swap that occurred on Stellar to trigger ACBU minting.",
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Onramp"
+        ],
+        "summary": "Register a USDC to XLM swap",
+        "operationId": "post_v1_onramp_register",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["stellar_address", "xlm_amount"],
                 "properties": {
                   "stellar_address": {
                     "type": "string",
-                    "description": "Stellar address (56 chars, starts with G)"
+                    "minLength": 56,
+                    "maxLength": 56
                   },
                   "xlm_amount": {
                     "type": "string",
-                    "description": "Amount of XLM swapped"
+                    "minLength": 1
                   },
                   "usdc_amount": {
                     "type": "string",
-                    "description": "Amount of USDC used in swap (optional)"
+                    "minLength": 1
                   }
-                }
+                },
+                "required": [
+                  "stellar_address",
+                  "xlm_amount"
+                ],
+                "additionalProperties": false
               }
             }
+          }
+        }
+      }
+    },
+    "/v1/retail/mint/usdc": {
+      "post": {
+        "tags": [
+          "Retail"
+        ],
+        "summary": "Mint ACBU from USDC for retail",
+        "operationId": "post_v1_retail_mint_usdc",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
           }
         },
-        "responses": {
-          "202": { "description": "On-ramp swap registered" },
-          "401": { "description": "User context required" }
-        }
-      }
-    },
-    "/v1/reserves": {
-      "get": {
-        "summary": "Get current reserve status",
-        "tags": ["Reserves"],
-        "security": [{ "ApiKeyAuth": [] }],
-        "responses": {
-          "200": {
-            "description": "Reserve status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "totalAcbuSupply": { "type": "number" },
-                    "totalReserveValueUsd": { "type": "number" },
-                    "overcollateralizationRatio": { "type": "number" },
-                    "reserveHealth": { "type": "string" },
-                    "currencies": { "type": "array" }
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "usdc_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "currency_preference": {
+                    "type": "string",
+                    "enum": [
+                      "auto"
+                    ]
                   }
-                }
+                },
+                "required": [
+                  "usdc_amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
               }
             }
           }
         }
       }
     },
-    "/v1/reserves/track": {
+    "/v1/retail/mint/deposit": {
       "post": {
-        "summary": "Manually trigger reserve tracking",
-        "tags": ["Reserves"],
-        "security": [{ "ApiKeyAuth": [] }],
+        "tags": [
+          "Retail"
+        ],
+        "summary": "Mint ACBU from basket currency for retail",
+        "operationId": "post_v1_retail_mint_deposit",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "Reserve tracking initiated" }
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "fintech_tx_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "currency",
+                  "amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/retail/burn/acbu": {
+      "post": {
+        "tags": [
+          "Retail"
+        ],
+        "summary": "Burn ACBU for retail",
+        "operationId": "post_v1_retail_burn_acbu",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated key used to make this money-moving request idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "acbu_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "NGN",
+                      "KES",
+                      "RWF"
+                    ]
+                  }
+                },
+                "required": [
+                  "acbu_amount",
+                  "currency"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/business/mint/usdc": {
+      "post": {
+        "tags": [
+          "Business"
+        ],
+        "summary": "Mint ACBU from USDC for business",
+        "operationId": "post_v1_business_mint_usdc",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "usdc_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "currency_preference": {
+                    "type": "string",
+                    "enum": [
+                      "auto"
+                    ]
+                  }
+                },
+                "required": [
+                  "usdc_amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/business/mint/deposit": {
+      "post": {
+        "tags": [
+          "Business"
+        ],
+        "summary": "Mint ACBU from basket currency for business",
+        "operationId": "post_v1_business_mint_deposit",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "fintech_tx_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "currency",
+                  "amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/business/burn/acbu": {
+      "post": {
+        "tags": [
+          "Business"
+        ],
+        "summary": "Burn ACBU for business",
+        "operationId": "post_v1_business_burn_acbu",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated key used to make this money-moving request idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "acbu_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "NGN",
+                      "KES",
+                      "RWF"
+                    ]
+                  }
+                },
+                "required": [
+                  "acbu_amount",
+                  "currency"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/government/mint/usdc": {
+      "post": {
+        "tags": [
+          "Government"
+        ],
+        "summary": "Mint ACBU from USDC for government",
+        "operationId": "post_v1_government_mint_usdc",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "usdc_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "currency_preference": {
+                    "type": "string",
+                    "enum": [
+                      "auto"
+                    ]
+                  }
+                },
+                "required": [
+                  "usdc_amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/government/mint/deposit": {
+      "post": {
+        "tags": [
+          "Government"
+        ],
+        "summary": "Mint ACBU from basket currency for government",
+        "operationId": "post_v1_government_mint_deposit",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional client-generated key used to make retries idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "wallet_address": {
+                    "type": "string",
+                    "minLength": 56,
+                    "maxLength": 56
+                  },
+                  "fintech_tx_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "currency",
+                  "amount",
+                  "wallet_address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/government/burn/acbu": {
+      "post": {
+        "tags": [
+          "Government"
+        ],
+        "summary": "Burn ACBU for government",
+        "operationId": "post_v1_government_burn_acbu",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated key used to make this money-moving request idempotent.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "acbu_amount": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "NGN",
+                      "KES",
+                      "RWF"
+                    ]
+                  }
+                },
+                "required": [
+                  "acbu_amount",
+                  "currency"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/government/treasury": {
+      "get": {
+        "tags": [
+          "Government"
+        ],
+        "summary": "Get government treasury data",
+        "operationId": "get_v1_government_treasury",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/government/statements": {
+      "get": {
+        "tags": [
+          "Government"
+        ],
+        "summary": "List government statements",
+        "operationId": "get_v1_government_statements",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/investment/withdraw/request": {
+      "post": {
+        "tags": [
+          "Investment"
+        ],
+        "summary": "Request an investment withdrawal",
+        "operationId": "post_v1_investment_withdraw_request",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amount_acbu": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "audience": {
+                    "type": "string",
+                    "enum": [
+                      "retail",
+                      "business"
+                    ]
+                  },
+                  "forced_removal": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "amount_acbu",
+                  "audience"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/investment/withdraw/requests": {
+      "get": {
+        "tags": [
+          "Investment"
+        ],
+        "summary": "List investment withdrawal requests",
+        "operationId": "get_v1_investment_withdraw_requests",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "requested",
+                "available",
+                "completed",
+                "cancelled"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/v1/fiat/faucet": {
+      "post": {
+        "tags": [
+          "Fiat"
+        ],
+        "summary": "Request test currency from the faucet",
+        "operationId": "post_v1_fiat_faucet",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "amount": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0
+                  },
+                  "recipient": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "currency",
+                  "amount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/fiat/onramp": {
+      "post": {
+        "tags": [
+          "Fiat"
+        ],
+        "summary": "Simulate a fiat on-ramp",
+        "operationId": "post_v1_fiat_onramp",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "amount": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "currency",
+                  "amount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/fiat/offramp": {
+      "post": {
+        "tags": [
+          "Fiat"
+        ],
+        "summary": "Simulate a fiat off-ramp",
+        "operationId": "post_v1_fiat_offramp",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3
+                  },
+                  "amount": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0
+                  },
+                  "blockchain_tx_hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "currency",
+                  "amount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/fiat/accounts": {
+      "get": {
+        "tags": [
+          "Fiat"
+        ],
+        "summary": "List fiat accounts",
+        "operationId": "get_v1_fiat_accounts",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/config/assets": {
+      "get": {
+        "tags": [
+          "Config"
+        ],
+        "summary": "Get public asset configuration",
+        "operationId": "get_v1_config_assets",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "description": "Authenticated callers receive additional infrastructure configuration."
+      }
+    },
+    "/v1/kyc/scan-webhook": {
+      "post": {
+        "tags": [
+          "KYC"
+        ],
+        "summary": "Process a document scan callback",
+        "operationId": "post_v1_kyc_scan_webhook",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "x-scan-signature",
+            "in": "header",
+            "required": true,
+            "description": "HMAC-SHA256 signature of the raw scan callback payload.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "object_key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "scan_result": {
+                    "type": "string",
+                    "enum": [
+                      "clean",
+                      "infected"
+                    ]
+                  },
+                  "threat_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "object_key",
+                  "scan_result"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/kyc/documents/upload-url": {
+      "post": {
+        "tags": [
+          "KYC"
+        ],
+        "summary": "Request a presigned document upload URL",
+        "operationId": "post_v1_kyc_documents_upload_url",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "document_kind": {
+                    "type": "string",
+                    "enum": [
+                      "passport",
+                      "national_id",
+                      "drivers_license",
+                      "proof_of_address",
+                      "selfie"
+                    ]
+                  },
+                  "mime_type": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "document_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "document_kind",
+                  "mime_type"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/kyc/documents/{id}/confirm": {
+      "post": {
+        "tags": [
+          "KYC"
+        ],
+        "summary": "Confirm a document upload",
+        "operationId": "post_v1_kyc_documents_id_confirm",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "KYC document ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "checksum": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
+                  "file_size_bytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "minimum": 0,
+                    "maximum": 10485760
+                  }
+                },
+                "required": [
+                  "checksum",
+                  "file_size_bytes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/kyc/documents/{id}/download-url": {
+      "get": {
+        "tags": [
+          "KYC"
+        ],
+        "summary": "Request a presigned document download URL",
+        "operationId": "get_v1_kyc_documents_id_download_url",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "KYC document ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/kyc/rewards": {
+      "post": {
+        "tags": [
+          "KYC"
+        ],
+        "summary": "Create a validator reward",
+        "operationId": "post_v1_kyc_rewards",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "validator_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "application_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "acbu_amount": {
+                    "type": "string",
+                    "pattern": "^[1-9]\\d*$"
+                  },
+                  "tx_hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "validator_id",
+                  "application_id",
+                  "acbu_amount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/kyc/validators/{validatorId}/rewards": {
+      "get": {
+        "tags": [
+          "KYC"
+        ],
+        "summary": "List validator rewards",
+        "operationId": "get_v1_kyc_validators_validatorId_rewards",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "validatorId",
+            "in": "path",
+            "required": true,
+            "description": "Validator ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/reports/transactions": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Export transaction statements",
+        "operationId": "get_v1_reports_transactions",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "csv"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/v1/compliance/export": {
+      "get": {
+        "tags": [
+          "Compliance"
+        ],
+        "summary": "Export the current user's data",
+        "operationId": "get_v1_compliance_export",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/compliance/account": {
+      "delete": {
+        "tags": [
+          "Compliance"
+        ],
+        "summary": "Delete the current user's account",
+        "operationId": "delete_v1_compliance_account",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account deleted"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/privacy/consent": {
+      "put": {
+        "tags": [
+          "Privacy"
+        ],
+        "summary": "Update consent preferences",
+        "operationId": "put_v1_privacy_consent",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "analytics_optout": {
+                    "type": "boolean"
+                  },
+                  "analyticsOptout": {
+                    "type": "boolean"
+                  },
+                  "marketing_optout": {
+                    "type": "boolean"
+                  },
+                  "marketingOptout": {
+                    "type": "boolean"
+                  },
+                  "sale_optout": {
+                    "type": "boolean"
+                  },
+                  "saleOptout": {
+                    "type": "boolean"
+                  },
+                  "biometric_consent": {
+                    "type": "boolean"
+                  },
+                  "biometricConsent": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/privacy/consent/{address}": {
+      "get": {
+        "tags": [
+          "Privacy"
+        ],
+        "summary": "Get consent preferences",
+        "operationId": "get_v1_privacy_consent_address",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "description": "Stellar address or address hash",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/admin/weight-drift-audits": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List weight drift audits",
+        "operationId": "get_v1_admin_weight_drift_audits",
+        "security": [
+          {
+            "AdminKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Trigger a weight drift audit",
+        "operationId": "post_v1_admin_weight_drift_audits",
+        "security": [
+          {
+            "AdminKeyAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/v1/admin/weight-drift-audits/{id}": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get a weight drift audit",
+        "operationId": "get_v1_admin_weight_drift_audits_id",
+        "security": [
+          {
+            "AdminKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Weight drift audit ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/admin/weight-drift-audits/{id}/approve": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Approve a weight drift audit",
+        "operationId": "post_v1_admin_weight_drift_audits_id_approve",
+        "security": [
+          {
+            "AdminKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Weight drift audit ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "approvalNotes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/weight-drift-audits/{id}/reject": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Reject a weight drift audit",
+        "operationId": "post_v1_admin_weight_drift_audits_id_reject",
+        "security": [
+          {
+            "AdminKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Weight drift audit ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/flutterwave": {
+      "servers": [
+        {
+          "url": "http://localhost:5000",
+          "description": "Webhook endpoint (mounted at the root, not under /api)"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Handle a Flutterwave webhook",
+        "operationId": "post_v1_webhooks_flutterwave",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/paystack": {
+      "servers": [
+        {
+          "url": "http://localhost:5000",
+          "description": "Webhook endpoint (mounted at the root, not under /api)"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Handle a Paystack webhook",
+        "operationId": "post_v1_webhooks_paystack",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/bills/{provider}": {
+      "servers": [
+        {
+          "url": "http://localhost:5000",
+          "description": "Webhook endpoint (mounted at the root, not under /api)"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Handle a bills provider webhook",
+        "operationId": "post_v1_webhooks_bills_provider",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "description": "Bills provider name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
         }
       }
     }

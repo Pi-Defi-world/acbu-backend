@@ -1,4 +1,4 @@
-import { generateId, generateCorrelationId } from "../../src/utils/idGenerator";
+import { generateId, generateCorrelationId } from "../src/utils/idGenerator";
 
 // ---------------------------------------------------------------------------
 // Helpers

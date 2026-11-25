@@ -51,14 +51,9 @@ export class RebalancingEngine {
     totalReserveUsd: Decimal,
   ): Promise<RebalanceInstruction[]> {
     const instructions: RebalanceInstruction[] = [];
-    const overweight = driftSnapshot.filter(
-      (c) => c.weightDrift.gt(DRIFT_THRESHOLD_PCT),
-    );
-    const underweight = driftSnapshot.filter(
-      (c) => c.weightDrift.lt(-DRIFT_THRESHOLD_PCT),
-    );
-    if (overweight.length === 0 || underweight.length === 0)
-      return instructions;
+    const overweight = driftSnapshot.filter((c) => c.weightDrift.gt(DRIFT_THRESHOLD_PCT));
+    const underweight = driftSnapshot.filter((c) => c.weightDrift.lt(-DRIFT_THRESHOLD_PCT));
+    if (overweight.length === 0 || underweight.length === 0) return instructions;
 
     const router = getFintechRouter();
     for (const over of overweight) {

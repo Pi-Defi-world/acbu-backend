@@ -1,6 +1,9 @@
 /** Default browser origin for local development when CORS_ORIGIN is unset. */
 export const DEFAULT_DEV_CORS_ORIGIN = "http://localhost:3000";
 
+/** Default staging origin for staging/test environments when CORS_ORIGIN is unset. */
+export const DEFAULT_STAGING_CORS_ORIGIN = "https://staging.acbu.io";
+
 /**
  * Parse and validate CORS_ORIGIN for credentialed cross-origin requests.
  * Wildcard (*) is rejected: browsers forbid ACAO:* with Allow-Credentials.
@@ -15,6 +18,12 @@ export function parseCorsOrigins(raw: string | undefined, nodeEnv: string): stri
         "CORS_ORIGIN is required in production. Set a comma-separated list of exact origins " +
           "(e.g. https://app.example.com). Wildcard * is not allowed with credentials.",
       );
+    }
+    // W11-AUD-011: Staging and test environments get an explicit allowlist rather than a
+    // catch-all. Any site visited by a developer against the staging API can read
+    // authenticated session data if the origin is reflected without an allowlist.
+    if (normalizedEnv === "staging" || normalizedEnv === "test") {
+      return [DEFAULT_DEV_CORS_ORIGIN, DEFAULT_STAGING_CORS_ORIGIN];
     }
     return [DEFAULT_DEV_CORS_ORIGIN];
   }

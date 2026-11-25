@@ -40,3 +40,7 @@ export { OnboardingVideo as OnboardingVideoPlayer } from "./onboarding/onboardin
 
 // Chat
 export { ChatMessage } from "./chat/ChatMessage";
+
+// ZK Proof Flow — W11-CAR-013: real UltraHonk ZK-SNARK via Web Worker
+export { ZkProofFlow } from "./zk-proof-flow";
+export type { ZkProofFlowProps, ZkProofRequest, ZkProofResult } from "./zk-proof-flow";

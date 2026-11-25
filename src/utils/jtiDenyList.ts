@@ -86,8 +86,10 @@ export async function revokeJti(jti: string, exp: number): Promise<void> {
   try {
     await withTimeout(redisService.set(keyFor(jti), "1", ttlSeconds(exp)), "SET");
   } catch (error) {
-    logger.warn("JTI deny-list: Redis write failed; using in-process fallback", {
+    logger.warn("JTI deny-list: Redis write failed; using in-process fallback (stateless mode)", {
       error: describeError(error),
+      redisUnavailable: true,
+      fallbackMode: "local",
     });
   }
 }
@@ -115,8 +117,10 @@ export async function consumeJti(jti: string, exp: number): Promise<boolean> {
       return false;
     }
   } catch (error) {
-    logger.warn("JTI deny-list: Redis unavailable; using in-process fallback", {
+    logger.warn("JTI deny-list: Redis unavailable; using in-process fallback (stateless mode)", {
       error: describeError(error),
+      redisUnavailable: true,
+      fallbackMode: "local",
     });
   }
 

@@ -52,7 +52,7 @@ pub enum OracleError {
     /// `EMERGENCY_UPDATE_COOLDOWN_SECONDS` elapsed since the currency's last
     /// update. Emergency consensus lifts the regular interval, not this floor.
     EmergencyCooldownActive = 7027,
-    NotInitialized = 7028,
+    InvalidBasketConfig = 7028,
     Unknown = 7999,
 }
 
@@ -86,7 +86,7 @@ impl Display for OracleError {
             Self::InsufficientEmergencyVotes => "emergency vote cast - waiting for N-of-M validator consensus",
             Self::AdminDeviationTooLarge => "admin rate deviation exceeds emergency threshold",
             Self::EmergencyCooldownActive => "emergency update cooldown has not elapsed",
-            Self::NotInitialized => "oracle storage is not initialized",
+            Self::InvalidBasketConfig => "invalid basket configuration",
             Self::Unknown => "unknown oracle error",
         };
         f.write_str(message)
@@ -95,6 +95,7 @@ impl Display for OracleError {
 
 pub const ADMIN_TIMELOCK_SECONDS: u64 = 86_400;
 const MIN_ORACLE_SOURCE_FEEDS: u32 = 3;
+const MAX_BASKET_CURRENCIES: u32 = 20;
 /// Number of decimal places used for all rates reported by this oracle.
 const RATE_DECIMALS: u32 = 7;
 
@@ -260,8 +261,10 @@ impl OracleContract {
     ///
     /// Sets the `admin`, the initial `validators` set and the `min_signatures`
     /// threshold required to accept a rate update, the supported `currencies`, and
-    /// their `basket_weights`. `min_signatures` must be in `1..=validators.len()`
-    /// and the validator count must not exceed [`MAX_VALIDATORS`].
+    /// their `basket_weights`. Zero-weight currencies are inactive expansion
+    /// slots and do not need rates. `min_signatures` must be in
+    /// `1..=validators.len()` and the validator count must not exceed
+    /// [`MAX_VALIDATORS`].
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -283,6 +286,7 @@ impl OracleContract {
         if validators.len() > MAX_VALIDATORS {
             env.panic_with_error(OracleError::MaxValidatorsReached);
         }
+        Self::validate_basket_config(&env, &currencies, &basket_weights);
 
         env.storage().instance().set(&DATA_KEY.admin, &admin);
         env.storage()
@@ -962,8 +966,8 @@ impl OracleContract {
     /// Compute the basket-weighted ACBU/USD rate (7 decimals).
     ///
     /// Same computation as [`Self::get_acbu_usd_rate_with_timestamp`] without the
-    /// timestamp. Panics if no currencies are configured or no fresh rates
-    /// contribute.
+    /// timestamp. Panics if the basket has no active currencies or an active
+    /// currency has no fresh rate.
     pub fn get_acbu_usd_rate(env: Env) -> i128 {
         Self::compute_basket_rate(&env).0
     }
@@ -998,6 +1002,7 @@ impl OracleContract {
         basket_weights: Map<CurrencyCode, i128>,
     ) {
         Self::check_admin(&env);
+        Self::validate_basket_config(&env, &currencies, &basket_weights);
         env.storage()
             .instance()
             .set(&DATA_KEY.currencies, &currencies);
@@ -1415,9 +1420,9 @@ impl OracleContract {
     /// [`Self::get_acbu_usd_rate_with_timestamp`], returning
     /// `(rate, oldest_timestamp)`.
     ///
-    /// Each contribution is `rate_usd * weight / BASIS_POINTS`; the sum is then
-    /// rescaled by `BASIS_POINTS / total_weight` so the result stays in 7-decimal
-    /// USD units. Both public getters must go through here so the normalization
+    /// The weighted average is `sum(rate_usd * weight) / total_weight`, so any
+    /// zero-weight expansion slots are excluded and positive weights are
+    /// normalized. Both public getters must go through here so the result
     /// cannot diverge between them (AC-001).
     fn compute_basket_rate(env: &Env) -> (i128, u64) {
         let basket_weights: Map<CurrencyCode, i128> = env
@@ -1439,16 +1444,21 @@ impl OracleContract {
         let mut oldest_timestamp = u64::MAX;
 
         for currency in currencies.iter() {
-            if let Some(weight) = basket_weights.get(currency.clone()) {
-                if let Some(rate_data) = Self::get_rate_internal(env, &currency) {
-                    Self::assert_rate_fresh(env, &rate_data, &currency);
-                    let contribution = (rate_data.rate_usd * weight) / BASIS_POINTS;
-                    weighted_sum += contribution;
-                    total_weight += weight;
-                    if rate_data.timestamp < oldest_timestamp {
-                        oldest_timestamp = rate_data.timestamp;
-                    }
-                }
+            let weight = basket_weights
+                .get(currency.clone())
+                .unwrap_or_else(|| env.panic_with_error(OracleError::InvalidBasketConfig));
+            if weight == 0 {
+                continue;
+            }
+
+            let rate_data = Self::get_rate_internal(env, &currency)
+                .unwrap_or_else(|| env.panic_with_error(OracleError::RateNotInitialized));
+            Self::assert_rate_fresh(env, &rate_data, &currency);
+            let contribution = rate_data.rate_usd * weight;
+            weighted_sum += contribution;
+            total_weight += weight;
+            if rate_data.timestamp < oldest_timestamp {
+                oldest_timestamp = rate_data.timestamp;
             }
         }
 
@@ -1463,6 +1473,40 @@ impl OracleContract {
             oldest_timestamp
         };
         (rate, oldest_timestamp)
+    }
+
+    fn validate_basket_config(
+        env: &Env,
+        currencies: &Vec<CurrencyCode>,
+        basket_weights: &Map<CurrencyCode, i128>,
+    ) {
+        if currencies.is_empty()
+            || currencies.len() > MAX_BASKET_CURRENCIES
+            || basket_weights.len() != currencies.len()
+        {
+            env.panic_with_error(OracleError::InvalidBasketConfig);
+        }
+
+        let mut seen = Vec::new(env);
+        let mut total_weight = 0i128;
+        for currency in currencies.iter() {
+            if seen.contains(currency.clone()) {
+                env.panic_with_error(OracleError::InvalidBasketConfig);
+            }
+            seen.push_back(currency.clone());
+
+            let weight = basket_weights
+                .get(currency)
+                .unwrap_or_else(|| env.panic_with_error(OracleError::InvalidBasketConfig));
+            if !(0..=BASIS_POINTS).contains(&weight) {
+                env.panic_with_error(OracleError::InvalidBasketConfig);
+            }
+            total_weight += weight;
+        }
+
+        if total_weight == 0 || total_weight > BASIS_POINTS {
+            env.panic_with_error(OracleError::InvalidBasketConfig);
+        }
     }
 
     fn get_rate_internal(env: &Env, currency: &CurrencyCode) -> Option<RateData> {

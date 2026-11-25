@@ -182,6 +182,8 @@ pub enum MintingError {
     /// AC-038: No operator ed25519 public key has been registered; call
     /// `set_operator_pub_key` (admin only) before using `mint_from_fiat`.
     OperatorPubKeyNotSet = 5033,
+    /// The oracle returned more basket currencies than `mint_from_basket` accepts.
+    BasketSizeExceeded = 5034,
     Unknown = 5999,
 }
 
@@ -221,6 +223,7 @@ impl Display for MintingError {
             Self::InvalidBurnAmount => "invalid burn amount",
             Self::InvalidFiatSettlementProof => "fiat settlement proof signature is invalid",
             Self::OperatorPubKeyNotSet => "operator ed25519 public key not set",
+            Self::BasketSizeExceeded => "basket size exceeds maximum",
             Self::Unknown => "unknown minting error",
         };
         f.write_str(message)
@@ -603,7 +606,7 @@ impl MintingContract {
         );
         // Reject baskets with too many currencies to avoid excessive gas costs
         if currencies.len() > 10 {
-            env.panic_with_error(MintingError::InvalidMintAmount);
+            env.panic_with_error(MintingError::BasketSizeExceeded);
         }
 
         let usd_total: i128 = acbu_amount

@@ -46,6 +46,7 @@ fn main(
     commitment: pub Field,
     required_kyc: pub u64,
     allowed_country: pub u64,
+    wallet_address_hash: pub u128,
     nullifier: pub Field,
 ) {
     // Keep the credential and policy inputs inside their documented domains.
@@ -58,6 +59,7 @@ fn main(
     assert(country_code <= 999);
     assert(allowed_country > 0);
     assert(allowed_country <= 999);
+    assert(wallet_address_hash != 0);
 
     // 1) Prove knowledge of the credential behind the commitment
     let computed: Field = poseidon2_hash_4(
@@ -78,8 +80,10 @@ fn main(
     //    policy.allowed_country, so the prover cannot bypass by choosing freely.
     assert(country_code == allowed_country);
 
-    // 4) Derive nullifier = hash(commitment, salt) to prevent double-use
-    let expected_nullifier = poseidon2_hash_2(commitment, salt);
+    // 4) Bind the nullifier to this wallet so one credential cannot be reused
+    //    across multiple Stellar accounts.
+    let expected_nullifier =
+        poseidon2_hash_4(commitment, salt, wallet_address_hash as Field, 0);
     assert(nullifier == expected_nullifier);
 }
 
@@ -92,7 +96,13 @@ fn test_valid_basic_kyc_ngn() {
         poseidon2_hash_4(1, 566, 12345, 0),
         1,
         566,
-        poseidon2_hash_2(poseidon2_hash_4(1, 566, 12345, 0), 12345),
+        0x0102030405060708090a0b0c0d0e0f10,
+        poseidon2_hash_4(
+            poseidon2_hash_4(1, 566, 12345, 0),
+            12345,
+            0x0102030405060708090a0b0c0d0e0f10,
+            0,
+        ),
     );
 }
 
@@ -105,7 +115,13 @@ fn test_valid_enterprise_kes() {
         poseidon2_hash_4(3, 404, 99999, 0),
         2,
         404,
-        poseidon2_hash_2(poseidon2_hash_4(3, 404, 99999, 0), 99999),
+        0x0102030405060708090a0b0c0d0e0f10,
+        poseidon2_hash_4(
+            poseidon2_hash_4(3, 404, 99999, 0),
+            99999,
+            0x0102030405060708090a0b0c0d0e0f10,
+            0,
+        ),
     );
 }
 
@@ -119,7 +135,13 @@ fn test_rejects_kyc_level_outside_documented_range() {
         commitment,
         1,
         566,
-        poseidon2_hash_2(commitment, 12345),
+        0x0102030405060708090a0b0c0d0e0f10,
+        poseidon2_hash_4(
+            commitment,
+            12345,
+            0x0102030405060708090a0b0c0d0e0f10,
+            0,
+        ),
     );
 }
 
@@ -133,7 +155,13 @@ fn test_rejects_country_code_outside_iso_numeric_range() {
         commitment,
         1,
         1000,
-        poseidon2_hash_2(commitment, 12345),
+        0x0102030405060708090a0b0c0d0e0f10,
+        poseidon2_hash_4(
+            commitment,
+            12345,
+            0x0102030405060708090a0b0c0d0e0f10,
+            0,
+        ),
     );
 }
 
@@ -147,6 +175,51 @@ fn test_rejects_zero_country_code() {
         commitment,
         1,
         0,
-        poseidon2_hash_2(commitment, 12345),
+        0x0102030405060708090a0b0c0d0e0f10,
+        poseidon2_hash_4(
+            commitment,
+            12345,
+            0x0102030405060708090a0b0c0d0e0f10,
+            0,
+        ),
+    );
+}
+
+#[test]
+fn test_nullifier_differs_between_accounts() {
+    let commitment = poseidon2_hash_4(1, 566, 12345, 0);
+    let nullifier_a = poseidon2_hash_4(commitment, 12345, 101, 0);
+    let nullifier_b = poseidon2_hash_4(commitment, 12345, 202, 0);
+    assert(nullifier_a != nullifier_b);
+}
+
+#[test(should_fail)]
+fn test_rejects_nullifier_bound_to_another_account() {
+    let commitment = poseidon2_hash_4(1, 566, 12345, 0);
+    let other_account_nullifier = poseidon2_hash_4(commitment, 12345, 101, 0);
+    main(
+        1,
+        566,
+        12345,
+        commitment,
+        1,
+        566,
+        202,
+        other_account_nullifier,
+    );
+}
+
+#[test(should_fail)]
+fn test_rejects_unbound_wallet_address() {
+    let commitment = poseidon2_hash_4(1, 566, 12345, 0);
+    main(
+        1,
+        566,
+        12345,
+        commitment,
+        1,
+        566,
+        0,
+        poseidon2_hash_4(commitment, 12345, 0, 0),
     );
 }
