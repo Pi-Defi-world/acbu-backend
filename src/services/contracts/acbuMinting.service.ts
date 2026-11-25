@@ -30,6 +30,13 @@ function currencyCodeToScVal(code: string): xdr.ScVal {
   return xdr.ScVal.scvVec([xdr.ScVal.scvVec([xdr.ScVal.scvString(c)])]);
 }
 
+/**
+ * Fields shared by every minting call that participates in DB compensation.
+ *
+ * `txId` is the id of the `transactions` row that has to be marked as failed
+ * when the on-chain call fails. Declaring it once — and typing it — means a
+ * rename can no longer silently break reconciliation without a compile error.
+ */
 export interface CompensationParams {
   txId?: string;
 }

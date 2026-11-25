@@ -222,6 +222,9 @@ function findTasksFiles(rootDir) {
       }
 
       const absolutePath = path.join(directory, entry.name);
+      if (entry.isSymbolicLink() && entry.name === ".vscode") {
+        throw new Error(`Refusing to follow symbolic-link .vscode directory: ${path.relative(root, absolutePath)}`);
+      }
       if (entry.isDirectory()) {
         walk(absolutePath, insideVSCode || entry.name === ".vscode");
       } else if (insideVSCode && entry.name === "tasks.json") {

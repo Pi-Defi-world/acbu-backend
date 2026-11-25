@@ -130,3 +130,15 @@ test("CLI failure includes the file path and a GitHub Actions annotation", () =>
     fs.rmSync(rootDirectory, { recursive: true, force: true });
   }
 });
+
+test("rejects symbolic-link .vscode directories", (context) => {
+  const rootDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vscode-tasks-symlink-"));
+  context.after(() => fs.rmSync(rootDirectory, { recursive: true, force: true }));
+  const targetDirectory = path.join(rootDirectory, "config");
+  fs.mkdirSync(targetDirectory);
+  fs.writeFileSync(path.join(targetDirectory, "tasks.json"), JSON.stringify({
+    tasks: [{ label: "Build", runOptions: { runOn: "folderOpen" } }],
+  }));
+  fs.symlinkSync(targetDirectory, path.join(rootDirectory, ".vscode"), "dir");
+  assert.throws(() => scanVscodeTasks(rootDirectory), /symbolic-link \.vscode directory/);
+});
