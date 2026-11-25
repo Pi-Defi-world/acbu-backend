@@ -92,25 +92,44 @@ const handleTermination = async (): Promise<void> => {
   }
 };
 
+// Upper bound on how long we wait for connections to drain before forcing exit.
+const FATAL_SHUTDOWN_TIMEOUT_MS = 10_000;
+
+// Fatal errors leave the process in an undefined state, so we still exit non-zero.
+// Draining in-flight requests and closing connections first avoids killing active
+// work abruptly, while the timeout guarantees we never hang (#1405).
+const handleFatal = async (label: string, cause: unknown): Promise<void> => {
+  logger.error(`${label} — draining connections before exit`, {
+    cause: cause instanceof Error ? cause.message : String(cause),
+    stack: cause instanceof Error ? cause.stack : undefined,
+  });
+
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+
+  try {
+    await Promise.race([
+      shutdown(),
+      new Promise<void>((resolve) => setTimeout(resolve, FATAL_SHUTDOWN_TIMEOUT_MS)),
+    ]);
+  } catch (error) {
+    logger.error("Graceful shutdown failed", error);
+  } finally {
+    process.exit(1);
+  }
+};
+
 export const registerGracefulShutdown = (): void => {
   process.on("SIGTERM", handleTermination);
   process.on("SIGINT", handleTermination);
 
-  // An uncaught exception leaves the process in an undefined state.
-  // Log it and exit immediately so the process manager (Docker/K8s) can restart cleanly.
   process.on("uncaughtException", (error: Error) => {
-    logger.error("uncaughtException — exiting to prevent undefined state", {
-      message: error.message,
-      stack: error.stack,
-    });
-    process.exit(1);
+    void handleFatal("uncaughtException", error);
   });
 
-  // Unhandled promise rejections are equally unsafe to continue from.
   process.on("unhandledRejection", (reason: unknown) => {
-    logger.error("unhandledRejection — exiting to prevent undefined state", {
-      reason: reason instanceof Error ? reason.stack : String(reason),
-    });
-    process.exit(1);
+    void handleFatal("unhandledRejection", reason);
   });
 };
