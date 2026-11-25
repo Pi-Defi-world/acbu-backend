@@ -83,7 +83,7 @@ the circuit source is unchanged. Always upgrade the entire toolchain atomically.
 ```
 1. Client generates witness (private KYC data + public inputs)
 2. Client calls `bb prove -b circuit.json -w witness.gz -o proof.bin`
-3. Client submits proof.bin + public_inputs[] to zk_verifier.verify(…)
+3. Client submits proof.bin + public_inputs[] to zk_verifier.verify_proof(…)
 4. zk_verifier (WASM Rust) re-derives VK hash from stored VK, runs
    UltraHonk verifier, returns bool
 5. Calling contract (e.g. acbu_minting) gates the transaction on the result

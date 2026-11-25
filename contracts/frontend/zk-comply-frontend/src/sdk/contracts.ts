@@ -1,6 +1,6 @@
 /**
  * Soroban submission — mirrors repo `sdk/src/contracts.ts` `submitProof`,
- * aligned with on-chain `verify(wallet, nullifier, commitment)`.
+ * aligned with the on-chain `verify_proof` entrypoint.
  */
 
 import {
@@ -84,7 +84,7 @@ export async function submitProof(
     })
       .addOperation(
         contract.call(
-          "verify",
+          "verify_proof",
           Address.fromString(keypair.publicKey()).toScVal(),
           nativeToScVal(artifacts.nullifier, {
             type: "bytesN",

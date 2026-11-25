@@ -229,7 +229,7 @@ export async function registerCommitment(
  * Submit a compliance proof result to the verifier contract and mark
  * the calling wallet as verified.
  *
- * On-chain `verify(wallet, nullifier, commitment)` records the spent
+ * The on-chain `verify_proof` entrypoint records the spent
  * nullifier after the caller has produced a valid ZK proof off-chain
  * (see `generateProof`). Proof bytes themselves are not posted — the
  * contract enforces attestation + nullifier uniqueness + wallet auth.
@@ -260,7 +260,7 @@ export async function submitProof(
     })
       .addOperation(
         contract.call(
-          "verify",
+          "verify_proof",
           Address.fromString(keypair.publicKey()).toScVal(),
           nativeToScVal(Buffer.from(artifacts.nullifier), {
             type: "bytesN",
