@@ -1,8 +1,8 @@
 import { MintingService } from "../src/services/contracts/acbuMinting.service";
 import { contractClient } from "../src/services/stellar/contractClient";
-import { stellarClient } from "../src/services/stellar/client";
 import { prisma } from "../src/config/database";
 import type { TransactionStatus } from "../src/utils/transactionStateMachine";
+import { Keypair } from "@stellar/stellar-sdk";
 
 jest.mock("../src/services/stellar/contractClient", () => ({
   contractClient: { invokeContract: jest.fn() },
@@ -24,10 +24,25 @@ jest.mock("../src/config/logger", () => ({
 }));
 
 const VALID_STATUSES: readonly string[] = ["pending", "processing", "completed", "failed"];
+const VALID_RECIPIENT = Keypair.random().publicKey();
 
 describe("MintingService Compensation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it("rejects a contract address as a mint recipient", async () => {
+    const service = new MintingService("contract-id");
+
+    await expect(
+      service.mintFromUsdc({
+        user: "G" + "A".repeat(55),
+        usdcAmount: "100",
+        recipient: "C" + "A".repeat(55),
+      }),
+    ).rejects.toThrow("Invalid recipient account");
+
+    expect(contractClient.invokeContract).not.toHaveBeenCalled();
   });
 
   it("marks tx failed if stellar throws", async () => {
@@ -38,7 +53,7 @@ describe("MintingService Compensation", () => {
       service.mintFromUsdc({
         user: "user",
         usdcAmount: "100",
-        recipient: "rec",
+        recipient: VALID_RECIPIENT,
         txId: "123",
       } as any),
     ).rejects.toThrow("Stellar Fail");
@@ -57,7 +72,7 @@ describe("MintingService Compensation", () => {
       service.mintFromUsdc({
         user: "user",
         usdcAmount: "100",
-        recipient: "rec",
+        recipient: VALID_RECIPIENT,
         txId: "123",
       } as any),
     ).rejects.toThrow("Stellar Fail");
@@ -77,7 +92,7 @@ describe("MintingService Compensation", () => {
       service.mintFromUsdc({
         user: "user",
         usdcAmount: "100",
-        recipient: "rec",
+        recipient: VALID_RECIPIENT,
       } as any),
     ).rejects.toThrow("Stellar Fail");
 
@@ -95,7 +110,7 @@ describe("MintingService Compensation", () => {
           service.mintFromUsdc({
             user: "user",
             usdcAmount: "100",
-            recipient: "rec",
+            recipient: VALID_RECIPIENT,
             txId: "123",
           }),
       },
@@ -104,7 +119,7 @@ describe("MintingService Compensation", () => {
         invoke: (service) =>
           service.mintFromBasket({
             user: "user",
-            recipient: "rec",
+            recipient: VALID_RECIPIENT,
             acbuAmount: "100",
             txId: "123",
           }),
@@ -114,7 +129,7 @@ describe("MintingService Compensation", () => {
         invoke: (service) =>
           service.mintFromSingle({
             user: "user",
-            recipient: "rec",
+            recipient: VALID_RECIPIENT,
             currency: "NGN",
             sTokenAmount: "100",
             txId: "123",
@@ -125,7 +140,7 @@ describe("MintingService Compensation", () => {
         invoke: (service) =>
           service.mintFromDemoFiat({
             operator: "operator",
-            recipient: "rec",
+            recipient: VALID_RECIPIENT,
             currency: "NGN",
             fiatAmount: "100",
             txId: "123",
@@ -135,7 +150,7 @@ describe("MintingService Compensation", () => {
         name: "adminDripDemoFiat",
         invoke: (service) =>
           service.adminDripDemoFiat({
-            recipient: "rec",
+            recipient: VALID_RECIPIENT,
             currency: "NGN",
             amount: "100",
             txId: "123",

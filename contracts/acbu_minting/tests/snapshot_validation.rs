@@ -17,7 +17,6 @@
 //! 3. Automated snapshot regeneration utilities
 //! 4. Snapshot freshness checks
 
-use soroban_sdk::{Env, Symbol};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};

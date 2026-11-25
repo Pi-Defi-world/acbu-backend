@@ -223,7 +223,7 @@ export async function getTransferById(
       amount_acbu: tx.acbuAmount?.toString() ?? null,
       local_currency: tx.localCurrency ?? null,
       local_amount: tx.localAmount?.toString() ?? null,
-      recipient_address: tx.type === "transfer" ? (tx.recipientAddress ?? null) : null,
+      recipient_address: tx.type === "transfer" ? tx.recipientAddress ?? null : null,
       blockchain_tx_hash: tx.blockchainTxHash ?? undefined,
       created_at: tx.createdAt.toISOString(),
       completed_at: tx.completedAt?.toISOString() ?? undefined,

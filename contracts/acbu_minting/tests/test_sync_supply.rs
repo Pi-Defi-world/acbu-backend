@@ -6,7 +6,7 @@ use shared::{CurrencyCode, DECIMALS};
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
     testutils::Address as _,
-    Address, Env, Vec,
+    Address, BytesN, Env, Vec,
 };
 
 // ---------------------------------------------------------------------------
@@ -88,18 +88,19 @@ fn setup(env: &Env) -> (Address, Address, Address, MintingContractClient) {
         .address();
 
     let client = MintingContractClient::new(env, &contract_id);
-    client.initialize(
-        &admin,
-        &oracle,
-        &reserve_tracker,
-        &acbu_token,
-        &usdc_token,
-        &admin, // vault
-        &admin, // treasury
-        &300i128,
-        &100i128,
-        &operator,
-    );
+    client.initialize(&acbu_minting::MintingConfig {
+        admin: admin.clone(),
+        oracle: oracle.clone(),
+        reserve_tracker: reserve_tracker.clone(),
+        acbu_token: acbu_token.clone(),
+        usdc_token: usdc_token.clone(),
+        vault: admin.clone(),
+        treasury: admin.clone(),
+        fee_rate_bps: 300,
+        fee_single_bps: 100,
+        operator: operator.clone(),
+        operator_pub_key: BytesN::from_array(env, &[0u8; 32]),
+    });
 
     (admin, operator, acbu_token, client)
 }

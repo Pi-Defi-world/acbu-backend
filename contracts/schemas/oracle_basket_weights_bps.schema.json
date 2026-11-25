@@ -1,10 +1,11 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Oracle Basket Weights BPS",
-  "description": "Currency basket weights in basis points (scripts format)",
+  "description": "Currency basket weights in basis points; zero marks an inactive expansion slot",
   "type": "array",
   "minItems": 1,
-    "items": {
+  "maxItems": 20,
+  "items": {
     "type": "array",
     "description": "[currency_tuple, weight_bps]",
     "minItems": 2,
@@ -22,8 +23,8 @@
       },
       {
         "type": "integer",
-        "description": "Weight in basis points (1–10000)",
-        "minimum": 1,
+        "description": "Weight in basis points (0–10000); zero reserves an inactive expansion slot",
+        "minimum": 0,
         "maximum": 10000
       }
       ],

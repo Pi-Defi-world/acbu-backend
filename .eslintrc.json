@@ -10,8 +10,23 @@
   "reportUnusedDisableDirectives": true,
   "rules": {
     "@typescript-eslint/no-explicit-any": "warn",
-    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }]
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "NewExpression[callee.name='PrismaClient']",
+        "message": "W11-CAR-026: Do not instantiate PrismaClient directly. Import the shared singleton from 'src/config/database.ts' instead (import { prisma } from '../config/database'). Standalone instances bypass connection pooling, audit middleware, and OpenTelemetry tracing."
+      }
+    ]
   },
+  "overrides": [
+    {
+      "files": ["src/config/database.ts"],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ],
   "env": {
     "node": true,
     "jest": true,

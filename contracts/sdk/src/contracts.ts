@@ -24,6 +24,47 @@ import type { ProofArtifacts, VerificationResult } from "./types.js";
 
 const TESTNET_RPC = "https://soroban-testnet.stellar.org";
 const TESTNET_PASSPHRASE = Networks.TESTNET;
+const TRANSACTION_POLL_TIMEOUT_MS = 120_000;
+const INITIAL_TRANSACTION_POLL_DELAY_MS = 1_000;
+const MAX_TRANSACTION_POLL_DELAY_MS = 8_000;
+
+async function waitForTransaction(
+  rpc: SorobanRpc.Server,
+  txHash: string
+) {
+  const deadline = Date.now() + TRANSACTION_POLL_TIMEOUT_MS;
+  let delayMs = INITIAL_TRANSACTION_POLL_DELAY_MS;
+  let lastRpcError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      const result = await rpc.getTransaction(txHash);
+      lastRpcError = undefined;
+      if (result.status !== "NOT_FOUND") {
+        return result;
+      }
+    } catch (error) {
+      lastRpcError = error;
+    }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      break;
+    }
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(delayMs, remainingMs))
+    );
+    delayMs = Math.min(delayMs * 2, MAX_TRANSACTION_POLL_DELAY_MS);
+  }
+
+  const detail = lastRpcError
+    ? `: ${lastRpcError instanceof Error ? lastRpcError.message : String(lastRpcError)}`
+    : "";
+  throw new Error(
+    `Timed out waiting for Soroban transaction ${txHash} to be finalized${detail}`
+  );
+}
 
 function randomSalt(): Uint8Array {
   const salt = new Uint8Array(32);
@@ -188,7 +229,7 @@ export async function registerCommitment(
  * Submit a compliance proof result to the verifier contract and mark
  * the calling wallet as verified.
  *
- * On-chain `verify(wallet, nullifier, commitment)` records the spent
+ * The on-chain `verify_proof` entrypoint records the spent
  * nullifier after the caller has produced a valid ZK proof off-chain
  * (see `generateProof`). Proof bytes themselves are not posted — the
  * contract enforces attestation + nullifier uniqueness + wallet auth.
@@ -198,6 +239,8 @@ export async function submitProof(
   contractId: string,
   artifacts: ProofArtifacts
 ): Promise<VerificationResult> {
+  let txHash: string | undefined;
+
   try {
     if (!artifacts.nullifier || artifacts.nullifier.length !== 32) {
       return { success: false, error: "artifacts.nullifier must be 32 bytes" };
@@ -217,7 +260,7 @@ export async function submitProof(
     })
       .addOperation(
         contract.call(
-          "verify",
+          "verify_proof",
           Address.fromString(keypair.publicKey()).toScVal(),
           nativeToScVal(Buffer.from(artifacts.nullifier), {
             type: "bytesN",
@@ -236,8 +279,6 @@ export async function submitProof(
     prepared.sign(keypair);
     const result = await rpc.sendTransaction(prepared);
 
-    // Soroban returns PENDING initially; SUCCESS means accepted into mempool
-    // as of stellar-sdk sendTransaction. Treat ERROR as failure.
     if (result.status === "ERROR") {
       return {
         success: false,
@@ -246,9 +287,27 @@ export async function submitProof(
       };
     }
 
-    return { success: true, txHash: result.hash };
-  } catch (err: any) {
-    return { success: false, error: err.message };
+    txHash = result.hash;
+    const finalized = await waitForTransaction(rpc, txHash);
+    if (finalized.status !== "SUCCESS") {
+      return {
+        success: false,
+        error:
+          finalized.status === "FAILED"
+            ? `Transaction failed: ${finalized.resultXdr ?? "unknown result"}`
+            : `Unexpected transaction status: ${finalized.status}`,
+        txHash,
+      };
+    }
+
+    return { success: true, txHash };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      error: message,
+      ...(txHash ? { txHash } : {}),
+    };
   }
 }
 

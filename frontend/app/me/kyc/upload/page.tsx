@@ -17,6 +17,7 @@ import type { KycDocumentKind } from "@/lib/api/kyc";
 const KINDS: { kind: KycDocumentKind; label: string }[] = [
   { kind: "id_front", label: "ID (front)" },
   { kind: "id_back", label: "ID (back)" },
+  { kind: "passport", label: "International passport" },
   { kind: "selfie", label: "Selfie" },
 ];
 
@@ -25,9 +26,7 @@ function UploadWidget() {
   const searchParams = useSearchParams();
   const applicationId = searchParams.get("applicationId") ?? "";
   const opts = useApiOpts();
-  const [storageRefs, setStorageRefs] = useState<
-    Record<KycDocumentKind, string>
-  >({ id_front: "", id_back: "", selfie: "" });
+  const [storageRefs, setStorageRefs] = useState<Partial<Record<KycDocumentKind, string>>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -134,7 +133,7 @@ function UploadWidget() {
       <PageContainer>
         <Card className="border-border space-y-4 p-4">
           <p className="text-muted-foreground text-sm">
-            Upload id_front, id_back, and selfie. Then submit.
+            Upload a national ID or international passport, plus a selfie. You can use a phone number from your current country of residence.
           </p>
           {error && <p className="text-destructive text-sm">{error}</p>}
           {success && (
@@ -159,7 +158,7 @@ function UploadWidget() {
                 )}
               </div>
             ))}
-            <Button type="submit" disabled={loading || !storageRefs.id_front}>
+            <Button type="submit" disabled={loading || !storageRefs.id_front && !storageRefs.passport}>
               Submit documents
             </Button>
           </form>

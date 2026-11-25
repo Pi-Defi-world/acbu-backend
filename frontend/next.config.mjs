@@ -39,7 +39,10 @@ const nextConfig = {
   crossOrigin: 'anonymous',
   // Improve tree-shaking for large packages and local UI exports
   experimental: {
-    optimizePackageImports: ['lucide-react', '@/components/ui'],
+    // W11-AUD-023: include @stellar/stellar-sdk so Next.js tree-shakes and
+    // code-splits the package; combined with dynamic imports for Horizon/rpc
+    // this reduces the initial client bundle by the heaviest sub-modules.
+    optimizePackageImports: ['lucide-react', '@/components/ui', '@stellar/stellar-sdk'],
   },
   // Don't advertise the framework to reduce attack surface
   poweredByHeader: false,
@@ -67,15 +70,26 @@ const nextConfig = {
 
     const cspDirectives = [
       "default-src 'self'",
-      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
+      // 'wasm-unsafe-eval' is required for @aztec/bb.js (Barretenberg) and
+      // @noir-lang/noir_wasm to instantiate their WebAssembly modules inside
+      // the ZK proof Web Worker (W11-CAR-013).
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''} 'wasm-unsafe-eval'`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''} https://*.sentry.io`,
+      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''} https://*.sentry.io https://crs.aztec.network`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
       "object-src 'none'",
+      // Allow the ZK proof Web Worker served from /public (W11-CAR-013).
+      // blob: covers browsers that wrap module workers in a blob URL.
+      "worker-src 'self' blob:",
+      // Allow WASM binary fetches for Barretenberg / noir_wasm.
+      // script-src-elem and worker-src do not cover fetch() calls, so the
+      // CRS download that @aztec/bb.js makes from https://crs.aztec.network
+      // must be explicitly allowed in connect-src (CR-3, PR #1494).
+      "script-src-elem 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
       'report-uri /api/csp-report',
     ];
 
@@ -162,6 +176,26 @@ const nextConfig = {
       ...config.resolve.alias,
       '@': path.resolve(__dirname),
     };
+
+    // --- WebAssembly support for ZK proof packages (W11-CAR-013) ----------
+    // @aztec/bb.js and @noir-lang/noir_wasm ship .wasm binaries that must be
+    // served as assets, not inlined.  asyncWebAssembly enables the
+    // WebAssembly ESM integration proposal so the packages can use
+    // `import` / `instantiate` on the WASM modules at runtime.
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+      layers: true,
+    };
+
+    // Treat .wasm files as assets served from /_next/static/wasm/
+    config.module.rules.push({
+      test: /\.wasm$/,
+      type: 'asset/resource',
+      generator: {
+        filename: 'static/wasm/[name].[contenthash][ext]',
+      },
+    });
 
     // --- Source-map upload (production client builds only) ----------------
     if (!dev && !isServer && sentryWebpackPlugin) {

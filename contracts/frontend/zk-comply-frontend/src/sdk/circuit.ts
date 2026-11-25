@@ -33,8 +33,11 @@ fn main(
     commitment: pub Field,
     required_kyc: pub u64,
     allowed_country: pub u64,
+    wallet_address_hash: pub u128,
     nullifier: pub Field,
 ) {
+    assert(wallet_address_hash != 0);
+
     // 1) Prove knowledge of the credential behind the commitment
     let computed: Field = poseidon2_hash_4(
         kyc_level as Field,
@@ -50,8 +53,10 @@ fn main(
     // 3) Prove the country matches the allowed jurisdiction
     assert(country_code == allowed_country);
 
-    // 4) Derive nullifier = hash(commitment, salt) to prevent double-use
-    let expected_nullifier = poseidon2_hash_2(commitment, salt);
+    // 4) Bind the nullifier to this wallet so one credential cannot be reused
+    //    across multiple Stellar accounts.
+    let expected_nullifier =
+        poseidon2_hash_4(commitment, salt, wallet_address_hash as Field, 0);
     assert(nullifier == expected_nullifier);
 }
 `;

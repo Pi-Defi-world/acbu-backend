@@ -17,6 +17,7 @@ import { validateApiKey } from "../middleware/auth";
 import type { AuthRequest } from "../middleware/auth";
 import { requireAdminKeyType } from "../middleware/segmentGuard";
 import { authRateLimiter, apiKeyRateLimiter, twoFaRateLimiter } from "../middleware/rateLimiter";
+import { requireCaptcha } from "../middleware/captcha";
 
 /**
  * @swagger
@@ -240,7 +241,7 @@ function normalizeAuthRateLimitBody(req: AuthRequest, _res: Response, next: Next
   next();
 }
 
-router.post("/signup", authRateLimiter, postSignup);
+router.post("/signup", authRateLimiter, requireCaptcha(), postSignup);
 // #269: twoFaRateLimiter adds per-user/IP keyed limiting on top of the IP-only authRateLimiter
 // #391: normalize identifier/email before the per-user limiter so case variants share one budget
 router.post("/signin", authRateLimiter, normalizeAuthRateLimitBody, twoFaRateLimiter, postSignin);

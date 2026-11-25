@@ -52,6 +52,7 @@ pub enum OracleError {
     /// `EMERGENCY_UPDATE_COOLDOWN_SECONDS` elapsed since the currency's last
     /// update. Emergency consensus lifts the regular interval, not this floor.
     EmergencyCooldownActive = 7027,
+    InvalidBasketConfig = 7028,
     Unknown = 7999,
 }
 
@@ -85,6 +86,7 @@ impl Display for OracleError {
             Self::InsufficientEmergencyVotes => "emergency vote cast - waiting for N-of-M validator consensus",
             Self::AdminDeviationTooLarge => "admin rate deviation exceeds emergency threshold",
             Self::EmergencyCooldownActive => "emergency update cooldown has not elapsed",
+            Self::InvalidBasketConfig => "invalid basket configuration",
             Self::Unknown => "unknown oracle error",
         };
         f.write_str(message)
@@ -93,6 +95,7 @@ impl Display for OracleError {
 
 pub const ADMIN_TIMELOCK_SECONDS: u64 = 86_400;
 const MIN_ORACLE_SOURCE_FEEDS: u32 = 3;
+const MAX_BASKET_CURRENCIES: u32 = 20;
 /// Number of decimal places used for all rates reported by this oracle.
 const RATE_DECIMALS: u32 = 7;
 
@@ -258,8 +261,10 @@ impl OracleContract {
     ///
     /// Sets the `admin`, the initial `validators` set and the `min_signatures`
     /// threshold required to accept a rate update, the supported `currencies`, and
-    /// their `basket_weights`. `min_signatures` must be in `1..=validators.len()`
-    /// and the validator count must not exceed [`MAX_VALIDATORS`].
+    /// their `basket_weights`. Zero-weight currencies are inactive expansion
+    /// slots and do not need rates. `min_signatures` must be in
+    /// `1..=validators.len()` and the validator count must not exceed
+    /// [`MAX_VALIDATORS`].
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -281,6 +286,7 @@ impl OracleContract {
         if validators.len() > MAX_VALIDATORS {
             env.panic_with_error(OracleError::MaxValidatorsReached);
         }
+        Self::validate_basket_config(&env, &currencies, &basket_weights);
 
         env.storage().instance().set(&DATA_KEY.admin, &admin);
         env.storage()
@@ -337,7 +343,7 @@ impl OracleContract {
             .instance()
             .set(&DATA_KEY.pending_admin_eligible_at, &eligible_at);
 
-        let current_admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let current_admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         env.events().publish(
             (symbol_short!("adm_init"),),
             AdminTransferInitiatedEvent {
@@ -369,7 +375,7 @@ impl OracleContract {
             env.panic_with_error(OracleError::AdminTimelockNotElapsed);
         }
 
-        let old_admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let old_admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
 
         env.storage()
             .instance()
@@ -404,7 +410,7 @@ impl OracleContract {
             .instance()
             .remove(&DATA_KEY.pending_admin_eligible_at);
 
-        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         env.events().publish(
             (symbol_short!("adm_cncl"),),
             (admin, pending_admin, env.ledger().timestamp()),
@@ -413,7 +419,7 @@ impl OracleContract {
 
     /// Return the current admin address.
     pub fn get_admin(env: Env) -> Address {
-        env.storage().instance().get(&DATA_KEY.admin).unwrap()
+        env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized))
     }
 
     /// Return the pending admin, if a transfer is in progress.
@@ -477,7 +483,7 @@ impl OracleContract {
                 Some(set) => set,
                 None => {
                     let validators: Vec<Address> =
-                        env.storage().instance().get(&DATA_KEY.validators).unwrap();
+                        env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
                     let mut set: Map<Address, bool> = Map::new(&env);
                     for v in validators.iter() {
                         set.set(v, true);
@@ -508,7 +514,7 @@ impl OracleContract {
             .storage()
             .instance()
             .get(&DATA_KEY.min_signatures)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
 
         if sources.len() > 0 {
             let required = min_sigs.max(MIN_ORACLE_SOURCE_FEEDS);
@@ -766,7 +772,7 @@ impl OracleContract {
                 Some(set) => set,
                 None => {
                     let validators: Vec<Address> =
-                        env.storage().instance().get(&DATA_KEY.validators).unwrap();
+                        env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
                     let mut set: Map<Address, bool> = Map::new(&env);
                     for v in validators.iter() {
                         set.set(v, true);
@@ -783,7 +789,7 @@ impl OracleContract {
             .storage()
             .instance()
             .get(&DATA_KEY.min_signatures)
-            .unwrap();
+            .unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
 
         let current_time = env.ledger().timestamp();
 
@@ -912,7 +918,7 @@ impl OracleContract {
             .set(&DATA_KEY.last_update, &current_time);
         Self::extend_instance_ttl(&env);
 
-        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         let event = RateUpdateEvent {
             currency,
             rate,
@@ -960,8 +966,8 @@ impl OracleContract {
     /// Compute the basket-weighted ACBU/USD rate (7 decimals).
     ///
     /// Same computation as [`Self::get_acbu_usd_rate_with_timestamp`] without the
-    /// timestamp. Panics if no currencies are configured or no fresh rates
-    /// contribute.
+    /// timestamp. Panics if the basket has no active currencies or an active
+    /// currency has no fresh rate.
     pub fn get_acbu_usd_rate(env: Env) -> i128 {
         Self::compute_basket_rate(&env).0
     }
@@ -996,6 +1002,7 @@ impl OracleContract {
         basket_weights: Map<CurrencyCode, i128>,
     ) {
         Self::check_admin(&env);
+        Self::validate_basket_config(&env, &currencies, &basket_weights);
         env.storage()
             .instance()
             .set(&DATA_KEY.currencies, &currencies);
@@ -1053,7 +1060,7 @@ impl OracleContract {
     pub fn set_min_signatures(env: Env, new_min: u32) {
         Self::check_admin(&env);
         let validators: Vec<Address> =
-            env.storage().instance().get(&DATA_KEY.validators).unwrap();
+            env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         if new_min == 0 || new_min > validators.len() {
             env.panic_with_error(OracleError::InvalidMinSignatures);
         }
@@ -1160,7 +1167,7 @@ impl OracleContract {
             .instance()
             .remove(&DATA_KEY.pending_validator_eligible_at);
 
-        let validators: Vec<Address> = env.storage().instance().get(&DATA_KEY.validators).unwrap();
+        let validators: Vec<Address> = env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         if is_add {
             for v in validators.iter() {
                 if v == validator {
@@ -1181,7 +1188,7 @@ impl OracleContract {
                 .storage()
                 .instance()
                 .get(&DATA_KEY.min_signatures)
-                .unwrap();
+                .unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
             if validators.len() <= min_sigs {
                 env.panic_with_error(OracleError::CannotRemoveValidator);
             }
@@ -1235,7 +1242,7 @@ impl OracleContract {
 
     /// Return the current list of validators.
     pub fn get_validators(env: Env) -> Vec<Address> {
-        env.storage().instance().get(&DATA_KEY.validators).unwrap()
+        env.storage().instance().get(&DATA_KEY.validators).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized))
     }
 
     /// Return the number of validator signatures required to accept a rate update.
@@ -1243,7 +1250,7 @@ impl OracleContract {
         env.storage()
             .instance()
             .get(&DATA_KEY.min_signatures)
-            .unwrap()
+            .unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized))
     }
 
     /// Return the number of decimal places used for all rates (always 7).
@@ -1413,9 +1420,9 @@ impl OracleContract {
     /// [`Self::get_acbu_usd_rate_with_timestamp`], returning
     /// `(rate, oldest_timestamp)`.
     ///
-    /// Each contribution is `rate_usd * weight / BASIS_POINTS`; the sum is then
-    /// rescaled by `BASIS_POINTS / total_weight` so the result stays in 7-decimal
-    /// USD units. Both public getters must go through here so the normalization
+    /// The weighted average is `sum(rate_usd * weight) / total_weight`, so any
+    /// zero-weight expansion slots are excluded and positive weights are
+    /// normalized. Both public getters must go through here so the result
     /// cannot diverge between them (AC-001).
     fn compute_basket_rate(env: &Env) -> (i128, u64) {
         let basket_weights: Map<CurrencyCode, i128> = env
@@ -1437,16 +1444,21 @@ impl OracleContract {
         let mut oldest_timestamp = u64::MAX;
 
         for currency in currencies.iter() {
-            if let Some(weight) = basket_weights.get(currency.clone()) {
-                if let Some(rate_data) = Self::get_rate_internal(env, &currency) {
-                    Self::assert_rate_fresh(env, &rate_data, &currency);
-                    let contribution = (rate_data.rate_usd * weight) / BASIS_POINTS;
-                    weighted_sum += contribution;
-                    total_weight += weight;
-                    if rate_data.timestamp < oldest_timestamp {
-                        oldest_timestamp = rate_data.timestamp;
-                    }
-                }
+            let weight = basket_weights
+                .get(currency.clone())
+                .unwrap_or_else(|| env.panic_with_error(OracleError::InvalidBasketConfig));
+            if weight == 0 {
+                continue;
+            }
+
+            let rate_data = Self::get_rate_internal(env, &currency)
+                .unwrap_or_else(|| env.panic_with_error(OracleError::RateNotInitialized));
+            Self::assert_rate_fresh(env, &rate_data, &currency);
+            let contribution = rate_data.rate_usd * weight;
+            weighted_sum += contribution;
+            total_weight += weight;
+            if rate_data.timestamp < oldest_timestamp {
+                oldest_timestamp = rate_data.timestamp;
             }
         }
 
@@ -1461,6 +1473,40 @@ impl OracleContract {
             oldest_timestamp
         };
         (rate, oldest_timestamp)
+    }
+
+    fn validate_basket_config(
+        env: &Env,
+        currencies: &Vec<CurrencyCode>,
+        basket_weights: &Map<CurrencyCode, i128>,
+    ) {
+        if currencies.is_empty()
+            || currencies.len() > MAX_BASKET_CURRENCIES
+            || basket_weights.len() != currencies.len()
+        {
+            env.panic_with_error(OracleError::InvalidBasketConfig);
+        }
+
+        let mut seen = Vec::new(env);
+        let mut total_weight = 0i128;
+        for currency in currencies.iter() {
+            if seen.contains(currency.clone()) {
+                env.panic_with_error(OracleError::InvalidBasketConfig);
+            }
+            seen.push_back(currency.clone());
+
+            let weight = basket_weights
+                .get(currency)
+                .unwrap_or_else(|| env.panic_with_error(OracleError::InvalidBasketConfig));
+            if !(0..=BASIS_POINTS).contains(&weight) {
+                env.panic_with_error(OracleError::InvalidBasketConfig);
+            }
+            total_weight += weight;
+        }
+
+        if total_weight == 0 || total_weight > BASIS_POINTS {
+            env.panic_with_error(OracleError::InvalidBasketConfig);
+        }
     }
 
     fn get_rate_internal(env: &Env, currency: &CurrencyCode) -> Option<RateData> {
@@ -1505,7 +1551,7 @@ impl OracleContract {
     }
 
     fn check_admin(env: &Env) {
-        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DATA_KEY.admin).unwrap_or_else(|| env.panic_with_error(OracleError::NotInitialized));
         admin.require_auth();
     }
 }

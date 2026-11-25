@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { postTransfers, getTransfers, getTransferById } from "../controllers/transferController";
 import { validateApiKey } from "../middleware/auth";
 import { apiKeyRateLimiter } from "../middleware/rateLimiter";
+import { requireCaptcha } from "../middleware/captcha";
 
 /**
  * @swagger
@@ -132,7 +133,7 @@ const router: IRouter = Router();
 router.use(validateApiKey);
 router.use(apiKeyRateLimiter);
 
-router.post("/", postTransfers);
+router.post("/", requireCaptcha(), postTransfers);
 router.get("/", getTransfers);
 router.get("/:id", getTransferById);
 

@@ -108,8 +108,8 @@ This implementation addresses the following issues:
 To run the tests and verify the implementation:
 
 ```bash
-# Build the contract
-cd /workspaces/acbu-smart-contract
+# Build the contract (from the repository root)
+cd contracts
 cargo build --target wasm32-unknown-unknown --release
 
 # Run all minting contract tests

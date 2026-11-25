@@ -1,10 +1,12 @@
+// W11-AUD-023: Import only the core primitives statically; Horizon is loaded
+// dynamically to enable Next.js code-splitting for this heavy module.
 import {
   Asset,
-  Horizon,
   Keypair,
   Operation,
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
+import type { Horizon as HorizonNS } from "@stellar/stellar-sdk";
 import { acbuAsset, demoFiatAsset } from "./demo-fiat";
 import { getAssetsConfig } from "@/lib/api/config";
 import { post } from "@/lib/api/client";
@@ -15,9 +17,10 @@ const TESTNET_HORIZON_URL =
   process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ??
   "https://horizon-testnet.stellar.org";
 const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
+export const TRANSACTION_TIMEOUT_SECONDS = 60;
 
 async function hasTrustline(
-  account: Horizon.AccountResponse,
+  account: HorizonNS.AccountResponse,
   asset: Asset,
 ): Promise<boolean> {
   const code = asset.getCode();
@@ -54,6 +57,7 @@ async function ensureTestnetAccountExists(
   address: string,
   horizonUrl: string,
 ): Promise<void> {
+  const { Horizon } = await import("@stellar/stellar-sdk");
   const server = new Horizon.Server(horizonUrl);
   try {
     await server.loadAccount(address);
@@ -93,7 +97,7 @@ async function ensureTestnetAccountExists(
  * with margin for RPC replication.
  */
 async function waitForTrustlineVisible(params: {
-  server: Horizon.Server;
+  server: HorizonNS.Server;
   accountId: string;
   asset: Asset;
   attempts?: number;
@@ -122,6 +126,8 @@ async function addTrustlineForAsset(params: {
   const horizonUrl = await resolveHorizonUrl();
   const networkPassphrase = await resolveNetworkPassphrase();
 
+  // W11-AUD-023: dynamic import for Horizon to enable code-splitting
+  const { Horizon } = await import("@stellar/stellar-sdk");
   const server = new Horizon.Server(horizonUrl);
   const accountId = params.external?.address
     ? params.external.address
@@ -150,9 +156,9 @@ async function addTrustlineForAsset(params: {
     networkPassphrase,
   })
     .addOperation(op)
-    .setTimeout(0)
+    .setTimeout(TRANSACTION_TIMEOUT_SECONDS)
     .build();
-  let res: Horizon.HorizonApi.SubmitTransactionResponse;
+  let res: HorizonNS.HorizonApi.SubmitTransactionResponse;
   if (params.external?.kit) {
     const { signedTxXdr } = await params.external.kit.signTransaction(
       tx.toXDR(),

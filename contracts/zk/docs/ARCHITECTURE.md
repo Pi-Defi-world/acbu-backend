@@ -83,7 +83,7 @@ the circuit source is unchanged. Always upgrade the entire toolchain atomically.
 ```
 1. Client generates witness (private KYC data + public inputs)
 2. Client calls `bb prove -b circuit.json -w witness.gz -o proof.bin`
-3. Client submits proof.bin + public_inputs[] to zk_verifier.verify(…)
+3. Client submits proof.bin + public_inputs[] to zk_verifier.verify_proof(…)
 4. zk_verifier (WASM Rust) re-derives VK hash from stored VK, runs
    UltraHonk verifier, returns bool
 5. Calling contract (e.g. acbu_minting) gates the transaction on the result
@@ -98,7 +98,7 @@ the circuit source is unchanged. Always upgrade the entire toolchain atomically.
 | Soundness               | An invalid proof cannot pass verification (Barretenberg security)|
 | Zero-knowledge          | Private inputs (kyc_score, salt) are not revealed on-chain       |
 | Caller binding (AZ-032) | `wallet_address_hash` public input ties the proof to one wallet  |
-| Nullifier (AZ-032)      | `nullifier = poseidon2(commitment, salt)` prevents proof replay  |
+| Account-bound nullifier | `nullifier = poseidon2(commitment, salt, wallet_address_hash)` scopes replay protection to one Stellar account. `wallet_address_hash` is the first 16 bytes of the SHA-256 of the address `ScVal` XDR, interpreted as little-endian `u128`, and is checked against the submitting address on-chain. |
 | VK rotation             | Admin can rotate the verification key via multisig timelock      |
 
 ---

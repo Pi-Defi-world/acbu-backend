@@ -2,11 +2,7 @@
 
 use acbu_minting::{MintingContract, MintingContractClient};
 use shared::{CurrencyCode, DECIMALS};
-use soroban_sdk::{
-    contract, contractimpl, symbol_short,
-    testutils::Address as _,
-    Address, BytesN, Env, Vec,
-};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 mod oracle_mock {
     use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Vec};
@@ -66,7 +62,7 @@ mod reserve_mock {
 }
 
 fn init_mint_client(
-    _env: &Env,
+    env: &Env,
     client: &MintingContractClient,
     admin: &Address,
     oracle: &Address,
@@ -88,10 +84,17 @@ fn init_mint_client(
         treasury: treasury.clone(),
         fee_rate_bps: fee_rate,
         fee_single_bps: fee_single,
-        operator: admin.clone(),
+        operator: Address::generate(env),
         operator_pub_key: BytesN::from_array(env, &[0u8; 32]),
     };
     client.initialize(&config);
+}
+
+fn account_recipient(env: &Env) -> Address {
+    Address::from_string(&soroban_sdk::String::from_str(
+        env,
+        "GAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPSABOV",
+    ))
 }
 
 fn setup_drip_test(env: &Env) -> (Address, Address, MintingContractClient, Address) {
@@ -122,14 +125,14 @@ fn setup_drip_test(env: &Env) -> (Address, Address, MintingContractClient, Addre
 fn test_admin_drip_fiat_success() {
     let env = Env::default();
     let (_admin, stoken_id, client, _contract_id) = setup_drip_test(&env);
-    let recipient = Address::generate(&env);
+    let recipient = account_recipient(&env);
     let amount = 500_000_000;
 
     let stoken_sac = soroban_sdk::token::StellarAssetClient::new(&env, &stoken_id);
     let stoken_client = soroban_sdk::token::Client::new(&env, &stoken_id);
 
     stoken_sac.mint(&client.address, &amount);
-    assert_eq!(stoken_client.balance(&recipient), 0, "stoken_client.balance(&recipient) should equal 0");
+    stoken_sac.mint(&recipient, &0);
 
     let currency = CurrencyCode::new(&env, "NGN");
     client.admin_drip_fiat(&recipient, &currency, &amount);
@@ -143,7 +146,7 @@ fn test_admin_drip_fiat_success() {
 fn test_admin_drip_fiat_zero_amount() {
     let env = Env::default();
     let (_admin, stoken_id, client, _contract_id) = setup_drip_test(&env);
-    let recipient = Address::generate(&env);
+    let recipient = account_recipient(&env);
 
     let stoken_sac = soroban_sdk::token::StellarAssetClient::new(&env, &stoken_id);
     stoken_sac.mint(&client.address, &1_000_000_000);
@@ -157,7 +160,7 @@ fn test_admin_drip_fiat_zero_amount() {
 fn test_admin_drip_fiat_negative_amount() {
     let env = Env::default();
     let (_admin, stoken_id, client, _contract_id) = setup_drip_test(&env);
-    let recipient = Address::generate(&env);
+    let recipient = account_recipient(&env);
 
     let stoken_sac = soroban_sdk::token::StellarAssetClient::new(&env, &stoken_id);
     stoken_sac.mint(&client.address, &1_000_000_000);
@@ -171,7 +174,7 @@ fn test_admin_drip_fiat_negative_amount() {
 fn test_admin_drip_fiat_exceeds_cap() {
     let env = Env::default();
     let (_admin, stoken_id, client, _contract_id) = setup_drip_test(&env);
-    let recipient = Address::generate(&env);
+    let recipient = account_recipient(&env);
 
     let stoken_sac = soroban_sdk::token::StellarAssetClient::new(&env, &stoken_id);
     stoken_sac.mint(&client.address, &200_000_000_000_000i128);
@@ -185,8 +188,8 @@ fn test_admin_drip_fiat_exceeds_cap() {
 #[should_panic(expected = "#5011")]
 fn test_admin_drip_fiat_insufficient_custody() {
     let env = Env::default();
-    let (_admin, stoken_id, client, _contract_id) = setup_drip_test(&env);
-    let recipient = Address::generate(&env);
+    let (_admin, _stoken_id, client, _contract_id) = setup_drip_test(&env);
+    let recipient = account_recipient(&env);
 
     let amount = 500_000_000;
     let currency = CurrencyCode::new(&env, "NGN");

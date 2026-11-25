@@ -5,11 +5,11 @@ previously separate repos into one clean tree.
 
 ## Layout
 
-| Path        | Origin                                      | Imported snapshot |
-|-------------|---------------------------------------------|-------------------|
-| `/`         | acbu-backend (this repo)                    | existing          |
-| `frontend/` | Pi-Defi-world/acbu-frontend `dev`           | `0070083` (2026-11-18) |
-| `contracts/`| Pi-Defi-world/acbu-smart-contract `dev`     | `3160312` (2026-11-18) |
+| Path         | Origin                                  | Imported snapshot      |
+| ------------ | --------------------------------------- | ---------------------- |
+| `/`          | acbu-backend (this repo)                | existing               |
+| `frontend/`  | Pi-Defi-world/acbu-frontend `dev`       | `0070083` (2026-11-18) |
+| `contracts/` | Pi-Defi-world/acbu-smart-contract `dev` | `3160312` (2026-11-18) |
 
 ## Why a fresh-history import
 
@@ -49,17 +49,36 @@ inert inside a monorepo (GitHub only executes workflows from the repository
 root `.github/workflows/`). Re-pointing CI to the new paths is tracked as a
 wave 11 issue.
 
+## Toolchain
+
+Node.js is pinned once, at the repository root, in `.nvmrc` and `.tool-versions`
+(Node 22 LTS). Subdirectories intentionally do **not** carry their own
+`.nvmrc`/`.node-version` files: stale per-directory pins caused `nvm` and CI
+runners to switch to a different Node major when moving between `contracts/` and
+`frontend/`. `tests/nodeVersionPolicy.test.ts` guards the single-source-of-truth
+policy, and all root CI workflows use the same Node 22 version.
+
 ## Guardrails
 
 - `.github/workflows/malware-ioc-scan.yml` fails any PR or push that reintroduces
   the IoC files or strings listed above.
 - Branch protection should require this check plus "branches up to date" on `dev`/`main`.
+- `.github/workflows/signed-commits.yml` reports PR commits that GitHub does not
+  verify; the authoritative "Require signed commits" setting and admin audit
+  command are in `docs/BRANCH_PROTECTION.md` (W11-INC-008).
 - Open PRs against the archived repos must be rebased/retargeted here by their authors.
 
 ## Pending follow-ups (tracked as wave 11 issues)
 
 - Credential rotation attestation for anyone who opened an infected clone.
-- GitHub Support request to GC purged objects still reachable by SHA.
+- GitHub Support request to GC purged objects still reachable by SHA — the
+  ready-to-submit ticket is in
+  `docs/incident/W11-INC-001-github-support-request.md`; an org owner must file
+  it because GitHub Support cannot be contacted from a PR. Reachability can be
+  verified with `scripts/ci/check-orphaned-attacker-commits.js`.
+- Enable "Require signed commits" in branch protection for `main`/`dev`/`develop`
+  and confirm with `scripts/ci/check-branch-protection-signing.js`; this is a
+  GitHub admin setting, not a change a PR can apply (W11-INC-008 / #1321).
 - Re-point CI pipelines to `frontend/` and `contracts/` paths (nested workflows are inert).
 - Dependabot findings on the imported frontend snapshot (34 at import time).
 - Retire the stale `acbu-frontend` gitlink (submodule pointer, no `.gitmodules`).

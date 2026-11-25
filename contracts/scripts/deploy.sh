@@ -128,8 +128,8 @@ fi
 SKIP_INIT="${SKIP_INIT:-0}"
 
 # Numeric defaults (override via env) — documented in DEPLOYMENT.md.
-[[ -n "${ORACLE_CURRENCIES:-}" ]]         || ORACLE_CURRENCIES='["NGN","KES","RWF","GHS","UGX","TZS","ZAR","EGP"]'
-[[ -n "${ORACLE_BASKET_WEIGHTS:-}" ]]     || ORACLE_BASKET_WEIGHTS='{"NGN":1800,"KES":1200,"RWF":800,"GHS":900,"UGX":700,"TZS":600,"ZAR":1500,"EGP":1500}'
+[[ -n "${ORACLE_CURRENCIES:-}" ]]         || ORACLE_CURRENCIES='["NGN","ZAR","KES","EGP","GHS","RWF","XOF","MAD","TZS","UGX"]'
+[[ -n "${ORACLE_BASKET_WEIGHTS:-}" ]]     || ORACLE_BASKET_WEIGHTS='{"NGN":4615,"ZAR":0,"KES":3077,"EGP":0,"GHS":2308,"RWF":0,"XOF":0,"MAD":0,"TZS":0,"UGX":0}'
 [[ -n "${MIN_RESERVE_RATIO_BPS:-}" ]]     || MIN_RESERVE_RATIO_BPS="10200"
 [[ -n "${MINT_FEE_RATE_BPS:-}" ]]         || MINT_FEE_RATE_BPS="30"
 [[ -n "${MINT_FEE_SINGLE_BPS:-}" ]]       || MINT_FEE_SINGLE_BPS="50"

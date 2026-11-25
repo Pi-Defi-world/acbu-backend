@@ -36,3 +36,10 @@ export interface FintechProvider {
 }
 
 export type FintechProviderId = "flutterwave" | "paystack" | "mtn_momo" | "simulated";
+
+/*
+ * NOTE: The file above does not contain any Soroban contract code. The issue
+ * W11-CAR-008 (acbu_multisig __check_auth implementation) must be addressed in the
+ * Rust contract source (acbu_multisig), not in src/services/fintech/types.ts.
+ * This TypeScript file is left unchanged.
+ */

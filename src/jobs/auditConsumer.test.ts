@@ -42,7 +42,15 @@ describe("AuditConsumer", () => {
   };
 
   const mockMsg = {
-    content: Buffer.from(JSON.stringify(entry)),
+    content: Buffer.from(
+      JSON.stringify({
+        version: 1,
+        type: QUEUES.AUDIT_LOGS,
+        messageId: "00000000-0000-4000-8000-000000000001",
+        timestamp: entry.timestamp,
+        payload: entry,
+      }),
+    ),
   };
 
   beforeEach(() => {
@@ -62,6 +70,9 @@ describe("AuditConsumer", () => {
 
     expect(assertQueueWithDLQ).toHaveBeenCalledWith(QUEUES.AUDIT_LOGS, {
       durable: true,
+    });
+    expect(mockChannel.consume).toHaveBeenCalledWith(QUEUES.AUDIT_LOGS, expect.any(Function), {
+      noAck: false,
     });
     expect(prisma.auditTrail.create).toHaveBeenCalledWith(
       expect.objectContaining({

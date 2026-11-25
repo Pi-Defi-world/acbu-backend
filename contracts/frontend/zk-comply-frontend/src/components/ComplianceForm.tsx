@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { Keypair } from "@stellar/stellar-sdk";
 import { useIdentity } from "../hooks/useIdentity";
 import type { Credential } from "../types";
 import {
-  loadCircuit,
-  generateProof,
   submitProof,
   ZK_COMPLY_CIRCUIT_SOURCE,
+  getProverWorker,
 } from "../sdk";
 
 const KYC_LABELS: Record<number, string> = {
@@ -309,7 +309,7 @@ function ConfigureStep({
             type="password"
             value={signerSecret}
             onChange={(e) => setSignerSecret(e.target.value.trim())}
-            placeholder="Used only in-browser to submit verify()"
+            placeholder="Used only in-browser to submit verify_proof()"
             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-xs"
           />
           <p className="text-xs text-muted-foreground">
@@ -371,8 +371,13 @@ function ProvingStep({
 
     (async () => {
       try {
+        // W11-AUD-010: delegate all WASM computation to the Web Worker so the
+        // main thread (and browser UI) remain responsive during the 10-30 s
+        // proving window.
+        const prover = getProverWorker();
+
         setStatus("Loading Noir circuit…");
-        await loadCircuit(ZK_COMPLY_CIRCUIT_SOURCE);
+        await prover.loadCircuit(ZK_COMPLY_CIRCUIT_SOURCE);
         if (cancelled) return;
 
         const cred: Credential = {
@@ -380,16 +385,23 @@ function ProvingStep({
           countryCode: identity.countryCode,
           salt: BigInt(salt),
         };
+        const signingAddress = Keypair.fromSecret(signerSecret).publicKey();
+        if (signingAddress !== identity.stellarAddress) {
+          throw new Error(
+            "The signing key must belong to the Stellar address on your verified identity."
+          );
+        }
 
         setStatus("Generating UltraHonk ZK proof…");
-        const artifacts = await generateProof({
+        const artifacts = await prover.generateProof({
           credential: cred,
           requiredKyc,
           allowedCountry,
+          walletAddress: signingAddress,
         });
         if (cancelled) return;
 
-        setStatus("Submitting verify() to Soroban…");
+        setStatus("Submitting verify() and waiting for Soroban confirmation…");
         const submission = await submitProof(
           signerSecret,
           verifierContractId,
@@ -399,7 +411,7 @@ function ProvingStep({
 
         if (!submission.success) {
           throw new Error(
-            submission.error || "On-chain verify() submission failed"
+            submission.error || "On-chain verify_proof() submission failed"
           );
         }
 
@@ -476,7 +488,7 @@ function ResultCard({
             </h3>
             <p className="text-sm text-muted-foreground">
               {result.submitted
-                ? "Nullifier recorded via zk_verifier.verify()"
+                ? "Nullifier recorded via zk_verifier.verify_proof()"
                 : "Ready for on-chain verification"}
             </p>
           </div>

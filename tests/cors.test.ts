@@ -1,6 +1,10 @@
 import express from "express";
 import request from "supertest";
-import { parseCorsOrigins, DEFAULT_DEV_CORS_ORIGIN } from "../src/config/corsOrigins";
+import {
+  parseCorsOrigins,
+  DEFAULT_DEV_CORS_ORIGIN,
+  DEFAULT_STAGING_CORS_ORIGIN,
+} from "../src/config/corsOrigins";
 import { createCorsMiddleware, resolveCorsOrigin } from "../src/middleware/cors";
 
 describe("parseCorsOrigins", () => {
@@ -45,6 +49,36 @@ describe("parseCorsOrigins", () => {
     expect(() => parseCorsOrigins("https://app.example.com/", "development")).toThrow(
       /scheme, host, and port only/i,
     );
+  });
+
+  // W11-AUD-011: staging and test environments must use an explicit allowlist,
+  // not a catch-all, to prevent credential leakage from malicious pages.
+  it("includes localhost and staging origin in default list for staging environment", () => {
+    const origins = parseCorsOrigins(undefined, "staging");
+    expect(origins).toContain(DEFAULT_DEV_CORS_ORIGIN);
+    expect(origins).toContain(DEFAULT_STAGING_CORS_ORIGIN);
+    expect(origins).not.toContain("*");
+  });
+
+  it("includes localhost and staging origin in default list for test environment", () => {
+    const origins = parseCorsOrigins(undefined, "test");
+    expect(origins).toContain(DEFAULT_DEV_CORS_ORIGIN);
+    expect(origins).toContain(DEFAULT_STAGING_CORS_ORIGIN);
+    expect(origins).not.toContain("*");
+  });
+
+  it("still rejects wildcard in staging environment", () => {
+    expect(() => parseCorsOrigins("*", "staging")).toThrow(/wildcard/i);
+  });
+
+  it("still rejects wildcard in test environment", () => {
+    expect(() => parseCorsOrigins("*", "test")).toThrow(/wildcard/i);
+  });
+
+  it("honours an explicit CORS_ORIGIN list in staging (overrides defaults)", () => {
+    const custom = "https://custom-staging.acbu.io";
+    const origins = parseCorsOrigins(custom, "staging");
+    expect(origins).toEqual([custom]);
   });
 });
 

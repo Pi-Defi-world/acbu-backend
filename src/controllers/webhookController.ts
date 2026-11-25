@@ -23,26 +23,59 @@ import { ErrorCodes } from "../types/errorCodes";
 import { reconcileBillsWebhook } from "../services/bills";
 import type { FinancialEventStatus } from "../types/logging";
 
-// ── Dev/stage mock bypass ────────────────────────────────────────────────────
-// The bypass is deliberately limited to local/test environments. env.ts also
-// rejects this setting during startup for staging-facing deployments.
-const bypassRequested = process.env.WEBHOOK_SIGNATURE_BYPASS === "true";
+/** Determine whether the configured bypass is permitted in the active test profile. */
+export function isWebhookSignatureBypassEnabled(
+  rawValue: string | undefined = process.env.WEBHOOK_SIGNATURE_BYPASS,
+): boolean {
+  if (typeof rawValue !== "string" || rawValue.trim().toLowerCase() !== "true") {
+    return false;
+  }
 
-// Fail closed: the bypass is only ever honoured under an explicit test profile.
-// A misconfigured or copied dev env must not silently disable signature
-// verification on the deposit/mint-confirmation webhook path.
-const isExplicitTestProfile =
-  config.nodeEnv === "test" || process.env.APP_PROFILE === "test";
+  const profiles = [
+    process.env.NODE_ENV,
+    process.env.APP_PROFILE,
+    process.env.APP_ENV,
+    process.env.ENVIRONMENT,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
 
-if (bypassRequested && !isExplicitTestProfile) {
-  throw new Error(
-    "WEBHOOK_SIGNATURE_BYPASS is set outside an explicit test profile. " +
-      "Refusing to start: webhook signature verification must not be disabled. " +
-      "Unset WEBHOOK_SIGNATURE_BYPASS or run with NODE_ENV=test / APP_PROFILE=test.",
+  return (
+    profiles.some((profile) => ["test", "testing", "ci"].includes(profile)) &&
+    !profiles.includes("production")
   );
 }
 
-const bypassEnabled = bypassRequested && isExplicitTestProfile;
+/** Fail closed when the bypass flag is set outside an explicit test profile. */
+export function assertWebhookSignatureBypassSafe(): void {
+  const requested =
+    typeof process.env.WEBHOOK_SIGNATURE_BYPASS === "string" &&
+    process.env.WEBHOOK_SIGNATURE_BYPASS.trim().toLowerCase() === "true";
+  if (!requested) return;
+
+  const profiles = [
+    process.env.NODE_ENV,
+    process.env.APP_PROFILE,
+    process.env.APP_ENV,
+    process.env.ENVIRONMENT,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
+
+  if (
+    !profiles.some((profile) => ["test", "testing", "ci"].includes(profile)) ||
+    profiles.includes("production")
+  ) {
+    throw new Error("WEBHOOK_SIGNATURE_BYPASS must only be enabled in an explicit test profile.");
+  }
+}
+
+// ── Dev/stage mock bypass ────────────────────────────────────────────────────
+// Evaluate the flag at request time. The startup guard in env.ts separately
+// rejects unsafe deployment configuration before the application listens.
+function isWebhookSignatureBypassAllowed(): boolean {
+  return isWebhookSignatureBypassEnabled();
+}
 
 /**
  * Runtime production assertion, independent of NODE_ENV.
@@ -50,7 +83,7 @@ const bypassEnabled = bypassRequested && isExplicitTestProfile;
  * deployment that mislabels its environment. Called on every webhook request.
  */
 function assertBypassNotInProduction(): void {
-  if (!bypassEnabled) return;
+  if (!isWebhookSignatureBypassAllowed()) return;
   const looksLikeProduction =
     process.env.NODE_ENV === "production" ||
     process.env.APP_ENV === "production" ||
@@ -60,11 +93,7 @@ function assertBypassNotInProduction(): void {
       "WEBHOOK_SIGNATURE_BYPASS is active in a production-like environment — " +
         "rejecting webhook. Signature verification must never be bypassed in production.",
     );
-    throw new AppError(
-      "Webhook signature verification unavailable",
-      503,
-      ErrorCodes.CONFIG_ERROR,
-    );
+    throw new AppError("Webhook signature verification unavailable", 503, ErrorCodes.CONFIG_ERROR);
   }
 }
 
@@ -103,7 +132,7 @@ function isContentTypeJson(req: Request): boolean {
   return contentType.startsWith("application/json");
 }
 
-if (bypassEnabled) {
+if (isWebhookSignatureBypassAllowed()) {
   logger.warn(
     "WEBHOOK_SIGNATURE_BYPASS is enabled — webhook signature verification " +
       "is DISABLED for development/test only. Do not use this setting in a staging-facing deployment.",
@@ -138,7 +167,7 @@ export function verifyFlutterwaveSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when FLUTTERWAVE_WEBHOOK_SECRET is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
     assertBypassNotInProduction();
     logger.warn("Flutterwave webhook signature check bypassed (dev/stage)");
     next();
@@ -231,7 +260,7 @@ export function verifyPaystackSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when PAYSTACK_SECRET_KEY is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
     assertBypassNotInProduction();
     logger.warn("Paystack webhook signature check bypassed (dev/stage)");
     next();
@@ -502,7 +531,7 @@ export function verifyBillsWebhookSignature(
 ): void {
   // Dev/stage explicit bypass — never reachable in production because env.ts
   // throws before the server starts when BILLS_WEBHOOK_SECRET is unset.
-  if (bypassEnabled) {
+  if (isWebhookSignatureBypassAllowed()) {
     assertBypassNotInProduction();
     logger.warn("Bills webhook signature check bypassed (dev/stage)");
     next();
@@ -568,7 +597,8 @@ export function verifyBillsWebhookSignature(
 
   if (!signatureValid) {
     logger.warn("Bills webhook signature mismatch");
-    throw new AppError("Invalid signature", 401, ErrorCodes.INVALID_SIGNATURE);
+    res.status(401).json({ error: "Invalid signature" });
+    return;
   }
   next();
 }
