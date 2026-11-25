@@ -97,7 +97,8 @@ This file documents the environment variables required by the ACBU backend and t
 - `PII_ENCRYPTION_KEY`
   - Optional.
   - Must be exactly 64 hex characters (32 bytes).
-- `CAPTCHA_SECRET`
+- `CAPTCHA_SECRET` - Cloudflare Turnstile secret key used to verify CAPTCHA tokens server-side. If unset, verification fails closed.
+- `CAPTCHA_ENFORCEMENT` - `off`, `optional` (default) or `strict`. `optional` always verifies a supplied token but allows requests without one; `strict` requires a valid token on `POST /v1/auth/signup` and `POST /v1/transfers`.
 - `AUTH_BRUTE_MAX_ATTEMPTS` - defaults to `5`
 - `AUTH_BRUTE_LOCKOUT_MS` - defaults to `900000`
 
