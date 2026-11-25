@@ -1,84 +1,55 @@
-import swaggerJsdoc from "swagger-jsdoc";
-import { config } from "./env";
+import fs from "fs";
+import path from "path";
 
 /**
  * Swagger / OpenAPI spec configuration.
  *
- * Security (#274): The spec is generated at startup but the /api-docs UI is
- * only mounted when NODE_ENV !== "production" (enforced in src/index.ts).
- * This prevents internal endpoint structure from being exposed to attackers
- * in production deployments.
+ * The committed swagger.json file is generated from src/openapi/route-definitions.ts
+ * and the standalone Zod route schemas. Loading that generated artifact at runtime
+ * keeps Swagger UI, /api-docs.json, and the checked-in contract in sync.
  *
- * If you need to share the spec with internal tooling in production, serve
- * the raw JSON behind an authenticated admin endpoint instead of the public
- * swagger-ui-express mount.
+ * Security (#274): the /api-docs UI is only mounted when NODE_ENV !== "production"
+ * (enforced in src/index.ts), so this module does not expose the spec publicly in
+ * production deployments.
  */
 
-const options: swaggerJsdoc.Options = {
-  definition: {
-    openapi: "3.0.0",
-    info: {
-      title: "ACBU API",
-      version: "1.0.0",
-      description: "API documentation for ACBU (African Currency Basket Unit) platform",
-      contact: {
-        name: "ACBU Support",
-      },
-    },
-    servers: [
-      {
-        url: `http://localhost:${config.port}`,
-        description: "Development server",
-      },
-    ],
-    components: {
-      securitySchemes: {
-        ApiKeyAuth: {
-          type: "apiKey",
-          in: "header",
-          name: "X-API-Key",
-        },
-        BearerAuth: {
-          type: "http",
-          scheme: "bearer",
-          bearerFormat: "JWT",
-        },
-        ErrorResponse: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                code: {
-                  type: "string",
-                  description: "A machine-readable error code",
-                  example: "VALIDATION_ERROR",
-                },
-                message: {
-                  type: "string",
-                  description: "A human-readable error message",
-                  example: "Validation error",
-                },
-                details: {
-                  type: "object",
-                  description: "Additional structured information about the error",
-                  nullable: true,
-                },
-              },
-              required: ["code", "message"],
-            },
-          },
-          required: ["error"],
-        },
-      },
-    },
-    security: [
-      {
-        ApiKeyAuth: [],
-      },
-    ],
+type SwaggerSpec = Record<string, unknown>;
+
+const specCandidates = [
+  process.env.SWAGGER_SPEC_PATH,
+  path.resolve(process.cwd(), "swagger.json"),
+  path.resolve(__dirname, "../../swagger.json"),
+  path.resolve(__dirname, "../../../swagger.json"),
+].filter((candidate): candidate is string => Boolean(candidate));
+
+function loadGeneratedSpec(): SwaggerSpec | undefined {
+  for (const candidate of [...new Set(specCandidates)]) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      return JSON.parse(fs.readFileSync(candidate, "utf8")) as SwaggerSpec;
+    } catch (error) {
+      console.warn(`[swagger] Failed to load generated spec at ${candidate}`, error);
+    }
+  }
+  return undefined;
+}
+
+const port = Number(process.env.PORT) || 5000;
+const generatedSpec = loadGeneratedSpec();
+
+export const swaggerSpec: SwaggerSpec = generatedSpec ?? {
+  openapi: "3.0.0",
+  info: {
+    title: "ACBU API",
+    version: "1.0.0",
+    description: "API documentation for ACBU (African Currency Basket Unit) platform",
   },
-  apis: ["./src/routes/**/*.ts", "./src/controllers/**/*.ts"],
+  paths: {},
 };
 
-export const swaggerSpec = swaggerJsdoc(options);
+swaggerSpec.servers = [
+  {
+    url: `http://localhost:${port}/api`,
+    description: "Development server (the API is mounted under /api)",
+  },
+];

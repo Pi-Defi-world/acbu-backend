@@ -1,188 +1,309 @@
 import fs from "fs";
 import path from "path";
-import { z } from "zod";
-import { routeSchemas } from "../src/controllers/route-schemas";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import OpenAPISchemaValidator from "openapi-schema-validator";
+import { swaggerSpec } from "../src/config/swagger";
+import { routeSchemas } from "../src/controllers/route-schemas";
+import { getOpenApiRouteKey, openApiRoutes } from "../src/openapi/route-definitions";
+import {
+  normalizeSchemaConstraints,
+  pathParameterNames,
+  toExpressPath,
+  toOpenApiPath,
+} from "../src/openapi/utils";
 
 const swaggerDocumentPath = path.resolve(__dirname, "../swagger.json");
 const swaggerDocument = JSON.parse(fs.readFileSync(swaggerDocumentPath, "utf8"));
+const paths = swaggerDocument.paths as Record<string, Record<string, any>>;
+const routeDirectory = path.resolve(__dirname, "../src/routes");
+const httpMethods = new Set(["get", "post", "put", "patch", "delete"]);
+
+type ParsedRouteFile = {
+  imports: Map<string, string>;
+  routes: Array<{ method: string; path: string }>;
+  mounts: Array<{ path: string; target: string }>;
+};
+
+function routeFileOf(importPath: string): string {
+  return path.join(routeDirectory, `${importPath}.ts`);
+}
+
+function parseRouteFile(filePath: string): ParsedRouteFile {
+  const source = fs.readFileSync(filePath, "utf8");
+  const imports = new Map<string, string>();
+  const routes: ParsedRouteFile["routes"] = [];
+  const mounts: ParsedRouteFile["mounts"] = [];
+
+  for (const match of source.matchAll(/import\s+(\w+)\s+from\s+["']\.\/([^"']+)["'];/g)) {
+    imports.set(match[1], routeFileOf(match[2]));
+  }
+  for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']\.\/([^"']+)["'];/g)) {
+    for (const rawName of match[1].split(",")) {
+      const name = rawName.trim().replace(/^type\s+/, "");
+      if (name) imports.set(name, routeFileOf(match[2]));
+    }
+  }
+
+  for (const match of source.matchAll(
+    /\brouter\.(get|post|put|patch|delete)\(\s*["']([^"']+)["']/g,
+  )) {
+    routes.push({ method: match[1].toUpperCase(), path: match[2] });
+  }
+  for (const match of source.matchAll(
+    /\brouter\.use\(\s*["']([^"']+)["']\s*,\s*(\w+)(?:\(\))?\s*\)/g,
+  )) {
+    mounts.push({ path: match[1], target: match[2] });
+  }
+
+  return { imports, routes, mounts };
+}
+
+function collectExpressRouteKeys(): Set<string> {
+  const keys = new Set<string>();
+  const visited = new Set<string>();
+
+  const walk = (filePath: string, prefix: string): void => {
+    const visitKey = `${filePath}|${prefix}`;
+    if (visited.has(visitKey)) return;
+    visited.add(visitKey);
+
+    const parsed = parseRouteFile(filePath);
+    for (const route of parsed.routes) {
+      const fullPath = `${prefix}${route.path}`.replace(/\/$/, "") || "/";
+      keys.add(`${route.method} ${fullPath}`);
+    }
+
+    for (const mount of parsed.mounts) {
+      const targetFile = parsed.imports.get(mount.target);
+      if (!targetFile) continue;
+      const fullPrefix = `${prefix}${mount.path}`.replace(/\/$/, "");
+      walk(targetFile, fullPrefix);
+    }
+  };
+
+  walk(path.join(routeDirectory, "index.ts"), "/v1");
+
+  // Webhooks are mounted directly in src/index.ts under /v1/webhooks rather
+  // than through the main API router.
+  for (const provider of ["flutterwave", "paystack", "bills/:provider"]) {
+    keys.add(`POST /v1/webhooks/${provider}`);
+  }
+
+  return keys;
+}
+
+function zodSchemaToOpenApi(schema: unknown): Record<string, any> {
+  const jsonSchema = zodToJsonSchema(schema as never, {
+    target: "openApi3",
+    effectStrategy: "input",
+    $refStrategy: "none",
+  }) as Record<string, any>;
+  normalizeSchemaConstraints(jsonSchema);
+  return jsonSchema;
+}
+
+function getOperation(routePath: string, method: string): Record<string, any> | undefined {
+  return paths[toOpenApiPath(routePath)]?.[method.toLowerCase()];
+}
+
+function sorted(values: Iterable<string>): string[] {
+  return [...values].sort();
+}
 
 describe("OpenAPI Drift vs Implementation", () => {
-  const paths = swaggerDocument.paths || {};
-  const schemaRegistry = routeSchemas as Record<string, any>;
-  const errors: string[] = [];
-
-  // Helper to normalize path for comparison
-  const normalizePath = (p: string) => p.replace(/\/$/, "");
-
-  /**
-   * CHECK 1: Every route in routeSchemas must be documented in Swagger
-   */
-  it("should validate swagger.json against the OpenAPI 3.0 schema", () => {
+  it("validates swagger.json against the OpenAPI schema", () => {
     const validator = new OpenAPISchemaValidator({ version: 3 });
-    const result = validator.validate(swaggerDocument);
-
-    expect(result.errors).toEqual([]);
+    expect(validator.validate(swaggerDocument).errors).toEqual([]);
   });
 
-  it("should ensure all registered route schemas are documented in OpenAPI", () => {
-    for (const routeKey of Object.keys(schemaRegistry)) {
-      const [method, routePath] = routeKey.split(" ");
-      const normalizedPath = normalizePath(routePath);
+  it("serves the same generated spec at runtime", () => {
+    expect(swaggerSpec).toEqual(swaggerDocument);
+  });
 
-      const swaggerPath = paths[normalizedPath];
-      if (!swaggerPath) {
-        errors.push(`[MISSING PATH] ${routeKey}: Path not found in OpenAPI documentation`);
-        continue;
+  it("documents exactly the routes mounted by Express", () => {
+    const expressRoutes = collectExpressRouteKeys();
+    const documentedRoutes = new Set<string>();
+
+    for (const [pathName, methods] of Object.entries(paths)) {
+      for (const method of Object.keys(methods)) {
+        if (!httpMethods.has(method)) continue;
+        documentedRoutes.add(`${method.toUpperCase()} ${toExpressPath(pathName)}`);
       }
+    }
 
-      const operation = swaggerPath[method.toLowerCase()];
+    expect(sorted(documentedRoutes)).toEqual(sorted(expressRoutes));
+  });
+
+  it("keeps the route manifest aligned with Express and OpenAPI", () => {
+    const manifestRoutes = openApiRoutes.map(getOpenApiRouteKey);
+    const documentedRoutes = new Set<string>();
+
+    for (const [pathName, methods] of Object.entries(paths)) {
+      for (const method of Object.keys(methods)) {
+        if (!httpMethods.has(method)) continue;
+        documentedRoutes.add(`${method.toUpperCase()} ${toExpressPath(pathName)}`);
+      }
+    }
+
+    expect(sorted(manifestRoutes)).toEqual(sorted(documentedRoutes));
+  });
+
+  it("uses only current /v1 paths and removes legacy auth route names", () => {
+    expect(Object.keys(paths).every((routePath) => routePath.startsWith("/v1/"))).toBe(true);
+    expect(swaggerDocument).not.toHaveProperty("paths./api/v1/auth/login-otp");
+    expect(JSON.stringify(swaggerDocument)).not.toContain("login-otp");
+    expect(swaggerDocument.servers?.[0]?.url).toBe("http://localhost:5000/api");
+  });
+
+  it("matches every documented path parameter to the mounted Express route", () => {
+    const errors: string[] = [];
+
+    for (const route of openApiRoutes) {
+      const operation = getOperation(route.path, route.method);
       if (!operation) {
-        errors.push(`[MISSING METHOD] ${routeKey}: Method ${method} not found for path ${normalizedPath} in OpenAPI`);
-      }
-    }
-
-    if (errors.length > 0) {
-      throw new Error("OpenAPI Drift Detected:\n" + errors.join("\n"));
-    }
-  });
-
-  /**
-   * CHECK 2: Every route in Swagger (v1) must have a registered Zod schema
-   */
-  it("should ensure all documented v1 routes have a registered Zod schema", () => {
-    for (const [pathStr, methods] of Object.entries(paths)) {
-      if (!pathStr.startsWith("/v1/")) continue;
-
-      for (const method of Object.keys(methods as any)) {
-        const routeKey = `${method.toUpperCase()} ${pathStr}`;
-        if (!schemaRegistry[routeKey]) {
-          // We don't necessarily fail on this, but it's a good practice to register all routes
-          console.warn(`[WARNING] ${routeKey}: Documented in OpenAPI but missing from routeSchemas registry`);
-        }
-      }
-    }
-  });
-
-  /**
-   * CHECK 3: Schema field matching
-   */
-  it("should ensure OpenAPI documentation and Zod schemas match exactly", () => {
-    for (const [routeKey, zodSchema] of Object.entries(schemaRegistry)) {
-      const [method, routePath] = routeKey.split(" ");
-      const normalizedPath = normalizePath(routePath);
-      const swaggerPath = paths[normalizedPath];
-      if (!swaggerPath) continue;
-
-      const operation = swaggerPath[method.toLowerCase()];
-      if (!operation) continue;
-
-      // Convert Zod schema to JSON schema
-      let jsonSchema: any;
-      try {
-        jsonSchema = z.toJSONSchema(zodSchema as any);
-      } catch (e) {
-        errors.push(`[ERROR] ${routeKey}: Failed to convert Zod schema to JSON: ${(e as Error).message}`);
+        errors.push(`[MISSING OPERATION] ${getOpenApiRouteKey(route)}`);
         continue;
       }
 
-      const zodProperties = jsonSchema.properties || {};
-      const zodRequired = jsonSchema.required || [];
+      const documentedPathParams = (operation.parameters ?? [])
+        .filter((parameter: any) => parameter.in === "path")
+        .map((parameter: any) => parameter.name);
+      const expectedPathParams = pathParameterNames(route.path);
 
-      // Check request body
-      if (method === "POST" || method === "PUT" || method === "PATCH") {
-        const requestBody = operation.requestBody;
-        const swaggerSchema = requestBody?.content?.["application/json"]?.schema;
-
-        if (swaggerSchema) {
-          const swaggerProperties = swaggerSchema.properties || {};
-          const swaggerRequired = swaggerSchema.required || [];
-
-          // Check for fields documented in Swagger but missing in Zod
-          for (const propName of Object.keys(swaggerProperties)) {
-            if (!zodProperties[propName]) {
-              errors.push(`[DRIFT] ${routeKey}: Field '${propName}' is documented in Swagger but missing from Zod schema`);
-            }
-          }
-
-          // Check for fields in Zod but missing in Swagger
-          for (const propName of Object.keys(zodProperties)) {
-            if (!swaggerProperties[propName]) {
-              errors.push(`[DRIFT] ${routeKey}: Field '${propName}' is in Zod schema but not documented in Swagger`);
-            } else {
-              // Check type match
-              const zodType = zodProperties[propName].type;
-              const swaggerType = swaggerProperties[propName].type;
-              if (zodType && swaggerType && zodType !== swaggerType) {
-                errors.push(`[TYPE DRIFT] ${routeKey}: Field '${propName}' type mismatch. Zod: ${zodType}, Swagger: ${swaggerType}`);
-              }
-            }
-          }
-
-          // Check required fields
-          for (const reqField of zodRequired) {
-            if (!swaggerRequired.includes(reqField)) {
-              errors.push(`[REQUIRED DRIFT] ${routeKey}: Field '${reqField}' is required in Zod but not in Swagger`);
-            }
-          }
-          for (const reqField of swaggerRequired) {
-            if (!zodRequired.includes(reqField)) {
-              errors.push(`[REQUIRED DRIFT] ${routeKey}: Field '${reqField}' is required in Swagger but not in Zod`);
-            }
-          }
-        } else if (Object.keys(zodProperties).length > 0) {
-          errors.push(`[DRIFT] ${routeKey}: Zod schema has fields but no requestBody documented in Swagger`);
-        }
+      if (
+        JSON.stringify(sorted(documentedPathParams)) !== JSON.stringify(sorted(expectedPathParams))
+      ) {
+        errors.push(
+          `[PATH PARAM DRIFT] ${getOpenApiRouteKey(route)}: Express ${JSON.stringify(expectedPathParams)}, OpenAPI ${JSON.stringify(documentedPathParams)}`,
+        );
       }
 
-      // Check query parameters for GET requests
-      if (method === "GET") {
-        const swaggerParams = operation.parameters || [];
-        const queryParams = swaggerParams.filter((p: any) => p.in === "query");
-
-        for (const propName of Object.keys(zodProperties)) {
-          const param = queryParams.find((p: any) => p.name === propName);
-          if (!param) {
-            errors.push(`[DRIFT] ${routeKey}: Query param '${propName}' is in Zod schema but not documented in Swagger`);
-          }
-        }
-
-        for (const param of queryParams) {
-          if (!zodProperties[param.name]) {
-            errors.push(`[DRIFT] ${routeKey}: Query param '${param.name}' is documented in Swagger but missing from Zod schema`);
-          }
+      for (const parameter of operation.parameters ?? []) {
+        if (parameter.in === "path" && parameter.required !== true) {
+          errors.push(`[PATH PARAM REQUIRED] ${getOpenApiRouteKey(route)}: ${parameter.name}`);
         }
       }
     }
 
-    if (errors.length > 0) {
-      throw new Error("OpenAPI Drift Detected:\n" + errors.join("\n"));
-    }
+    expect(errors).toEqual([]);
   });
 
-  /**
-   * CHECK 4: Metadata (Summary/Responses)
-   */
-  it("should ensure all documented routes have basic metadata", () => {
-    const metaErrors: string[] = [];
-    for (const [pathStr, methods] of Object.entries(paths)) {
-      if (!pathStr.startsWith("/v1/")) continue;
+  it("matches OpenAPI query parameters to the registered Zod schemas", () => {
+    const errors: string[] = [];
 
-      for (const [method, operation] of Object.entries(methods as any)) {
-        const routeKey = `${method.toUpperCase()} ${pathStr}`;
-        const op = operation as any;
+    for (const route of openApiRoutes) {
+      if (route.method !== "get") continue;
 
-        if (!op.summary) {
-          console.warn(`[DOCS] ${routeKey}: Missing summary`);
+      const schema = routeSchemas[getOpenApiRouteKey(route)];
+      const operation = getOperation(route.path, route.method);
+      if (!schema || !operation) continue;
+
+      const jsonSchema = zodSchemaToOpenApi(schema);
+      const zodProperties = (jsonSchema.properties ?? {}) as Record<string, any>;
+      const zodRequired = new Set<string>((jsonSchema.required ?? []) as string[]);
+      const documentedParams = (operation.parameters ?? []).filter(
+        (parameter: any) => parameter.in === "query",
+      );
+      const documentedByName = new Map<string, any>(
+        documentedParams.map((parameter: any) => [parameter.name, parameter]),
+      );
+
+      for (const [name, property] of Object.entries(zodProperties)) {
+        const documented = documentedByName.get(name);
+        if (!documented) {
+          errors.push(`[MISSING QUERY PARAM] ${getOpenApiRouteKey(route)}: ${name}`);
+          continue;
         }
-        if (!op.responses || Object.keys(op.responses).length === 0) {
-          metaErrors.push(`[DOCS] ${routeKey}: Missing responses`);
+        if (property.type && documented.schema?.type && property.type !== documented.schema.type) {
+          errors.push(
+            `[QUERY TYPE DRIFT] ${getOpenApiRouteKey(route)}: ${name} Zod=${property.type} OpenAPI=${documented.schema.type}`,
+          );
+        }
+        if ((documented.required === true) !== zodRequired.has(name)) {
+          errors.push(`[QUERY REQUIRED DRIFT] ${getOpenApiRouteKey(route)}: ${name}`);
+        }
+      }
+
+      for (const parameter of documentedParams) {
+        if (!zodProperties[parameter.name]) {
+          errors.push(`[STALE QUERY PARAM] ${getOpenApiRouteKey(route)}: ${parameter.name}`);
         }
       }
     }
 
-    if (metaErrors.length > 0) {
-      throw new Error("Missing critical documentation:\n" + metaErrors.join("\n"));
+    expect(errors).toEqual([]);
+  });
+
+  it("matches OpenAPI request bodies to the registered Zod schemas", () => {
+    const errors: string[] = [];
+
+    for (const route of openApiRoutes) {
+      if (!["post", "put", "patch"].includes(route.method)) continue;
+
+      const schema = routeSchemas[getOpenApiRouteKey(route)];
+      const operation = getOperation(route.path, route.method);
+      if (!schema || !operation) continue;
+
+      const jsonSchema = zodSchemaToOpenApi(schema);
+      const zodProperties = (jsonSchema.properties ?? {}) as Record<string, any>;
+      const zodRequired = new Set<string>((jsonSchema.required ?? []) as string[]);
+      const swaggerSchema = operation.requestBody?.content?.["application/json"]?.schema;
+
+      if (!swaggerSchema) {
+        if (Object.keys(zodProperties).length > 0) {
+          errors.push(`[MISSING BODY] ${getOpenApiRouteKey(route)}`);
+        }
+        continue;
+      }
+
+      const swaggerProperties = (swaggerSchema.properties ?? {}) as Record<string, any>;
+      const swaggerRequired = new Set<string>((swaggerSchema.required ?? []) as string[]);
+
+      for (const [name, property] of Object.entries(zodProperties)) {
+        const documented = swaggerProperties[name];
+        if (!documented) {
+          errors.push(`[MISSING BODY FIELD] ${getOpenApiRouteKey(route)}: ${name}`);
+          continue;
+        }
+        if (property.type && documented.type && property.type !== documented.type) {
+          errors.push(
+            `[BODY TYPE DRIFT] ${getOpenApiRouteKey(route)}: ${name} Zod=${property.type} OpenAPI=${documented.type}`,
+          );
+        }
+        if (swaggerRequired.has(name) !== zodRequired.has(name)) {
+          errors.push(`[BODY REQUIRED DRIFT] ${getOpenApiRouteKey(route)}: ${name}`);
+        }
+      }
+
+      for (const name of Object.keys(swaggerProperties)) {
+        if (!zodProperties[name]) {
+          errors.push(`[STALE BODY FIELD] ${getOpenApiRouteKey(route)}: ${name}`);
+        }
+      }
     }
+
+    expect(errors).toEqual([]);
+  });
+
+  it("ensures every documented route has responses and a summary", () => {
+    const errors: string[] = [];
+
+    for (const [pathName, methods] of Object.entries(paths)) {
+      for (const [method, operation] of Object.entries(methods)) {
+        if (!httpMethods.has(method)) continue;
+        const routeKey = `${method.toUpperCase()} ${pathName}`;
+        if (!(operation as any).summary) {
+          errors.push(`[MISSING SUMMARY] ${routeKey}`);
+        }
+        if (
+          !(operation as any).responses ||
+          Object.keys((operation as any).responses).length === 0
+        ) {
+          errors.push(`[MISSING RESPONSES] ${routeKey}`);
+        }
+      }
+    }
+
+    expect(errors).toEqual([]);
   });
 });
