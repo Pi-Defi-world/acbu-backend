@@ -337,7 +337,7 @@ describe("mintController", () => {
           permissions: [],
           rateLimit: 100,
         },
-        get: jest.fn().mockReturnValue("repeat-key"),
+        get: jest.fn().mockReturnValue("f47ac10b-58cc-4372-a567-0e02b2c3d479"),
         body: {
           currency: "NGN",
           amount: "100",
@@ -349,12 +349,61 @@ describe("mintController", () => {
     );
 
     expect(mockedTransactionCreate).not.toHaveBeenCalled();
+    expect(mockedTransactionFindFirst).toHaveBeenCalledWith({
+      where: {
+        idempotencyKey: {
+          in: [
+            "user-1:deposit:v2:[\"client\",null,\"100\",\"f47ac10b-58cc-4372-a567-0e02b2c3d479\"]",
+          ],
+        },
+      },
+    });
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         transaction_id: "tx-duplicate",
         status: "pending",
       }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("recovers a matching legacy deposit before rejecting a non-UUID idempotency key", async () => {
+    mockedTransactionFindFirst.mockResolvedValue({
+      id: "tx-legacy",
+      status: "pending",
+      localCurrency: "NGN",
+      localAmount: { toString: () => "100" },
+    });
+
+    const res = makeRes();
+    const next = makeNext();
+    await depositFromBasketCurrency(
+      {
+        apiKey: {
+          id: "key-1",
+          userId: "user-1",
+          organizationId: null,
+          permissions: [],
+          rateLimit: 100,
+        },
+        get: jest.fn().mockReturnValue("legacy-request-key"),
+        body: {
+          currency: "NGN",
+          amount: "100",
+          wallet_address: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        },
+      } as unknown as AuthRequest,
+      res,
+      next,
+    );
+
+    expect(mockedTransactionFindFirst).toHaveBeenCalledWith({
+      where: { idempotencyKey: { in: ["user-1:legacy-request-key"] } },
+    });
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ transaction_id: "tx-legacy" }),
     );
     expect(next).not.toHaveBeenCalled();
   });

@@ -169,6 +169,7 @@ Clients map `invoke_contract` / simulation failures using the contract error `u3
 | 5031 | `InvalidBurnAmount` | `record_burn` called with a non-positive amount (AC-005). |
 | 5032 | `InvalidFiatSettlementProof` | AC-038: The ed25519 attestation signature on the fiat-settlement proof does not verify against the stored operator public key.  This means the mint was not backed by a cryptographically attested off-chain settlement. |
 | 5033 | `OperatorPubKeyNotSet` | AC-038: No operator ed25519 public key has been registered; call `set_operator_pub_key` (admin only) before using `mint_from_fiat`. |
+| 5034 | `BasketSizeExceeded` | The oracle returned more basket currencies than `mint_from_basket` accepts. |
 | 5999 | `Unknown` | unknown minting error |
 
 ## `acbu_oracle` - `OracleError`

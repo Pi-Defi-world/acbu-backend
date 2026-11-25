@@ -51,7 +51,8 @@ export interface FinancialLogPayload {
   /**
    * Transaction amount expressed in the smallest indivisible currency unit
    * to avoid floating-point ambiguity.
-   * Examples: kobo for NGN (100 kobo = ₦1), cents for USD (100 cents = $1).
+   * Examples: stroops for ACBU (10,000,000 stroops = 1 ACBU), kobo for NGN,
+   * and cents for USD.
    */
   amount: number;
 

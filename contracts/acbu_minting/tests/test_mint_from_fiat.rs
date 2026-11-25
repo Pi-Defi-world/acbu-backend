@@ -214,10 +214,10 @@ fn make_fiat_proof(
     currency: &CurrencyCode,
 ) -> FiatSettlementProof {
     let mut preimage = Bytes::new(env);
-    preimage.append(&fintech_tx_id.to_xdr(env));
+    preimage.append(&fintech_tx_id.clone().to_xdr(env));
     preimage.append(&recipient.to_xdr(env));
     preimage.append(&fiat_amount.to_xdr(env));
-    preimage.append(&currency.to_xdr(env));
+    preimage.append(&currency.clone().to_xdr(env));
     preimage.append(&env.ledger().timestamp().to_xdr(env));
 
     let digest = env.crypto().sha256(&preimage);

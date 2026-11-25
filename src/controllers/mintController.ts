@@ -37,7 +37,7 @@ import { assertUserWalletAddress } from "../services/wallet/walletService";
 import { logger } from "../config/logger";
 import {
   parseMonetaryString,
-  decimalToContractNumber,
+  decimalToContractAmount,
   contractNumberToDecimal,
   calculateFee,
 } from "../utils/decimalUtils";
@@ -175,7 +175,7 @@ export async function mintFromUsdcInternal(
 ): Promise<{ transactionId: string; acbuAmount: string }> {
   const usdcDecimal = new Decimal(usdcAmount);
   const feeUsdcDecimal = calculateFee(usdcDecimal, MINT_FEE_BPS);
-  const usdcAmount7 = decimalToContractNumber(usdcDecimal).toString();
+  const usdcAmount7 = decimalToContractAmount(usdcDecimal);
   const tx = await prisma.transaction.create({
     data: {
       userId: userId ?? undefined,
@@ -222,7 +222,7 @@ export async function mintFromUsdcInternal(
       usdcAmount: usdcAmount7,
       recipient: walletAddress,
     });
-    const acbuDecimal = contractNumberToDecimal(Number(result.acbuAmount));
+    const acbuDecimal = contractNumberToDecimal(result.acbuAmount);
 
     try {
       await prisma.transaction.update({
@@ -467,13 +467,77 @@ export async function depositFromBasketCurrency(
     // key — the second user would receive a 202 referencing the first user's
     // transaction (status/existence disclosure) and their own deposit would
     // be blocked.
-    const rawIdempotencyKey = extractIdempotencyKey(req) ?? fintech_tx_id ?? undefined;
+    const clientRequestId = extractIdempotencyKey(req);
+    const hasClientUuidV4 = Boolean(
+      clientRequestId &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          clientRequestId,
+        ),
+    );
+    // The persisted key namespace is the available version marker: all v2
+    // keys start with `<userId>:deposit:v2:`. Do not treat one as a legacy
+    // candidate, even if a partner reference happens to have the same value.
+    const v2IdempotencyPrefix = scopeIdempotencyKey(userId, "deposit:v2:");
+    const legacyIdempotencyKeys = hasClientUuidV4
+      ? []
+      : [clientRequestId, fintech_tx_id]
+          .filter((key): key is string => Boolean(key))
+          .map((key) => scopeIdempotencyKey(userId, key))
+          .filter((key) => !key.startsWith(v2IdempotencyPrefix));
+
+    // Old clients may still retry with a non-UUID key. Recover a matching
+    // legacy transaction before enforcing the current UUIDv4 contract.
+    if (clientRequestId && !hasClientUuidV4) {
+      if (legacyIdempotencyKeys.length > 0) {
+        const legacyTx = await prisma.transaction.findFirst({
+          where: { idempotencyKey: { in: legacyIdempotencyKeys } },
+        });
+        if (legacyTx) {
+          res.status(202).json({
+            transaction_id: legacyTx.id,
+            currency: legacyTx.localCurrency ?? currency,
+            amount: legacyTx.localAmount?.toString() ?? amountDecimal.toString(),
+            wallet_address: wallet_address ? "***" : undefined,
+            status: legacyTx.status,
+            message:
+              legacyTx.status === "completed"
+                ? "Deposit already processed."
+                : "Deposit already received and is still being processed.",
+          });
+          return;
+        }
+      }
+      throw new AppError(
+        "Idempotency-Key header must be a UUIDv4",
+        400,
+        ErrorCodes.VALIDATION_ERROR,
+      );
+    }
+    // Keep retries stable while separating legitimate same-amount deposits by
+    // the client's UUIDv4. The optional partner reference remains part of the
+    // key for reconciliation and duplicate partner callbacks.
+    const idempotencyComponents = clientRequestId
+      ? ["client", fintech_tx_id ?? null, amountDecimal.toString(), clientRequestId]
+      : fintech_tx_id
+        ? ["partner", fintech_tx_id]
+        : undefined;
+    const rawIdempotencyKey = idempotencyComponents
+      ? `deposit:v2:${JSON.stringify(idempotencyComponents)}`
+      : undefined;
     const idempotencyKey = rawIdempotencyKey
       ? scopeIdempotencyKey(userId, rawIdempotencyKey)
       : undefined;
-    if (idempotencyKey) {
-      const existingTx = await prisma.transaction.findUnique({
-        where: { idempotencyKey },
+    // Check pre-v2 keys as well so in-flight retries remain idempotent through
+    // deployment. The namespaced JSON tuples keep new keyed/unkeyed formats
+    // distinct and avoid delimiter collisions.
+    const idempotencyLookupKeys = [
+      ...new Set(
+        [idempotencyKey, ...legacyIdempotencyKeys].filter((key): key is string => Boolean(key)),
+      ),
+    ];
+    if (idempotencyLookupKeys.length > 0) {
+      const existingTx = await prisma.transaction.findFirst({
+        where: { idempotencyKey: { in: idempotencyLookupKeys } },
       });
 
       if (existingTx) {
@@ -516,8 +580,8 @@ export async function depositFromBasketCurrency(
         createError instanceof Prisma.PrismaClientKnownRequestError &&
         createError.code === "P2002"
       ) {
-        const existingTx = await prisma.transaction.findUnique({
-          where: { idempotencyKey },
+        const existingTx = await prisma.transaction.findFirst({
+          where: { idempotencyKey: { in: idempotencyLookupKeys } },
         });
 
         if (existingTx) {
@@ -553,9 +617,9 @@ export async function depositFromBasketCurrency(
         txId: tx.id,
         user: sourceAccount,
         recipient: wallet_address,
-        acbuAmount: decimalToContractNumber(acbuAmountInfo.acbuEquivalent).toString(),
+        acbuAmount: decimalToContractAmount(acbuAmountInfo.acbuEquivalent),
       });
-      const acbuNum = contractNumberToDecimal(Number(mintResult.acbuAmount));
+      const acbuNum = contractNumberToDecimal(mintResult.acbuAmount);
 
       await prisma.transaction.update({
         where: { id: tx.id },

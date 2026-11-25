@@ -10,7 +10,7 @@ export async function getApplication(id: string, opts?: RequestOptions): Promise
   return get<KycApplication>(`/kyc/applications/${encodeURIComponent(id)}`, opts);
 }
 
-export type KycDocumentKind = 'id_front' | 'id_back' | 'selfie';
+export type KycDocumentKind = 'id_front' | 'id_back' | 'passport' | 'selfie';
 
 export interface CreateKycApplicationBody {
   country_code: string;

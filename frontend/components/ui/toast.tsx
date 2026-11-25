@@ -15,8 +15,6 @@ const ToastViewport = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Viewport
     ref={ref}
-    aria-live="polite"
-    aria-atomic="true"
     className={cn(
       'fixed top-0 left-0 right-0 z-[100] flex max-h-screen w-full flex-col p-4 sm:bottom-0 sm:right-0 sm:top-0 sm:left-auto sm:flex-col md:max-w-[420px]',
       className,
@@ -46,10 +44,17 @@ const Toast = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Root>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> &
     VariantProps<typeof toastVariants>
->(({ className, variant, ...props }, ref) => {
+>(({ className, variant, type, ...props }, ref) => {
+  // Radix announces "foreground" toasts through an aria-live="assertive"
+  // region. Toasts here carry payment failures and deposit confirmations, so
+  // they are announced assertively unless a caller opts into "background"
+  // (polite). The viewport no longer wraps them in a competing polite region
+  // (W11-AUD-021).
+  const announceType = type ?? 'foreground'
   return (
     <ToastPrimitives.Root
       ref={ref}
+      type={announceType}
       className={cn(toastVariants({ variant }), className)}
       {...props}
     />

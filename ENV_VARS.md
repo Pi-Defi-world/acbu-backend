@@ -48,6 +48,21 @@ This file documents the environment variables required by the ACBU backend and t
   - Defaults to `false`.
   - In production, set to `true` only after verifying `_prisma_migrations` is replicated to failover targets.
   - The app refuses to run startup migrations in production until this is explicitly acknowledged.
+- `DB_CONNECTION_LIMIT`
+  - Defaults to `50`.
+  - Maximum number of database connections Prisma opens against the direct PostgreSQL URL.
+  - Only applied on the direct (`postgresql://`) path; ignored when `PRISMA_ACCELERATE_URL` is set
+    because Accelerate manages its own connection pool.
+  - During concurrent webhook ingestion, the former implicit default of 10 was exhausted while
+    connections were held awaiting external partner responses, starving all other API routes (W11-AUD-012).
+  - **Production guidance:** deploy PgBouncer in transaction-pooling mode between the app and
+    PostgreSQL. Set `DATABASE_URL` to point at PgBouncer and size PgBouncer's `pool_size` to stay
+    within PostgreSQL's `max_connections` ceiling. With PgBouncer active, `DB_CONNECTION_LIMIT` can
+    be set to match PgBouncer's `pool_size`.
+- `DB_STATEMENT_TIMEOUT_MS`
+  - Defaults to `9000` (9 s).
+  - Injected as `options=--statement_timeout=<ms>` into the direct PostgreSQL URL so the server
+    cancels long-running statements before Prisma Accelerate's 10 s proxy timeout fires.
 
 ## Optional and configurable variables
 
@@ -82,7 +97,8 @@ This file documents the environment variables required by the ACBU backend and t
 - `PII_ENCRYPTION_KEY`
   - Optional.
   - Must be exactly 64 hex characters (32 bytes).
-- `CAPTCHA_SECRET`
+- `CAPTCHA_SECRET` - Cloudflare Turnstile secret key used to verify CAPTCHA tokens server-side. If unset, verification fails closed.
+- `CAPTCHA_ENFORCEMENT` - `off`, `optional` (default) or `strict`. `optional` always verifies a supplied token but allows requests without one; `strict` requires a valid token on `POST /v1/auth/signup` and `POST /v1/transfers`.
 - `AUTH_BRUTE_MAX_ATTEMPTS` - defaults to `5`
 - `AUTH_BRUTE_LOCKOUT_MS` - defaults to `900000`
 
@@ -205,12 +221,12 @@ This file documents the environment variables required by the ACBU backend and t
 - `CORS_ORIGIN`
   - Comma-separated list of allowed origins.
 
-### Frontend (`acbu-frontend` submodule)
+### Frontend (`frontend/`)
 
 The root `.env.example` is the canonical local setup template for both the
-backend and the checked-out frontend. Copy it to `.env`, then expose the
+backend and the frontend in `frontend/`. Copy it to `.env`, then expose the
 frontend values to the frontend process as `.env.local` when running the
-submodule independently. Do not commit either runtime file.
+frontend (`frontend/`) independently. Do not commit either runtime file.
 
 - `NEXT_PUBLIC_API_BASE_URL` - browser API base URL, normally `http://localhost:5000/api/v1` locally.
 - `NEXT_PUBLIC_API_URL` - legacy frontend alias used only when the base URL is unset.

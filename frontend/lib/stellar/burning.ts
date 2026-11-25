@@ -1,10 +1,10 @@
+// W11-AUD-023: Import only the core primitives statically; Horizon and rpc are
+// loaded dynamically to enable Next.js code-splitting for these heavy modules.
 import {
   Address,
-  Horizon,
   Operation,
   TransactionBuilder,
   xdr,
-  rpc,
   Transaction,
   FeeBumpTransaction,
 } from "@stellar/stellar-sdk";
@@ -76,8 +76,19 @@ async function resolveNetworkConfig(): Promise<{
   };
 }
 
+// Minimal interface for the rpc.Server methods we use, so we don't need a
+// static import of the full rpc namespace for the helper signature.
+interface RpcServerLike {
+  sendTransaction(tx: Transaction | FeeBumpTransaction): Promise<{
+    status: string;
+    errorResult?: unknown;
+    hash: string;
+  }>;
+  getTransaction(hash: string): Promise<{ status: string; resultXdr?: unknown }>;
+}
+
 async function submitAndWaitSuccess(params: {
-  rpcServer: rpc.Server;
+  rpcServer: RpcServerLike;
   tx: Transaction | FeeBumpTransaction;
   timeoutMs?: number;
 }): Promise<{ txHash: string }> {
@@ -124,6 +135,9 @@ export async function submitBurnRedeemSingleClient(params: {
   if (amount7 <= BigInt(0)) {
     throw new Error("Invalid burn amount.");
   }
+
+  // W11-AUD-023: dynamic import for Horizon and rpc to enable code-splitting
+  const { Horizon, rpc } = await import("@stellar/stellar-sdk");
 
   const server = new Horizon.Server(horizonUrl);
   const sourceAccount = await server.loadAccount(sourceAddress);

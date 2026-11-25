@@ -27,7 +27,9 @@ function Alert({
   return (
     <div
       data-slot="alert"
-      role="alert"
+      role={variant === 'destructive' ? 'alert' : 'status'}
+      aria-live={variant === 'destructive' ? 'assertive' : 'polite'}
+      aria-atomic="true"
       className={cn(alertVariants({ variant }), className)}
       {...props}
     />

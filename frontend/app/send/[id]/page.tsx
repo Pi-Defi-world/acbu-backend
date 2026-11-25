@@ -220,7 +220,7 @@ export default function TransferDetailPage() {
       </div>
       
       <PageContainer>
-        <main id="main-content" className="focus:outline-none" tabIndex={-1}>
+        <section aria-label="Transfer details">
           <Card 
             className="border-border p-4 space-y-4"
             aria-label={`${isFiatRecord ? "Faucet" : "Transfer"} details for transaction ${id}`}
@@ -308,7 +308,7 @@ export default function TransferDetailPage() {
               {status === "failed" && "Transfer failed to process."}
             </div>
           </Card>
-        </main>
+        </section>
       </PageContainer>
     </>
   );

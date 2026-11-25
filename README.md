@@ -23,7 +23,15 @@ Backend API server for the ACBU (African Currency Basket Unit) platform.
 
 ### 1. Clone and Install
 
+This repository is the single home for the whole platform (see [MONOREPO.md](MONOREPO.md)):
+the backend lives at the repository root, the web frontend in [`frontend/`](frontend/)
+and the Soroban smart contracts in [`contracts/`](contracts/). Clone this one repository only;
+the former `acbu-frontend` and `acbu-smart-contract` repositories are being archived and should
+not be cloned or pushed to.
+
 ```bash
+git clone https://github.com/Pi-Defi-world/acbu-backend.git
+cd acbu-backend
 pnpm install
 ```
 
@@ -141,6 +149,8 @@ backend/
 │   └── types/           # TypeScript type definitions
 ├── tests/               # Test files
 ├── prisma/              # Prisma schema and migrations
+├── frontend/            # Web frontend (formerly the acbu-frontend repo)
+├── contracts/           # Soroban smart contracts (formerly the acbu-smart-contract repo)
 ├── scripts/             # Utility scripts
 ├── docker-compose.yml   # Docker services configuration
 └── package.json
@@ -154,6 +164,14 @@ The proposal includes source-document integration steps pending maintainer revie
 
 Once the server is running, API documentation is available at:
 - Swagger UI: `http://localhost:5000/api-docs` (development only, disabled in production for security)
+
+The OpenAPI schema is generated from `src/openapi/route-definitions.ts` and the
+route Zod schemas. Update `swagger.json` after changing routes or parameters:
+
+```bash
+pnpm openapi:generate
+pnpm openapi:check
+```
 
 **Segment routes** (require API key with segment scope): `/v1/p2p`, `/v1/sme`, `/v1/international`, `/v1/salary`, `/v1/enterprise`, `/v1/savings`, `/v1/lending`, `/v1/gateway`, `/v1/bills`. For a full list of routes and smart contracts, see the repository docs in the `docs/` folder.
 

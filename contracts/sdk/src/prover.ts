@@ -12,6 +12,7 @@ import type { ProofArtifacts, ComplianceInput } from "./types.js";
 import {
   computeCommitment,
   computeNullifier,
+  computeWalletAddressHash,
   fieldToBytes32,
 } from "./poseidon.js";
 
@@ -47,11 +48,7 @@ function hexToBytes(hex: string): Uint8Array {
  */
 export async function loadCircuit(circuitSource: string): Promise<void> {
   const fm = createFileManager("/");
-  // noir_wasm FileManager: addFile is the stable API used by generate-artifacts.mjs
-  (fm as { addFile: (path: string, contents: string) => void }).addFile(
-    "./main.nr",
-    circuitSource
-  );
+  await fm.writeFile("./main.nr", new Blob([circuitSource]).stream());
 
   compiled = await compile(fm, "./main.nr");
   const bytecode = (compiled as { program: { bytecode: string } }).program
@@ -77,7 +74,12 @@ export async function generateProof(
   }
 
   const commitment = await computeCommitment(input.credential);
-  const nullifier = await computeNullifier(commitment, input.credential.salt);
+  const walletAddressHash = computeWalletAddressHash(input.walletAddress);
+  const nullifier = await computeNullifier(
+    commitment,
+    input.credential.salt,
+    walletAddressHash
+  );
 
   const circuitInputs = {
     kyc_level: input.credential.kycLevel,
@@ -86,6 +88,7 @@ export async function generateProof(
     commitment: fieldHex(commitment),
     required_kyc: input.requiredKyc,
     allowed_country: input.allowedCountry,
+    wallet_address_hash: walletAddressHash.toString(),
     nullifier: fieldHex(nullifier),
   };
 

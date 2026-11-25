@@ -2,7 +2,7 @@ import request from "supertest";
 import Decimal from "decimal.js";
 import {
   contractNumberToDecimal,
-  decimalToContractNumber,
+  decimalToContractAmount,
   parseMonetaryString,
 } from "../../utils/decimalUtils";
 import { prisma } from "../../config/database";
@@ -291,15 +291,15 @@ describe("Monetary Controller Integration Tests", () => {
       // This test would require mocking the contract service
       // For now, we test the internal conversion logic
       const amount = parseMonetaryString("123.4567891");
-      const contractNumber = decimalToContractNumber(amount);
+      const contractAmount = decimalToContractAmount(amount);
 
       // Should round down, not up
-      expect(contractNumber).toBe(1234567891);
+      expect(contractAmount).toBe("1234567891");
     });
 
     it("should handle contract number conversion back to Decimal", async () => {
-      const contractNumber = 1234567891;
-      const decimal = contractNumberToDecimal(contractNumber);
+      const contractAmount = "1234567891";
+      const decimal = contractNumberToDecimal(contractAmount);
 
       expect(decimal.toString()).toBe("123.4567891");
     });

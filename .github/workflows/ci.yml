@@ -128,7 +128,13 @@ jobs:
       - name: Verify bcrypt native build
         run: node -e "require('bcrypt')"
 
+      - name: Create schema drift shadow database
+        run: >
+          node -e "const{Pool}=require('pg');(async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL});await p.query('CREATE DATABASE acbu_test_shadow');await p.end();})().catch(e=>{console.error(e.message);process.exit(1);})"
+
       - name: Verify schema drift and down-migrations
+        env:
+          SHADOW_DATABASE_URL: postgresql://acbu_test:acbu_test_pw@localhost:5432/acbu_test_shadow
         run: pnpm run prisma:drift:check
 
       - name: Apply database migrations

@@ -107,3 +107,20 @@ pnpm test:coverage  # optional but appreciated
 - TypeScript strict mode is enabled — no `any` unless absolutely necessary.
 - Run `pnpm lint:fix` and `pnpm format` before committing.
 - CI enforces both; PRs with lint or format errors will fail.
+
+## Database access
+
+Always import the shared Prisma singleton — never instantiate `PrismaClient` directly:
+
+```typescript
+// ✅ correct
+import { prisma } from "../../config/database";
+
+// ❌ banned — triggers lint error (W11-CAR-026)
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+```
+
+Standalone instances bypass connection pooling, the P2024 retry logic, and OpenTelemetry query
+tracing. The `no-restricted-syntax` ESLint rule enforces this at lint time.
+See [docs/W11-CAR-026-prisma-singleton.md](docs/W11-CAR-026-prisma-singleton.md) for details.

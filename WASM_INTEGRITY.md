@@ -1,20 +1,39 @@
 # WASM Integrity Verification
 
-The `.github/workflows/verify-wasm-integrity.yml` workflow detects tampered or unregistered
-Soroban/Stellar smart contract WASM artifacts before they can reach a deployment environment.
+The `.github/workflows/verify-wasm-integrity.yml` workflow checks SHA-256 checksums for
+Soroban/Stellar WASM artifacts present in this repository. It validates existing binaries;
+it does not compile contract source code.
 
 ## How it works
 
-1. On every push or pull request that touches `contracts/`, `wasm/`, or `.wasm-checksums`,
-   the workflow scans the repository for `*.wasm` files.
-2. Each file's SHA-256 checksum is compared against the values recorded in `.wasm-checksums`.
-3. The workflow fails if:
-   - A WASM file's checksum does not match the recorded value (tampered artifact).
-   - A WASM file exists but has no entry in `.wasm-checksums` (unregistered artifact).
-4. The workflow warns (non-blocking) if `.wasm-checksums` contains entries for files that no
-   longer exist (stale entries after a contract is removed).
-5. If no `*.wasm` files are present (the current state of this repo), the workflow exits
-   cleanly — no action is required until contracts are compiled and committed.
+The workflow runs on pushes and pull requests targeting `main`, `dev`, or `develop` when
+`contracts/**`, `wasm/**`, `.wasm-checksums`, or the workflow itself changes. It can also
+be started manually with `workflow_dispatch`.
+
+The job scans the checkout for `*.wasm` files, then:
+
+1. Runs `sha256sum --check .wasm-checksums` to fail on missing or mismatched recorded
+   checksums.
+2. Checks that each discovered WASM path is registered in `.wasm-checksums`.
+3. Emits a warning for checksum entries that refer to files that no longer exist.
+4. If there are no WASM files, skips checksum verification successfully.
+
+The workflow does not build Rust crates or produce WASM artifacts.
+
+## Contract build verification scope
+
+The integrity workflow in this backend repository is an artifact checksum check, not a
+contract build matrix. The backend checkout does not contain a Rust workspace or contract
+crate manifests; its Soroban contract references are diagnostic strings in
+`src/services/stellar/sorobanInvokeErrors.ts`. Consequently, this workflow cannot compile
+the contract workspace from this checkout.
+
+Issue `Pi-Defi-world/acbu-backend#1380` requests compiling and verifying all nine contracts,
+including the additional `savings_vault`, `lending_pool`, `escrow`, and `multisig` contracts.
+Implementing that build-matrix check requires running it in, or explicitly checking out,
+the repository that contains the contract workspace. Adding those build targets to this
+backend workflow without that source workspace would not verify the contracts and could
+make CI fail.
 
 ## Registering a new WASM artifact
 

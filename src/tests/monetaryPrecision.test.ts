@@ -1,9 +1,10 @@
 import Decimal from "decimal.js";
 import {
   parseMonetaryString,
-  decimalToContractNumber,
+  decimalToContractAmount,
   contractNumberToDecimal,
   calculateFee,
+  currencyAmountToSmallestUnit,
 } from "../utils/decimalUtils";
 
 describe("Monetary Precision Tests", () => {
@@ -49,21 +50,21 @@ describe("Monetary Precision Tests", () => {
     });
   });
 
-  describe("decimalToContractNumber", () => {
+  describe("decimalToContractAmount", () => {
     it("should convert to contract number with proper rounding", () => {
       const amount = parseMonetaryString("123.4567891");
-      const contractNumber = decimalToContractNumber(amount);
+      const contractAmount = decimalToContractAmount(amount);
 
       // Should round down to 7 decimal places for contract
-      expect(contractNumber).toBe(1234567891);
+      expect(contractAmount).toBe("1234567891");
     });
 
     it("should handle edge case rounding at precision boundary", () => {
       const amount = parseMonetaryString("0.0000015"); // Adjusted to pass validation
-      const contractNumber = decimalToContractNumber(amount);
+      const contractAmount = decimalToContractAmount(amount);
 
       // Should round down to 15 (not up to 16)
-      expect(contractNumber).toBe(15);
+      expect(contractAmount).toBe("15");
     });
 
     it("should allow values at the maximum safe contract integer", () => {
@@ -92,10 +93,17 @@ describe("Monetary Precision Tests", () => {
 
   describe("contractNumberToDecimal", () => {
     it("should convert back from contract number preserving precision", () => {
-      const contractNumber = 1234567891;
-      const decimal = contractNumberToDecimal(contractNumber);
+      const contractAmount = "1234567891";
+      const decimal = contractNumberToDecimal(contractAmount);
 
       expect(decimal.toString()).toBe("123.4567891");
+    });
+
+    it("should preserve values larger than JavaScript's safe integer range", () => {
+      const contractAmount = "9876543211234567";
+      const decimal = contractNumberToDecimal(contractAmount);
+
+      expect(decimal.toString()).toBe("987654321.1234567");
     });
 
     it("should handle different decimal precisions", () => {
@@ -105,6 +113,19 @@ describe("Monetary Precision Tests", () => {
 
       expect(decimal2dp.toString()).toBe("123.45");
       expect(decimal7dp.toString()).toBe("0.0012345");
+    });
+
+    describe("currencyAmountToSmallestUnit", () => {
+      it("uses seven decimals for ACBU and Stellar tokens", () => {
+        expect(currencyAmountToSmallestUnit("1.2345678", "ACBU")).toBe(12345678);
+        expect(currencyAmountToSmallestUnit("1.2345678", "XLM")).toBe(12345678);
+        expect(currencyAmountToSmallestUnit("1.2345678", "USDC")).toBe(12345678);
+      });
+
+      it("uses the ISO currency scale for fiat amounts", () => {
+        expect(currencyAmountToSmallestUnit("1.235", "NGN")).toBe(124);
+        expect(currencyAmountToSmallestUnit("1.9", "RWF")).toBe(2);
+      });
     });
   });
 

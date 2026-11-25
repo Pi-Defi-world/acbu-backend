@@ -22,12 +22,7 @@ import {
   isCurrencyWithdrawalPaused,
 } from "../services/limits/limitsService";
 import { getBurnFeeBps } from "../services/feePolicy/feePolicyService";
-import {
-  parseMonetaryString,
-  decimalToContractNumber,
-  contractNumberToDecimal,
-  calculateFee,
-} from "../utils/decimalUtils";
+import { parseMonetaryString, decimalToContractAmount, calculateFee } from "../utils/decimalUtils";
 import { AppError } from "../middleware/errorHandler";
 import { getLatestAcbuRate } from "../services/rates/acbuRateCache";
 import { logger } from "../config/logger";

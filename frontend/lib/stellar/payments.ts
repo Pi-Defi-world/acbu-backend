@@ -1,6 +1,7 @@
+// W11-AUD-023: Import only the core primitives statically; Horizon is loaded
+// dynamically to enable Next.js code-splitting for this heavy module.
 import {
   Asset,
-  Horizon,
   Keypair,
   Operation,
   TransactionBuilder,
@@ -61,6 +62,8 @@ export async function submitAcbuPaymentClient(params: {
   const horizonUrl = await resolveHorizonUrl();
   const networkPassphrase = await resolveNetworkPassphrase();
   const asset = await resolveAcbuAsset();
+  // W11-AUD-023: dynamic import for Horizon to enable code-splitting
+  const { Horizon } = await import("@stellar/stellar-sdk");
   const server = new Horizon.Server(horizonUrl);
 
   const sourceAddress = params.external?.address

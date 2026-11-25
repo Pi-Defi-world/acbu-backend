@@ -17,14 +17,18 @@ The backend was using `Number()` on user-supplied strings for monetary calculati
 - Parses strings to Decimal with full precision preservation
 - Throws descriptive errors for invalid inputs
 
-#### `decimalToContractNumber(decimal, decimals)`
-- Converts Decimal to contract-compatible numbers with explicit rounding
+#### `decimalToContractAmount(decimal, decimals)`
+- Converts Decimal values to exact integer strings for contract calls with explicit rounding
 - Uses ROUND_DOWN to prevent fee overcharging
-- Handles different decimal precisions (7 for ACBU, 2 for fiat)
+- Supports explicit contract decimal precision (7 for Soroban monetary amounts)
 
-#### `contractNumberToDecimal(contractNumber, decimals)`
+#### `contractNumberToDecimal(contractAmount, decimals)`
 - Converts contract numbers back to Decimal for database storage
 - Maintains precision across contract boundaries
+
+#### `currencyAmountToSmallestUnit(amount, currency)`
+- Uses seven decimals for ACBU and Stellar tokens, and ISO 4217 fraction digits for fiat currencies
+- Keeps audit-event amounts in the correct currency-specific minor unit
 
 #### `calculateFee(amount, feeBps)`
 - Calculates fees using Decimal arithmetic
@@ -90,13 +94,13 @@ The backend was using `Number()` on user-supplied strings for monetary calculati
 ### 6. Soroban Boundary Integration
 
 #### Explicit Rounding Strategy
-- **Contract Output**: `decimalToContractNumber()` with ROUND_DOWN
+- **Contract Output**: `decimalToContractAmount()` with ROUND_DOWN, returned as an exact integer string
 - **Contract Input**: `contractNumberToDecimal()` for precise storage
 - **Fee Calculations**: Always use Decimal, convert only at boundary
 
 #### Precision Preservation
-- **Before**: `Math.round(amount * DECIMALS_7)` could lose precision
-- **After**: `decimalToContractNumber()` maintains exact precision
+- **Before**: `Math.round(amount * DECIMALS_7)` and `Number(contractAmount)` could lose precision
+- **After**: decimal-to-integer-string conversion preserves all stroops across the contract boundary
 - **Verification**: Tests confirm proper rounding behavior
 
 ### 7. Impact Assessment

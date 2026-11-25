@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Request, Response, NextFunction } from "express";
 import { logger } from "../config/logger";
+import { redactLogValue } from "../config/logRedaction";
 import { AuthRequest } from "./auth";
 
 /**
@@ -48,6 +49,62 @@ function hashBody(body: unknown): string | undefined {
   return crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex");
 }
 
+const REQUEST_BODY_MASK = "[REDACTED]";
+
+/**
+ * Keys that must never reach a log sink, regardless of nesting depth
+ * (W11-AUD-025). Compared case-insensitively with `_` / `-` stripped, so
+ * `secret_key`, `secretKey` and `SECRET-KEY` are all masked.
+ */
+export const SENSITIVE_BODY_KEYS: ReadonlySet<string> = new Set([
+  "password",
+  "passcode",
+  "pin",
+  "bvn",
+  "nin",
+  "ssn",
+  "nationalid",
+  "secret",
+  "secretkey",
+  "privatekey",
+  "seed",
+  "mnemonic",
+  "token",
+  "accesstoken",
+  "refreshtoken",
+  "apikey",
+  "otp",
+  "accountnumber",
+  "bankaccount",
+  "bankaccountnumber",
+  "iban",
+  "cardnumber",
+  "cvv",
+]);
+
+const normalizeKey = (key: string): string => key.replace(/[_-]/g, "").toLowerCase();
+
+/**
+ * Return a deep copy of a request body with every sensitive value masked.
+ * Applies the explicit SENSITIVE_BODY_KEYS mask first, then the shared
+ * key-pattern / card-number redaction used by the logger format, so a body is
+ * never logged without both layers. The input object is not mutated.
+ */
+export function sanitizeRequestBody(body: unknown): unknown {
+  const mask = (value: unknown, seen: WeakSet<object>): unknown => {
+    if (value === null || typeof value !== "object") return value;
+    if (seen.has(value)) return "[Circular]";
+    seen.add(value);
+    if (Array.isArray(value)) return value.map((item) => mask(item, seen));
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = SENSITIVE_BODY_KEYS.has(normalizeKey(key)) ? REQUEST_BODY_MASK : mask(child, seen);
+    }
+    return out;
+  };
+  return redactLogValue(mask(body, new WeakSet()));
+}
+
 /**
  * Returns an ISO-8601 timestamp with microsecond precision.
  * Node.js Date only has millisecond resolution; we fill the sub-ms digits
@@ -76,6 +133,10 @@ function microTimestamp(): string {
  *   - request body hash (SHA-256, never the raw body)
  *   - correlationId (x-request-id header or auto-generated UUID)
  *   - standard HTTP fields (method, path, statusCode, durationMs, userAgent)
+ *
+ * The raw body is never logged. Outside production, a `debug`-level
+ * `request_body` entry carries the body only after `sanitizeRequestBody` has
+ * masked passwords, BVN/NIN, secret keys, tokens and bank details.
  */
 export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
   const startHr = process.hrtime.bigint();
@@ -103,6 +164,15 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction): 
       userAgent: req.get("user-agent") ?? null,
       bodyHash: hashBody(req.body) ?? null,
     });
+
+    if (process.env.NODE_ENV !== "production" && logger.isDebugEnabled() && hashBody(req.body)) {
+      logger.debug("request_body", {
+        correlationId,
+        method: req.method,
+        path: req.path,
+        body: sanitizeRequestBody(req.body),
+      });
+    }
   });
 
   next();

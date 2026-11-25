@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use acbu_minting::{MintingContract, MintingContractClient};
-use shared::DECIMALS;
 use soroban_sdk::{
     testutils::Address as _,
     Address, BytesN, Env,
@@ -10,8 +9,7 @@ use proptest::prelude::*;
 
 mod mocks {
     use soroban_sdk::{contract, contractimpl, Env, Address, Vec};
-    use shared::CurrencyCode;
-    use shared::DECIMALS;
+    use shared::{CurrencyCode, DECIMALS};
 
     #[contract]
     pub struct MockOracle;
@@ -59,7 +57,7 @@ fn setup_fuzz_test(env: &Env) -> (Address, Address, MintingContractClient, Addre
     let usdc_token = env.register_stellar_asset_contract_v2(admin.clone()).address();
     let usdc_sac = soroban_sdk::token::StellarAssetClient::new(env, &usdc_token);
     let acbu_client = soroban_sdk::token::Client::new(env, &acbu_token);
-    
+
     let config = acbu_minting::MintingConfig {
         admin: admin.clone(),
         oracle: oracle.clone(),
@@ -84,13 +82,13 @@ proptest! {
         env.mock_all_auths();
         let (_admin, _oracle, client, _usdc_token, usdc_sac, _acbu_client) = setup_fuzz_test(&env);
         let user = Address::generate(&env);
-        
+
         usdc_sac.mint(&user, &amount);
-        
+
         let max_mint = 1_000_000_000_000;
-        
-        let res = client.try_mint_from_usdc(&user, &amount, &user);
-        
+
+        let res = client.try_mint_from_usdc(&user, &amount, &user, &None);
+
         if amount > max_mint {
             assert!(res.is_err());
         } else {
