@@ -1,9 +1,8 @@
 /**
  * Tests for src/middleware/errorHandler.ts (AB-028 / #978)
  *
- * Security requirement: err.details must NEVER appear in the JSON sent to the
- * client, regardless of how many keys or what type the details object contains.
- * Details are only permitted in the internal server log.
+ * Security requirement: raw err.details must NEVER appear in the JSON sent to
+ * the client. Only sanitized summaries and known validation shapes are allowed.
  */
 
 import { AppError, errorHandler } from "../src/middleware/errorHandler";
@@ -85,24 +84,41 @@ describe("errorHandler — AppError", () => {
   });
 
   // ── AB-028 core requirement ─────────────────────────────────────────────
-  it("does NOT expose err.details when details is an object", () => {
+  it("does not expose raw values from err.details when details is an object", () => {
     const details = { field: "email", hint: "Must be a valid address", internalId: "v-42" };
     const res = makeRes();
     errorHandler(new AppError("Validation failed", 422, "VALIDATION_ERROR", details), makeReq(), res, noopNext);
 
     const body = res._body as { error: Record<string, unknown> };
-    expect(body.error).not.toHaveProperty("details");
+    expect(body.error.details).toEqual({ type: "object", keys: ["field", "hint", "internalId"] });
+    expect(JSON.stringify(body)).not.toContain("Must be a valid address");
+    expect(JSON.stringify(body)).not.toContain("v-42");
   });
 
-  it("does NOT expose err.details when details is a string", () => {
+  it("redacts primitive err.details values", () => {
     const res = makeRes();
     errorHandler(new AppError("Bad request", 400, "BAD_REQUEST", "internal hint"), makeReq(), res, noopNext);
 
     const body = res._body as { error: Record<string, unknown> };
-    expect(body.error).not.toHaveProperty("details");
+    expect(body.error.details).toBe("REDACTED_DETAILS");
+    expect(JSON.stringify(body)).not.toContain("internal hint");
   });
 
-  it("does NOT expose err.details when details is an array", () => {
+  it("does not trust safe-looking keys to make arbitrary detail values safe", () => {
+    const res = makeRes();
+    errorHandler(
+      new AppError("Bad request", 400, "BAD_REQUEST", { message: "private token: abc123" }),
+      makeReq(),
+      res,
+      noopNext,
+    );
+
+    const body = res._body as { error: Record<string, unknown> };
+    expect(body.error.details).toEqual({ type: "object", keys: ["message"] });
+    expect(JSON.stringify(body)).not.toContain("private token: abc123");
+  });
+
+  it("summarizes err.details arrays without exposing their values", () => {
     const res = makeRes();
     errorHandler(
       new AppError("Multi-error", 400, "VALIDATION_ERROR", [{ field: "amount" }, { field: "currency" }]),
@@ -112,7 +128,30 @@ describe("errorHandler — AppError", () => {
     );
 
     const body = res._body as { error: Record<string, unknown> };
-    expect(body.error).not.toHaveProperty("details");
+    expect(body.error.details).toEqual({ type: "array", count: 2 });
+    expect(JSON.stringify(body)).not.toContain("amount");
+    expect(JSON.stringify(body)).not.toContain("currency");
+  });
+
+  it("does not expose details in production", () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+
+    try {
+      const res = makeRes();
+      errorHandler(
+        new AppError("Validation failed", 422, "VALIDATION_ERROR", { field: "email" }),
+        makeReq(),
+        res,
+        noopNext,
+      );
+
+      const body = res._body as { error: Record<string, unknown> };
+      expect(body.error).not.toHaveProperty("details");
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+    }
   });
 
   it("still logs details internally (summarized, not raw)", () => {

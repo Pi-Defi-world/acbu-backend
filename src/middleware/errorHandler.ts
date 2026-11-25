@@ -158,11 +158,10 @@ function sanitizeFieldErrors(value: unknown): Record<string, unknown> {
  * Sanitize `AppError.details` before it is serialized to an API client.
  *
  * Policy:
- * - Primitives (string | number | boolean) are returned as-is.
- * - Arrays keep their primitive entries and recursively sanitized objects;
- *   `undefined` entries are dropped.
- * - Flat objects are only kept when every key is in `SAFE_DETAIL_SCALAR_KEYS`
- *   and every value is a primitive (e.g. `{ path, message }`).
+ * - Primitive values are replaced with a redaction marker.
+ * - Arrays are summarized by count to avoid exposing their contents.
+ * - Unknown objects are replaced with a key summary, even when they use
+ *   otherwise safe-looking scalar keys.
  * - Validation containers (`errors`, `formErrors`, `fieldErrors`) keep their
  *   expected client-facing shape, but values deeper than a single level are
  *   dropped or redacted.
@@ -171,10 +170,8 @@ function sanitizeFieldErrors(value: unknown): Record<string, unknown> {
  */
 function sanitizeErrorDetails(details: unknown): unknown {
   if (details === null || details === undefined) return undefined;
-  if (isPrimitiveDetail(details)) return details;
-  if (Array.isArray(details)) {
-    return details.map((item) => sanitizeDetailValue(item, 1)).filter((item) => item !== undefined);
-  }
+  if (isPrimitiveDetail(details)) return REDACTED_DETAILS;
+  if (Array.isArray(details)) return { type: "array", count: details.length };
   if (typeof details !== "object") return REDACTED_DETAILS;
 
   const record = details as Record<string, unknown>;
@@ -199,19 +196,6 @@ function sanitizeErrorDetails(details: unknown): unknown {
       }
     }
     return sanitized;
-  }
-
-  // Flat, known-safe scalar objects (e.g. the JSON parse error detail).
-  if (keys.length > 0) {
-    const allSafeScalars = keys.every(
-      (key) => SAFE_DETAIL_SCALAR_KEYS.has(key) && isPrimitiveDetail(record[key]),
-    );
-    if (allSafeScalars) {
-      return keys.reduce<Record<string, unknown>>((acc, key) => {
-        acc[key] = record[key];
-        return acc;
-      }, {});
-    }
   }
 
   return redactDetailObject(record);
@@ -257,7 +241,7 @@ export const errorHandler = (
         statusCode: err.statusCode,
         // Never send raw `err.details` to clients: sanitize first so stack
         // traces, tokens and other internal state cannot leak.
-        ...(err.details ? { details: sanitizeErrorDetails(err.details) } : {}),
+        ...(exposeDetails && err.details ? { details: sanitizeErrorDetails(err.details) } : {}),
       },
     });
     return;
