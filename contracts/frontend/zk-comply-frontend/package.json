@@ -14,6 +14,7 @@
     "@noir-lang/noir_wasm": "1.0.0-beta.9",
     "@noir-lang/noirc_abi": "1.0.0-beta.9",
     "@stellar/stellar-sdk": "^13.0.0",
+    "comlink": "^4.4.2",
     "@tailwindcss/vite": "^4.3.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

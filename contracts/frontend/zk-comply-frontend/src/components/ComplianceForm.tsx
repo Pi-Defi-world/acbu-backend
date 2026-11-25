@@ -3,10 +3,9 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { useIdentity } from "../hooks/useIdentity";
 import type { Credential } from "../types";
 import {
-  loadCircuit,
-  generateProof,
   submitProof,
   ZK_COMPLY_CIRCUIT_SOURCE,
+  getProverWorker,
 } from "../sdk";
 
 const KYC_LABELS: Record<number, string> = {
@@ -372,8 +371,13 @@ function ProvingStep({
 
     (async () => {
       try {
+        // W11-AUD-010: delegate all WASM computation to the Web Worker so the
+        // main thread (and browser UI) remain responsive during the 10-30 s
+        // proving window.
+        const prover = getProverWorker();
+
         setStatus("Loading Noir circuit…");
-        await loadCircuit(ZK_COMPLY_CIRCUIT_SOURCE);
+        await prover.loadCircuit(ZK_COMPLY_CIRCUIT_SOURCE);
         if (cancelled) return;
 
         const cred: Credential = {
@@ -389,7 +393,7 @@ function ProvingStep({
         }
 
         setStatus("Generating UltraHonk ZK proof…");
-        const artifacts = await generateProof({
+        const artifacts = await prover.generateProof({
           credential: cred,
           requiredKyc,
           allowedCountry,
