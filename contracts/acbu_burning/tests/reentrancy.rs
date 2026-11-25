@@ -29,8 +29,9 @@ fn seed(ctx: &TestContext, currency: &CurrencyCode) {
 
 /// Simulate an in-flight guarded call on the burning contract.
 fn hold_guard(ctx: &TestContext) {
-    ctx.env
-        .as_contract(&ctx.burning_id, || reentrancy_guard::acquire_guard(&ctx.env));
+    ctx.env.as_contract(&ctx.burning_id, || {
+        std::mem::forget(reentrancy_guard::acquire_guard(&ctx.env));
+    });
 }
 
 fn guard_active(ctx: &TestContext) -> bool {
@@ -77,6 +78,19 @@ fn redeem_basket_rejects_reentry() {
     hold_guard(&ctx);
 
     let recipients = vec![&env, Address::generate(&env), Address::generate(&env)];
+    let res = ctx
+        .burning
+        .try_redeem_basket(&ctx.user, &recipients, &AMOUNT, &None);
+    assert_eq!(res, Err(Ok(reentrant())));
+}
+
+#[test]
+fn redeem_basket_rejects_reentry_before_validation() {
+    let env = Env::default();
+    let ctx = setup_test(&env);
+    hold_guard(&ctx);
+
+    let recipients = soroban_sdk::Vec::new(&env);
     let res = ctx
         .burning
         .try_redeem_basket(&ctx.user, &recipients, &AMOUNT, &None);

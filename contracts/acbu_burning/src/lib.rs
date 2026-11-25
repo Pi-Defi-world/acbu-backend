@@ -287,6 +287,7 @@ impl BurningContract {
         acbu_amount: i128,
         min_stokens_out: Option<Vec<i128>>,
     ) -> Vec<i128> {
+        let _guard = reentrancy_guard::acquire_guard(&env);
         Self::check_circuit(&env);
         user.require_auth();
         Self::extend_instance_ttl(&env);
@@ -446,17 +447,9 @@ impl BurningContract {
             }
         }
 
-        // W11-CAR-010 / AC-008: CEI ordering — same fix as redeem_single.
-        //
-        // check_reserves is a read-only pre-condition (Checks phase). It must
-        // run before the reentrancy guard is acquired so the critical section
-        // only covers the state-mutating external calls (Interactions phase):
-        //   acbu_client.burn  → minting notification → per-leg transfer_from.
+        // The guard acquired at entry remains held through this check and all
+        // subsequent token interactions.
         Self::check_reserves(&env, &acbu_token, &reserve_tracker_addr);
-        // Acquire the shared reentrancy guard. Because both redeem_single and
-        // redeem_basket use the same storage key, either path being active will
-        // block cross-function re-entry from a malicious token/oracle callback.
-        let _guard = reentrancy_guard::acquire_guard(&env);
 
         let acbu_client = soroban_sdk::token::Client::new(&env, &acbu_token);
         acbu_client.burn(&user, &acbu_amount);
