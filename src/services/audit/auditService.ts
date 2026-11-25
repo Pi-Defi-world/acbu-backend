@@ -1,9 +1,11 @@
 import { logger } from "../../config/logger";
 import { config } from "../../config/env";
+import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
 import { sendEmail } from "../notification";
 import { getRabbitMQChannel, QUEUES } from "../../config/rabbitmq";
+import { MessageEnvelopeSchema } from "../../types/rabbitmq-schemas";
 import { getMongoDB } from "../../config/mongodb";
 
 export interface AuditEntry {
@@ -52,21 +54,25 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Attempt to publish to RabbitMQ with exponential backoff retries.
- * Returns true on success, throws on final failure.
+ * Returns after the broker confirms the persistent message.
  */
 async function publishWithRetry(payload: AuditPayload): Promise<void> {
   let lastError: Error = new Error("Unknown error");
+  const envelope = MessageEnvelopeSchema.parse({
+    version: 1,
+    type: QUEUES.AUDIT_LOGS,
+    messageId: randomUUID(),
+    timestamp: new Date().toISOString(),
+    payload,
+  });
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const channel = getRabbitMQChannel();
-      const sent = channel.sendToQueue(QUEUES.AUDIT_LOGS, Buffer.from(JSON.stringify(payload)), {
+      channel.sendToQueue(QUEUES.AUDIT_LOGS, Buffer.from(JSON.stringify(envelope)), {
         persistent: true,
       });
-
-      if (!sent) {
-        throw new Error("RabbitMQ sendToQueue returned false");
-      }
+      await channel.waitForConfirms();
 
       logger.debug("Audit entry published to queue", {
         eventType: payload.eventType,
@@ -159,40 +165,31 @@ function alertAdmin(payload: AuditPayload, failureReason: string): void {
  * audit transport was unavailable.
  */
 export async function logAudit(entry: AuditEntry): Promise<void> {
+  const missingAttributionFields = getMissingAdminAttributionFields(entry);
+  if (missingAttributionFields.length > 0) {
+    logger.error("Admin audit entry missing required attribution fields", {
+      eventType: entry.eventType,
+      action: entry.action,
+      keyType: entry.keyType,
+      missingFields: missingAttributionFields,
+    });
+  }
+
+  const payload: AuditPayload = {
+    ...entry,
+    timestamp: new Date().toISOString(),
+    ...(missingAttributionFields.length > 0
+      ? { attributionError: `Missing required fields: ${missingAttributionFields.join(", ")}` }
+      : {}),
+  };
+
   try {
-    const missingAttributionFields = getMissingAdminAttributionFields(entry);
-    if (missingAttributionFields.length > 0) {
-      logger.error("Admin audit entry missing required attribution fields", {
-        eventType: entry.eventType,
-        action: entry.action,
-        keyType: entry.keyType,
-        missingFields: missingAttributionFields,
-      });
-    }
-
-    const payload: AuditPayload = {
-      ...entry,
-      timestamp: new Date().toISOString(),
-      ...(missingAttributionFields.length > 0
-        ? { attributionError: `Missing required fields: ${missingAttributionFields.join(", ")}` }
-        : {}),
-    };
-
-    try {
-      await publishWithRetry(payload);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      logger.error(`Audit publish failed after ${MAX_RETRIES} retries — saving to outbox`, {
-        eventType: entry.eventType,
-        error: reason,
-      });
-      await saveToOutbox(payload, reason);
-    }
+    await publishWithRetry(payload);
   } catch (err) {
-    logger.error("logAudit failed unexpectedly — audit entry may not have been recorded", {
-      eventType: entry?.eventType,
-      action: entry?.action,
-      error: err instanceof Error ? err.message : String(err),
+    const reason = err instanceof Error ? err.message : String(err);
+    logger.error(`Audit publish failed after ${MAX_RETRIES} retries — saving to outbox`, {
+      eventType: entry.eventType,
+      error: reason,
     });
     await saveToOutbox(payload, reason);
     throw err;

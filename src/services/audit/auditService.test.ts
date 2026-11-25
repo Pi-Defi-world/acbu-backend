@@ -12,6 +12,13 @@ jest.mock("../../config/rabbitmq", () => ({
   },
 }));
 
+jest.mock("../../config/env", () => ({
+  config: {
+    logFile: "/tmp/audit-test.log",
+    notification: { alertEmail: null },
+  },
+}));
+
 jest.mock("../notification", () => ({
   sendEmail: jest.fn().mockResolvedValue(undefined),
 }));
@@ -35,11 +42,13 @@ describe("AuditService Reliability (RabbitMQ)", () => {
 
   const mockChannel = {
     sendToQueue: jest.fn(),
+    waitForConfirms: jest.fn(),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     (getRabbitMQChannel as jest.Mock).mockReturnValue(mockChannel);
+    mockChannel.waitForConfirms.mockResolvedValue(undefined);
   });
 
   it("should publish to RabbitMQ successfully", async () => {
@@ -50,10 +59,31 @@ describe("AuditService Reliability (RabbitMQ)", () => {
     expect(mockChannel.sendToQueue).toHaveBeenCalledWith(QUEUES.AUDIT_LOGS, expect.any(Buffer), {
       persistent: true,
     });
+    expect(mockChannel.waitForConfirms).toHaveBeenCalled();
+    const envelope = JSON.parse((mockChannel.sendToQueue.mock.calls[0][1] as Buffer).toString());
+    expect(envelope).toEqual(
+      expect.objectContaining({
+        version: 1,
+        type: QUEUES.AUDIT_LOGS,
+        payload: expect.objectContaining({
+          eventType: entry.eventType,
+          action: entry.action,
+        }),
+      }),
+    );
     expect(logger.debug).toHaveBeenCalledWith(
       expect.stringContaining("Audit entry published to queue"),
       expect.anything(),
     );
+  });
+
+  it("should wait for broker confirmation when the channel applies backpressure", async () => {
+    mockChannel.sendToQueue.mockReturnValue(false);
+
+    await logAudit(entry);
+
+    expect(mockChannel.sendToQueue).toHaveBeenCalledTimes(1);
+    expect(mockChannel.waitForConfirms).toHaveBeenCalledTimes(1);
   });
 
   it("should record admin audit entries with missing attribution without throwing", async () => {
@@ -82,7 +112,8 @@ describe("AuditService Reliability (RabbitMQ)", () => {
     );
 
     const raw = mockChannel.sendToQueue.mock.calls[0][1] as Buffer;
-    const payload = JSON.parse(raw.toString()) as Record<string, unknown>;
+    const envelope = JSON.parse(raw.toString());
+    const payload = envelope.payload as Record<string, unknown>;
     expect(payload.attributionError).toContain("organizationId");
     expect(payload.attributionError).toContain("reason");
     expect(payload.performedBy).toBe("user-1");
@@ -106,21 +137,23 @@ describe("AuditService Reliability (RabbitMQ)", () => {
     });
   });
 
-  it("should fall back to file if publish fails (returns false)", async () => {
-    mockChannel.sendToQueue.mockReturnValue(false);
+  it("should fall back to file if the broker rejects the published message", async () => {
+    mockChannel.waitForConfirms.mockRejectedValue(new Error("Broker rejected message"));
 
     // Mock FS
     const appendFileSyncSpy = jest.spyOn(fs, "appendFileSync").mockImplementation(() => {});
     const mkdirSyncSpy = jest.spyOn(fs, "mkdirSync").mockImplementation(() => "");
     const existsSyncSpy = jest.spyOn(fs, "existsSync").mockReturnValue(true);
 
-    await expect(logAudit(entry)).rejects.toThrow("RabbitMQ sendToQueue returned false");
+    await expect(logAudit(entry)).rejects.toThrow("Broker rejected message");
 
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining("Audit publish failed after 3 retries"),
       expect.anything(),
     );
     expect(appendFileSyncSpy).toHaveBeenCalled();
+    expect(mockChannel.sendToQueue).toHaveBeenCalledTimes(3);
+    expect(mockChannel.waitForConfirms).toHaveBeenCalledTimes(3);
 
     appendFileSyncSpy.mockRestore();
     mkdirSyncSpy.mockRestore();
