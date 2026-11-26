@@ -1,5 +1,7 @@
 # W11-INC-001 — GitHub Support request template (orphaned attacker commits)
 
+> **Incident reference:** This ticket is the GitHub Support follow-up for the Wave 11 incident post-mortem and IoC runbook, documented in [`docs/security/INCIDENT_RESPONSE_WAVE11.md`](../security/INCIDENT_RESPONSE_WAVE11.md) (tracked as W11-INC-013). Attach the purge verification output from that report when filing, and cross-reference the report's attacker timeline and affected SHAs in any follow-up correspondence with auditors or Stellar Wave reviewers.
+
 ## Status
 
 The source repositories were purged locally with `git-filter-repo` and the

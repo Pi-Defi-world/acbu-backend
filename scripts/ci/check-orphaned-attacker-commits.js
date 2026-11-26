@@ -15,6 +15,8 @@
  * Report-only by default. `--fail` makes the process exit non-zero when any
  * listed SHA is still fetchable, for use as a temporary verification gate
  * after GitHub Support confirms the garbage collection.
+ *
+ * Incident post-mortem: docs/security/INCIDENT_RESPONSE_WAVE11.md
  */
 
 const { execFileSync } = require("node:child_process");
