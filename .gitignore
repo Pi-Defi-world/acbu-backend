@@ -9,9 +9,6 @@ build/
 *.tsbuildinfo
 
 # Environment variables
-.env
-.env.production
-.env.local
 .env.*.local
 
 # Logs
@@ -26,7 +23,6 @@ coverage/
 .nyc_output/
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -53,3 +49,4 @@ audit/reports/*.log
 !audit/reports/*.txt
 !audit/reports/*.json
 !audit/reports/last-run.txt
+config.bat
