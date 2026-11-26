@@ -48,18 +48,23 @@ const nextConfig = {
   poweredByHeader: false,
 
   /**
-   * Security headers — W10-F-010
+   * Security headers — W10-F-010 / W11-AUD-005 (Issue #1408)
    *
-   * Applied to every response via the `headers()` hook below.  The CSP is
+   * Applied to every response via the `headers()` hook below. The CSP is
    * intentionally strict and reports violations to the existing
    * /api/csp-report endpoint (W2-F-036) so the endpoint is no longer dead.
    *
-   * Notes:
-   *   - 'unsafe-inline' is required for Next.js' inline bootstrap scripts
-   *     and styled-jsx; tighten with nonces once the app is migrated.
-   *   - 'unsafe-eval' is only enabled in development for React Refresh.
-   *   - connect-src includes the API origin so XHR/fetch to the backend
-   *     is permitted without opening the policy to arbitrary hosts.
+   * Headers configured:
+   *   - Content-Security-Policy: restrictive directives including frame-ancestors 'none',
+   *     strict default-src/script-src/connect-src, and isolated workers/wasm.
+   *   - X-Frame-Options: DENY to prevent clickjacking in legacy browsers.
+   *   - X-Content-Type-Options: nosniff to stop MIME-type sniffing.
+   *   - Strict-Transport-Security: 2-year HSTS with includeSubDomains and preload.
+   *   - Referrer-Policy: strict-origin-when-cross-origin.
+   *   - Permissions-Policy: restrictive device API permissions.
+   *   - X-DNS-Prefetch-Control: on.
+   *   - Cross-Origin-Opener-Policy: same-origin-allow-popups.
+   *   - Cross-Origin-Resource-Policy: same-origin.
    */
   async headers() {
     const isDev = process.env.NODE_ENV !== 'production';
@@ -77,7 +82,7 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''} https://*.sentry.io https://crs.aztec.network`,
+      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''} https://*.sentry.io https://crs.aztec.network https://*.stellar.org https://*.soroban-rpc.com https://*.vercel-analytics.com${isDev ? " ws://localhost:*" : ''}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -105,6 +110,18 @@ const nextConfig = {
       {
         key: 'Strict-Transport-Security',
         value: 'max-age=63072000; includeSubDomains; preload',
+      },
+      {
+        key: 'X-DNS-Prefetch-Control',
+        value: 'on',
+      },
+      {
+        key: 'Cross-Origin-Opener-Policy',
+        value: 'same-origin-allow-popups',
+      },
+      {
+        key: 'Cross-Origin-Resource-Policy',
+        value: 'same-origin',
       },
     ];
 
