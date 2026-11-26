@@ -13,6 +13,7 @@ soroban-sdk = { workspace = true }
 shared = { path = "../shared" }
 
 [dev-dependencies]
+proptest = "1.11.0"
 soroban-sdk = { workspace = true, features = ['testutils'] }
 
 [lints]
