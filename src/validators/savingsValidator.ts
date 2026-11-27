@@ -16,7 +16,7 @@ const termSecondsSchema = z.coerce
 const amountStringSchema = z
   .string({ required_error: "Amount is required" })
   .min(1, "Amount cannot be empty")
-  .regex(/^[0-9]+(?:\.[0-9]+)?$/, "Amount must be a decimal string");
+  .regex(/^[1-9]\d*$/, "Amount must be a positive integer in smallest units");
 
 export const savingsDepositSchema = z.object({
   body: z.object({
