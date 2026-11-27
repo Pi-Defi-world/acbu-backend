@@ -201,8 +201,12 @@ impl Escrow {
             .unwrap_or_else(|| env.panic_with_error(EscrowError::EscrowNotFound))
     }
 
-    /// Create escrow: payer deposits ACBU, payee can claim after release
-    /// Escrow ID is unique per payer and provided by caller to prevent collisions
+    /// Create escrow: payer deposits ACBU, payee can receive upon release.
+    /// Escrow ID is unique per payer and provided by caller to prevent collisions.
+    ///
+    /// W11-CAR-031 / Issue #1384: Requires authorization only from the payer.
+    /// The payee does not need to pre-authorize or pre-sign escrow creation when
+    /// funds are being deposited in their favor.
     pub fn create(env: Env, payer: Address, payee: Address, amount: i128, escrow_id: u64) {
         // Re-entrancy guard
         let _guard = reentrancy_guard::acquire_guard(&env);
@@ -216,7 +220,6 @@ impl Escrow {
             env.panic_with_error(EscrowError::SelfEscrow);
         }
         payer.require_auth();
-        payee.require_auth();
         let key = EscrowId(payer.clone(), escrow_id);
 
         if env.storage().temporary().has(&key) {
