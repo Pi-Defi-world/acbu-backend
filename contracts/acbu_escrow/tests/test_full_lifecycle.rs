@@ -130,3 +130,32 @@ fn test_adversarial_release_by_non_payer_fails() {
     let result = client.try_release(&escrow_id, &payer);
     assert!(result.is_err(), "Release without payer auth must fail");
 }
+
+#[test]
+fn test_create_requires_only_payer_auth() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let payee = Address::generate(&env);
+    let escrow_id = 99u64;
+    let amount = 10_000_000i128;
+
+    let acbu_token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &acbu_token);
+    env.mock_all_auths();
+    token_admin.mint(&payer, &amount);
+
+    let contract_id = env.register_contract(None, Escrow);
+    let client = EscrowClient::new(&env, &contract_id);
+
+    client.initialize(&admin, &acbu_token);
+    client.create(&payer, &payee, &amount, &escrow_id);
+
+    let (stored_payer, stored_payee, stored_amount) = client.get_escrow(&payer, &escrow_id);
+    assert_eq!(stored_payer, payer);
+    assert_eq!(stored_payee, payee);
+    assert_eq!(stored_amount, amount);
+}
+
