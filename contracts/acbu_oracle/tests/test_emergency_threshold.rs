@@ -41,7 +41,7 @@ const EMERGENCY_VOTE_TTL: u64 = 3_600;
 fn make_ledger(timestamp: u64, seq: u32) -> LedgerInfo {
     LedgerInfo {
         timestamp,
-        protocol_version: 20,
+        protocol_version: 21,
         sequence_number: seq,
         network_id: Default::default(),
         base_reserve: 10,

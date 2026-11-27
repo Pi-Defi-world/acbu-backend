@@ -1,5 +1,10 @@
 import { Decimal } from "@prisma/client/runtime/library";
-import { depositFromBasketCurrency, mintFromUsdc, confirmMint, verifyMintConfirmationSignature } from "./mintController";
+import {
+  depositFromBasketCurrency,
+  mintFromUsdc,
+  confirmMint,
+  verifyMintConfirmationSignature,
+} from "./mintController";
 import { prisma } from "../config/database";
 import { AppError } from "../middleware/errorHandler";
 import { assertUserWalletAddress } from "../services/wallet/walletService";
@@ -55,7 +60,13 @@ jest.mock("../config/env", () => ({
     // factories are hoisted before const declarations, so MINT_CONFIRM_SECRET
     // cannot be referenced here.
     mint: { confirmationSecret: "test-mint-confirmation-secret-xyz" },
-    mtnMomo: { subscriptionKey: "", apiUserId: "", apiKey: "", baseUrl: "", targetEnvironment: "sandbox" },
+    mtnMomo: {
+      subscriptionKey: "",
+      apiUserId: "",
+      apiKey: "",
+      baseUrl: "",
+      targetEnvironment: "sandbox",
+    },
     fintech: { currencyProviders: {} },
     stellar: {
       network: "testnet",
@@ -78,7 +89,15 @@ jest.mock("../config/env", () => ({
       government: { depositDailyUsd: 500000, depositMonthlyUsd: 5000000 },
       circuitBreaker: { reserveWeightThresholdPct: 10, minReserveRatio: 1.02 },
     },
-    contracts: { oracle: "", reserveTracker: "", minting: "", burning: "", savingsVault: "", lendingPool: "", escrow: "" },
+    contracts: {
+      oracle: "",
+      reserveTracker: "",
+      minting: "",
+      burning: "",
+      savingsVault: "",
+      lendingPool: "",
+      escrow: "",
+    },
   },
 }));
 
@@ -318,7 +337,7 @@ describe("mintController", () => {
           permissions: [],
           rateLimit: 100,
         },
-        get: jest.fn().mockReturnValue("repeat-key"),
+        get: jest.fn().mockReturnValue("f47ac10b-58cc-4372-a567-0e02b2c3d479"),
         body: {
           currency: "NGN",
           amount: "100",
@@ -330,12 +349,61 @@ describe("mintController", () => {
     );
 
     expect(mockedTransactionCreate).not.toHaveBeenCalled();
+    expect(mockedTransactionFindFirst).toHaveBeenCalledWith({
+      where: {
+        idempotencyKey: {
+          in: [
+            "user-1:deposit:v2:[\"client\",null,\"100\",\"f47ac10b-58cc-4372-a567-0e02b2c3d479\"]",
+          ],
+        },
+      },
+    });
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         transaction_id: "tx-duplicate",
         status: "pending",
       }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("recovers a matching legacy deposit before rejecting a non-UUID idempotency key", async () => {
+    mockedTransactionFindFirst.mockResolvedValue({
+      id: "tx-legacy",
+      status: "pending",
+      localCurrency: "NGN",
+      localAmount: { toString: () => "100" },
+    });
+
+    const res = makeRes();
+    const next = makeNext();
+    await depositFromBasketCurrency(
+      {
+        apiKey: {
+          id: "key-1",
+          userId: "user-1",
+          organizationId: null,
+          permissions: [],
+          rateLimit: 100,
+        },
+        get: jest.fn().mockReturnValue("legacy-request-key"),
+        body: {
+          currency: "NGN",
+          amount: "100",
+          wallet_address: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        },
+      } as unknown as AuthRequest,
+      res,
+      next,
+    );
+
+    expect(mockedTransactionFindFirst).toHaveBeenCalledWith({
+      where: { idempotencyKey: { in: ["user-1:legacy-request-key"] } },
+    });
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ transaction_id: "tx-legacy" }),
     );
     expect(next).not.toHaveBeenCalled();
   });
@@ -384,7 +452,12 @@ describe("mintController", () => {
 /** Build a correctly-signed mint-confirmation request for tests. */
 function makeMintConfirmRequest(
   body: Record<string, unknown>,
-  overrides: { secret?: string; timestamp?: number; skipTimestamp?: boolean; skipSignature?: boolean } = {},
+  overrides: {
+    secret?: string;
+    timestamp?: number;
+    skipTimestamp?: boolean;
+    skipSignature?: boolean;
+  } = {},
 ): Request & { rawBody?: Buffer } {
   const secret = overrides.secret ?? MINT_CONFIRM_SECRET;
   const ts = overrides.timestamp ?? Math.floor(Date.now() / 1000);
@@ -426,7 +499,9 @@ describe("verifyMintConfirmationSignature middleware", () => {
     const res = makeRes();
     const next = makeNext();
 
-    expect(() => verifyMintConfirmationSignature(req as Request, res, next)).toThrow("Missing x-mint-signature header");
+    expect(() => verifyMintConfirmationSignature(req as Request, res, next)).toThrow(
+      "Missing x-mint-signature header",
+    );
   });
 
   it("rejects when x-mint-timestamp header is missing", () => {
@@ -434,7 +509,9 @@ describe("verifyMintConfirmationSignature middleware", () => {
     const res = makeRes();
     const next = makeNext();
 
-    expect(() => verifyMintConfirmationSignature(req as Request, res, next)).toThrow("Missing x-mint-timestamp header");
+    expect(() => verifyMintConfirmationSignature(req as Request, res, next)).toThrow(
+      "Missing x-mint-timestamp header",
+    );
   });
 
   it("rejects when signature is computed with wrong secret", () => {
@@ -442,7 +519,9 @@ describe("verifyMintConfirmationSignature middleware", () => {
     const res = makeRes();
     const next = makeNext();
 
-    expect(() => verifyMintConfirmationSignature(req as Request, res, next)).toThrow("Invalid mint confirmation signature");
+    expect(() => verifyMintConfirmationSignature(req as Request, res, next)).toThrow(
+      "Invalid mint confirmation signature",
+    );
   });
 
   it("rejects when timestamp is outside tolerance window", () => {
@@ -478,10 +557,12 @@ describe("confirmMint controller", () => {
     });
     (prisma.transaction.update as jest.Mock).mockResolvedValue({ id: "tx-confirm-1" });
 
-    const mintFromBasket = jest.requireMock("../services/contracts").acbuMintingService.mintFromBasket;
+    const mintFromBasket =
+      jest.requireMock("../services/contracts").acbuMintingService.mintFromBasket;
     mintFromBasket.mockResolvedValue({ transactionHash: "deadbeef", acbuAmount: "10" });
 
-    const mockedConvertLocalToUsdWithPrecision = jest.requireMock("../services/rates").convertLocalToUsdWithPrecision as jest.Mock;
+    const mockedConvertLocalToUsdWithPrecision = jest.requireMock("../services/rates")
+      .convertLocalToUsdWithPrecision as jest.Mock;
     mockedConvertLocalToUsdWithPrecision.mockResolvedValue({
       usdAmount: 100,
       originalAmount: new Decimal("1000"),
@@ -522,7 +603,8 @@ describe("confirmMint controller", () => {
       blockchainTxHash: "abc123",
     });
 
-    const mintFromBasket = jest.requireMock("../services/contracts").acbuMintingService.mintFromBasket;
+    const mintFromBasket =
+      jest.requireMock("../services/contracts").acbuMintingService.mintFromBasket;
     const req = makeMintConfirmRequest(CONFIRM_BODY);
     const res = makeRes();
     const next = makeNext();

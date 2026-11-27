@@ -70,17 +70,51 @@ function appendStatementTimeout(url: string, timeoutMs: number): string {
   }
 }
 
+// W11-AUD-012: Inject connection_limit into a direct PostgreSQL URL unless the
+// caller has already set it explicitly.  Prisma's implicit default is 10, which
+// is exhausted during concurrent webhook ingestion bursts where connections are
+// held while awaiting external partner responses, starving all other routes.
+// Configurable at runtime via DB_CONNECTION_LIMIT (default 50).
+// When Prisma Accelerate is active the proxy manages its own pool and this
+// parameter is intentionally not injected into the prisma:// URL.
+function appendConnectionLimit(url: string, limit: number): string {
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("connection_limit")) {
+      u.searchParams.set("connection_limit", String(limit));
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 function resolveDatabaseUrls(): { runtimeUrl: string; replicaUrl: string; useAccelerate: boolean } {
   const configuredDatabaseUrl = process.env.DATABASE_URL || config.databaseUrl;
   const configuredAccelerateUrl = process.env.PRISMA_ACCELERATE_URL || config.prismaAccelerateUrl;
   const configuredReplicaUrl = process.env.DATABASE_URL_REPLICA || config.databaseUrlReplica || "";
 
   const latestStatementTimeoutMs = parseInt(process.env.DB_STATEMENT_TIMEOUT_MS ?? "9000", 10);
+  // W11-AUD-012: raise pool from implicit default of 10 to 50 for direct connections.
+  const connectionLimit = parseInt(process.env.DB_CONNECTION_LIMIT ?? "50", 10);
   const useAccelerate = Boolean(configuredAccelerateUrl);
+
+  // For direct connections, inject both statement_timeout and connection_limit.
+  // Accelerate manages its own pool so we pass the prisma:// URL unmodified.
   const runtimeUrl = useAccelerate
     ? configuredAccelerateUrl!
-    : appendStatementTimeout(configuredDatabaseUrl, latestStatementTimeoutMs);
-  const replicaUrl = configuredReplicaUrl || runtimeUrl;
+    : appendConnectionLimit(
+        appendStatementTimeout(configuredDatabaseUrl, latestStatementTimeoutMs),
+        connectionLimit,
+      );
+
+  // Apply the same connection params to the replica URL when it is a direct URL.
+  const replicaUrl = configuredReplicaUrl
+    ? appendConnectionLimit(
+        appendStatementTimeout(configuredReplicaUrl, latestStatementTimeoutMs),
+        connectionLimit,
+      )
+    : runtimeUrl;
 
   return { runtimeUrl, replicaUrl, useAccelerate };
 }

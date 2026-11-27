@@ -11,6 +11,7 @@
 - [ ] `pnpm run build`
 - [ ] `pnpm test`
 - [ ] `pnpm lint`
+- [ ] Every commit in this PR is signed and shows as **Verified** on GitHub
 
 ## Links
 - Issue(s): #

@@ -7,6 +7,10 @@ import {
 } from "./limitsService";
 import { prisma } from "../../config/database";
 
+jest.mock("../../utils/priceUtils", () => ({
+  getAcbuUsdRate: jest.fn().mockResolvedValue(new Decimal("1")),
+}));
+
 jest.mock("../../config/database", () => ({
   prisma: {
     transaction: { aggregate: jest.fn() },

@@ -4,15 +4,17 @@ import { contractClient, ContractClient } from "../stellar/contractClient";
 import { stellarClient } from "../stellar/client";
 import { logger } from "../../config/logger";
 import type { TransactionStatus } from "../../utils/transactionStateMachine";
+import { assertValidRecipientAccount } from "../../utils/stellar";
 
 /**
  * Status written to `transactions.status` when an on-chain mint fails and the
  * linked transaction has to be compensated.
  *
- * Must be lowercase and a member of `TransactionStatus`: the
- * `chk_transactions_status` CHECK constraint only allows that set, and every
- * other writer in the codebase (bills, fiat, enterprise, …) already uses the
- * lowercase form.
+ * Must be lowercase and a member of `TransactionStatus`: every other writer in
+ * the codebase (bills, fiat, enterprise, …) already uses the lowercase form,
+ * and the `transactions.status` CHECK constraint only allows that set. The
+ * previous `"FAILED"` value was not a valid transaction status, so it was
+ * silently invisible to status-based queries and to the state machine.
  */
 const COMPENSATION_STATUS: TransactionStatus = "failed";
 
@@ -82,6 +84,22 @@ export class MintingService {
     this.contractClient = contractClient;
   }
 
+  private async markTransactionFailed(params: CompensationParams): Promise<void> {
+    const txId = params.txId;
+    if (!txId) {
+      return;
+    }
+    try {
+      await prisma.transaction.update({
+        where: { id: txId },
+        data: { status: COMPENSATION_STATUS },
+      });
+      logger.info(`Compensated: Marked transaction ${txId} as ${COMPENSATION_STATUS}`);
+    } catch (dbError) {
+      logger.error("CRITICAL: DB compensation failed", { txId, dbError });
+    }
+  }
+
   /**
    * Mark the transaction behind a failed on-chain mint as failed.
    *
@@ -113,6 +131,7 @@ export class MintingService {
   }> {
     try {
       logger.info("Minting ACBU from USDC", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
@@ -162,6 +181,7 @@ export class MintingService {
   }> {
     try {
       logger.info("Minting ACBU from basket", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
@@ -211,6 +231,7 @@ export class MintingService {
   }> {
     try {
       logger.info("Minting ACBU from single S-token", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
@@ -262,6 +283,7 @@ export class MintingService {
   }> {
     try {
       logger.info("Minting ACBU from custodial demo fiat", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {
@@ -308,6 +330,7 @@ export class MintingService {
   }> {
     try {
       logger.info("admin_drip_demo_fiat", params);
+      assertValidRecipientAccount(params.recipient);
 
       const sourceAccount = stellarClient.getKeypair()?.publicKey();
       if (!sourceAccount) {

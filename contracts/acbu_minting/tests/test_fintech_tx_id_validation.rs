@@ -25,9 +25,8 @@ use ed25519_dalek::{Signer, SigningKey};
 use rand::rngs::OsRng;
 use shared::{CurrencyCode, DECIMALS};
 use soroban_sdk::{
-    contract, contractimpl, symbol_short,
     testutils::Address as _,
-    Address, Bytes, BytesN, Env, String as SorobanString, Vec,
+    Address, Bytes, BytesN, Env, String as SorobanString,
 };
 use soroban_sdk::xdr::ToXdr;
 
@@ -35,6 +34,7 @@ use soroban_sdk::xdr::ToXdr;
 
 mod oracle_mock {
     use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
+    use soroban_sdk::testutils::Address as _;
 
     use shared::CurrencyCode;
     use super::DECIMALS;
@@ -150,10 +150,10 @@ impl Harness {
     /// Build a valid `FiatSettlementProof` for the given tx_id and amount.
     fn make_proof(&self, tx_id: &SorobanString, fiat_amount: i128, currency: &CurrencyCode) -> FiatSettlementProof {
         let mut preimage = Bytes::new(&self.env);
-        preimage.append(&tx_id.to_xdr(&self.env));
-        preimage.append(&self.recipient.to_xdr(&self.env));
+        preimage.append(&tx_id.clone().to_xdr(&self.env));
+        preimage.append(&self.recipient.clone().to_xdr(&self.env));
         preimage.append(&fiat_amount.to_xdr(&self.env));
-        preimage.append(&currency.to_xdr(&self.env));
+        preimage.append(&currency.clone().to_xdr(&self.env));
         preimage.append(&self.env.ledger().timestamp().to_xdr(&self.env));
 
         let digest = self.env.crypto().sha256(&preimage);

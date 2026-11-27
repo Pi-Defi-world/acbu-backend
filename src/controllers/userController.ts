@@ -463,7 +463,7 @@ export async function getReceive(
     if (!user) throw new AppError("User not found", 404);
     const alias = user.username
       ? `@${user.username}`
-      : (user.phoneE164 ?? user.email ?? userId.slice(0, 8));
+      : user.phoneE164 ?? user.email ?? userId.slice(0, 8);
     const pay_uri = `acbu:${alias}`;
     res.json({ alias, pay_uri });
   } catch (e) {
@@ -490,7 +490,7 @@ export async function getReceiveQrcode(
     if (!user) throw new AppError("User not found", 404);
     const alias = user.username
       ? `@${user.username}`
-      : (user.phoneE164 ?? user.email ?? userId.slice(0, 8));
+      : user.phoneE164 ?? user.email ?? userId.slice(0, 8);
     const pay_uri = `acbu:${alias}`;
     const QRCode = await import("qrcode");
     const qr_data_url = await QRCode.toDataURL(pay_uri, {

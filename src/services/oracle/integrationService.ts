@@ -119,7 +119,8 @@ export async function fetchAndStoreRates(): Promise<void> {
         logger.warn("Oracle: fintech rate failed", { currency, error: e });
       }
 
-      forexRate = await fetchForexRateUsd(currency);
+      // W11-AUD-004: trigger immediate refresh for on-chain rate updates
+      forexRate = await fetchForexRateUsd(currency, { forceRefresh: true });
       worldBankRate = await fetchWorldBankRate(currency);
 
       const sources = [centralBankRate, fintechRate, forexRate, worldBankRate].filter(
@@ -227,7 +228,7 @@ export async function fetchAndStoreRates(): Promise<void> {
             sources: sourcesForContract,
             timestamp: timestampUnix,
           });
-          logger.info("Oracle: rate updated on-chain", {
+          logger.info("Oracle: validator rate submitted on-chain", {
             currency,
             rate: rate7,
           });

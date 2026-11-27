@@ -55,7 +55,9 @@ export function decryptField(encrypted: string, key: Buffer): string {
   const tag = Buffer.from(tagHex, "hex");
   const ciphertext = Buffer.from(ciphertextB64, "base64");
 
-  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  const decipher = createDecipheriv(ALGORITHM, key, iv, {
+    authTagLength: TAG_BYTES,
+  });
   decipher.setAuthTag(tag.slice(0, TAG_BYTES));
   return decipher.update(ciphertext).toString("utf8") + decipher.final().toString("utf8");
 }

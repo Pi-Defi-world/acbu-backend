@@ -226,9 +226,25 @@ impl BurningContract {
             }
         }
 
-        // AC-008: same guard as redeem_basket around the value-moving calls.
-        let _guard = reentrancy_guard::acquire_guard(&env);
+        // W11-CAR-010 / AC-008: CEI ordering — Checks before Interactions.
+        //
+        // check_reserves performs two cross-contract reads (token total supply +
+        // reserve tracker query). These are pure reads with no side-effects, so
+        // they belong in the Checks phase, executed BEFORE the reentrancy lock is
+        // acquired. Placing them inside the guarded section would mean the lock is
+        // held during the reserve-tracker call, which is an unnecessary extension
+        // of the critical section and obscures the security invariant.
+        //
+        // Order enforced here:
+        //   1. Checks  — oracle freshness, rate validity, slippage, reserve ratio
+        //   2. Lock     — acquire reentrancy guard (blocks cross-contract re-entry)
+        //   3. Effects  — (none; burning contract holds no mutable per-user state)
+        //   4. Interactions — acbu burn, minting notification, s-token transfer
         Self::check_reserves(&env, &acbu_token, &reserve_tracker_addr);
+        // AC-008 / W11-CAR-010: guard must be held across ALL external token
+        // calls — identical to redeem_basket. A single shared key means either
+        // path being active blocks cross-function re-entry.
+        let _guard = reentrancy_guard::acquire_guard(&env);
 
         let acbu_client = soroban_sdk::token::Client::new(&env, &acbu_token);
         acbu_client.burn(&user, &acbu_amount);
@@ -271,6 +287,7 @@ impl BurningContract {
         acbu_amount: i128,
         min_stokens_out: Option<Vec<i128>>,
     ) -> Vec<i128> {
+        let _guard = reentrancy_guard::acquire_guard(&env);
         Self::check_circuit(&env);
         user.require_auth();
         Self::extend_instance_ttl(&env);
@@ -430,7 +447,8 @@ impl BurningContract {
             }
         }
 
-        let _guard = reentrancy_guard::acquire_guard(&env);
+        // The guard acquired at entry remains held through this check and all
+        // subsequent token interactions.
         Self::check_reserves(&env, &acbu_token, &reserve_tracker_addr);
 
         let acbu_client = soroban_sdk::token::Client::new(&env, &acbu_token);

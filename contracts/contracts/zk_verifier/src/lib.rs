@@ -32,7 +32,7 @@
 //! satisfy both circuit constraints and get a "valid" proof with zero real KYC.
 //!
 //! This implementation adds an admin-controlled `PolicyParams` value stored in
-//! contract instance storage.  During `verify()` the contract independently
+//! contract instance storage.  During `verify_proof()` the contract independently
 //! reads its own stored policy and enforces:
 //!
 //! * `public_inputs[0]` (min_tier)     **≥** `policy.min_tier`
@@ -40,7 +40,7 @@
 //!
 //! A prover cannot satisfy these checks by supplying their own values: the
 //! policy is immutable from the prover's perspective and may only be changed
-//! by the admin via `set_policy`.  Until a policy is set `verify()` rejects
+//! by the admin via `set_policy`.  Until a policy is set `verify_proof()` rejects
 //! all proofs.
 
 use shared::ContractError;
@@ -83,7 +83,9 @@ const VERIFICATION_VALIDITY_LEDGERS: u32 = 1_051_200; // ~60 days
 /// |   3   | `daily_cap`           | Per-tier daily cap                       |
 /// |   4   | `already_used`        | Already consumed in current daily window |
 /// |   5   | `wallet_address_hash` | sha256(wallet_xdr)[0..16] as u128 (AZ-032) |
-const MAX_PUBLIC_INPUTS_LEN: u32 = 6;
+/// |   6   | `risk_score`          | Prover risk score (optional on-chain threshold) |
+const MIN_PUBLIC_INPUTS_LEN: u32 = 6;
+const MAX_PUBLIC_INPUTS_LEN: u32 = 7;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -106,6 +108,9 @@ pub struct PolicyParams {
     /// The prover's `country_code` in `public_inputs[1]` must equal this
     /// exactly; any other country is denied at the contract level.
     pub allowed_country: u128,
+    /// Maximum allowed risk score (e.g. 0-100). Proofs with risk score
+    /// exceeding this threshold are rejected on-chain (#1358).
+    pub max_risk_score: u128,
 }
 
 /// On-chain record created for each successfully verified wallet.
@@ -142,6 +147,7 @@ pub struct VerificationRevokedEvent {
 pub struct PolicyUpdatedEvent {
     pub min_tier: u128,
     pub allowed_country: u128,
+    pub max_risk_score: u128,
 }
 
 // ---------------------------------------------------------------------------
@@ -155,8 +161,10 @@ pub enum DataKey {
     Admin,
     /// Whether the contract is paused.
     Paused,
-    /// AZ-001: on-chain compliance policy (min_tier + allowed_country).
+    /// AZ-001: on-chain compliance policy (min_tier + allowed_country + max_risk_score).
     Policy,
+    /// Persistent nullifier registry entry (#1356).
+    Nullifier(BytesN<32>),
     /// Spent nullifier — keyed per (commitment, nullifier) pair.
     ///
     /// Stored in *persistent* storage so entries expire individually via TTL
@@ -192,7 +200,7 @@ impl ZkVerifier {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
-        // Policy starts unconfigured — `verify()` rejects all proofs until
+        // Policy starts unconfigured — `verify_proof()` rejects all proofs until
         // the admin calls `set_policy`.  This prevents the zero-KYC bypass
         // window that would otherwise exist between deployment and policy setup.
         Self::extend_instance_ttl(&env);
@@ -212,12 +220,13 @@ impl ZkVerifier {
     /// exactly 0 in that case.
     ///
     /// AZ-001: these values are stored on-chain and enforced server-side in
-    /// `verify()`, so the prover cannot choose weaker values.
-    pub fn set_policy(env: Env, min_tier: u128, allowed_country: u128) {
+    /// `verify_proof()`, so the prover cannot choose weaker values.
+    pub fn set_policy(env: Env, min_tier: u128, allowed_country: u128, max_risk_score: u128) {
         Self::check_admin(&env);
         let policy = PolicyParams {
             min_tier,
             allowed_country,
+            max_risk_score,
         };
         env.storage().instance().set(&DataKey::Policy, &policy);
         env.events().publish(
@@ -225,6 +234,25 @@ impl ZkVerifier {
             PolicyUpdatedEvent {
                 min_tier,
                 allowed_country,
+                max_risk_score,
+            },
+        );
+        Self::extend_instance_ttl(&env);
+    }
+
+    /// Update the maximum allowed risk score threshold in the compliance policy (#1358).
+    pub fn set_risk_threshold(env: Env, max_risk_score: u128) {
+        Self::check_admin(&env);
+        let mut policy = Self::get_policy(env.clone())
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::PolicyNotConfigured));
+        policy.max_risk_score = max_risk_score;
+        env.storage().instance().set(&DataKey::Policy, &policy);
+        env.events().publish(
+            (symbol_short!("pol_set"),),
+            PolicyUpdatedEvent {
+                min_tier: policy.min_tier,
+                allowed_country: policy.allowed_country,
+                max_risk_score: policy.max_risk_score,
             },
         );
         Self::extend_instance_ttl(&env);
@@ -244,7 +272,7 @@ impl ZkVerifier {
     /// `poseidon2(kyc_level, country_code, salt)` — derived from the
     /// authority's **own** verified records, never from user-claimed values.
     ///
-    /// Only attested commitments are accepted by `verify`, so an unverified
+    /// Only attested commitments are accepted by `verify_proof`, so an unverified
     /// user can no longer claim an arbitrary `kyc_level` and produce a valid
     /// proof about a self-asserted credential.
     pub fn register_commitment(env: Env, commitment: BytesN<32>) {
@@ -316,7 +344,7 @@ impl ZkVerifier {
     ///
     /// `public_inputs[5]` must equal the first 16 bytes of `sha256(wallet_xdr)`
     /// interpreted as a little-endian `u128`.
-    pub fn verify(
+    pub fn verify_proof(
         env: Env,
         wallet: Address,
         nullifier: BytesN<32>,
@@ -326,8 +354,8 @@ impl ZkVerifier {
         wallet.require_auth();
         Self::assert_not_paused(&env);
 
-        // AZ-007: Enforce exact bound on public_inputs length.
-        if public_inputs.len() != MAX_PUBLIC_INPUTS_LEN {
+        // AZ-007: Enforce bound on public_inputs length (6 without risk score, 7 with risk score).
+        if public_inputs.len() < MIN_PUBLIC_INPUTS_LEN || public_inputs.len() > MAX_PUBLIC_INPUTS_LEN {
             panic_with_error!(&env, ContractError::InvalidPublicInputsLength);
         }
 
@@ -370,6 +398,16 @@ impl ZkVerifier {
             panic_with_error!(&env, ContractError::CountryNotAllowed);
         }
 
+        // AZ-001 / #1358: Enforce maximum risk score threshold on-chain.
+        // If public_inputs includes a risk score (index 6), assert it does not
+        // exceed the policy's configured max_risk_score.
+        if public_inputs.len() >= 7 {
+            let prover_risk_score: u128 = public_inputs.get_unchecked(6);
+            if prover_risk_score > policy.max_risk_score {
+                panic_with_error!(&env, ContractError::RiskScoreTooHigh);
+            }
+        }
+
         // AZ-002: Reject proofs whose commitment was never attested.
         if !env
             .storage()
@@ -379,16 +417,29 @@ impl ZkVerifier {
             panic_with_error!(&env, ContractError::CommitmentNotAttested);
         }
 
-        // Reject replayed nullifiers for this commitment.
+        // Reject replayed nullifiers across persistent registry (#1356).
         if env
             .storage()
             .persistent()
-            .has(&DataKey::ScopedNullifier(commitment.clone(), nullifier.clone()))
+            .has(&DataKey::Nullifier(nullifier.clone()))
+            || env
+                .storage()
+                .persistent()
+                .has(&DataKey::ScopedNullifier(commitment.clone(), nullifier.clone()))
         {
             panic_with_error!(&env, ContractError::NullifierAlreadySpent);
         }
 
-        // Record the nullifier in persistent storage (AZ-014).
+        // Record the nullifier in persistent storage (AZ-014 / #1356).
+        env.storage()
+            .persistent()
+            .set(&DataKey::Nullifier(nullifier.clone()), &true);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Nullifier(nullifier.clone()),
+            NULLIFIER_TTL_THRESHOLD,
+            NULLIFIER_TTL_LEDGERS,
+        );
+
         env.storage()
             .persistent()
             .set(&DataKey::ScopedNullifier(commitment.clone(), nullifier.clone()), &true);
@@ -430,6 +481,17 @@ impl ZkVerifier {
         Self::extend_instance_ttl(&env);
     }
 
+    /// Backwards-compatible alias for `verify_proof`.
+    pub fn verify(
+        env: Env,
+        wallet: Address,
+        nullifier: BytesN<32>,
+        commitment: BytesN<32>,
+        public_inputs: Vec<u128>,
+    ) {
+        Self::verify_proof(env, wallet, nullifier, commitment, public_inputs);
+    }
+
     // ── Read helpers ────────────────────────────────────────────────────────
 
     /// Returns `true` only while `wallet` has a non-expired verification.
@@ -441,6 +503,11 @@ impl ZkVerifier {
             .is_some_and(|record| env.ledger().sequence() < record.expires_at_ledger)
     }
 
+    /// Short alias for `is_verified` expected by gates and external contracts (#1356).
+    pub fn is_v(env: Env, wallet: Address) -> bool {
+        Self::is_verified(env, wallet)
+    }
+
     /// Return the current verification record when it is still valid.
     pub fn verification(env: Env, wallet: Address) -> Option<VerificationRecord> {
         let key = DataKey::Verified(wallet);
@@ -448,6 +515,18 @@ impl ZkVerifier {
             .persistent()
             .get::<_, VerificationRecord>(&key)
             .filter(|record| env.ledger().sequence() < record.expires_at_ledger)
+    }
+
+    /// Returns `true` if `nullifier` has already been recorded in the persistent nullifier registry (#1356).
+    pub fn is_nullifier_used(env: Env, nullifier: BytesN<32>) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::Nullifier(nullifier))
+    }
+
+    /// Alias for `is_nullifier_used` (#1356).
+    pub fn used(env: Env, nullifier: BytesN<32>) -> bool {
+        Self::is_nullifier_used(env, nullifier)
     }
 
     /// Returns `true` if `nullifier` has already been spent for `commitment`.

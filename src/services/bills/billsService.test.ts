@@ -60,6 +60,7 @@ jest.mock("../../config/logger", () => ({
 import { prisma } from "../../config/database";
 import { logAudit } from "../audit";
 import { enqueueWebhook } from "../webhook";
+import { logFinancialEvent } from "../../config/logger";
 import { payBill, refundBillPayment } from "./billsService";
 
 describe("billsService", () => {
@@ -203,6 +204,13 @@ describe("billsService", () => {
         currency: "NGN",
       }),
       "tx-1",
+    );
+    expect(logFinancialEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "bill.initiated",
+        amount: 500000,
+        currency: "NGN",
+      }),
     );
   });
 

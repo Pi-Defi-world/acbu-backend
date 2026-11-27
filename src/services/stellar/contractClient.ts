@@ -28,13 +28,7 @@ export type ScValPrimitive =
  * Replaces the previous `any` parameter type so unsupported shapes are
  * rejected by the compiler rather than reaching the runtime throw.
  */
-export type ScValInput =
-  | string
-  | number
-  | bigint
-  | boolean
-  | Uint8Array
-  | ScValInput[];
+export type ScValInput = string | number | bigint | boolean | Uint8Array | ScValInput[];
 
 function isRetryableSorobanNetworkError(message: string): boolean {
   return /ENOTFOUND|ECONNRESET|ETIMEDOUT|ECONNREFUSED|fetch failed|socket hang up/i.test(message);
@@ -360,15 +354,12 @@ export class ContractClient {
    * Accepts GetSuccessfulTransactionResponse which carries resultXdr.
    * Falls back to Horizon-style result_xdr shape for non-Soroban paths.
    */
-  private parseTransactionResult(
-    result: rpc.Api.GetSuccessfulTransactionResponse,
-  ): xdr.ScVal {
+  private parseTransactionResult(result: rpc.Api.GetSuccessfulTransactionResponse): xdr.ScVal {
     try {
       // `resultXdr` is present on GetSuccessfulTransactionResponse.
       // We normalise it to a base64 string regardless of whether the SDK has
       // already parsed it into an XDR struct or left it as a raw string.
-      const rawResultXdr: xdr.TransactionResult | string | undefined =
-        result.resultXdr;
+      const rawResultXdr: xdr.TransactionResult | string | undefined = result.resultXdr;
 
       if (rawResultXdr) {
         const resultXdrBase64: string =

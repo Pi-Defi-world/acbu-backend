@@ -6,8 +6,16 @@ import axios from "axios";
 import { config } from "../../config/env";
 import { logger } from "../../config/logger";
 
-const POSITIVE_TTL_MS = parseInt(process.env.EXCHANGE_RATE_CACHE_TTL_MS || "60000", 10);
-const NEGATIVE_TTL_MS = parseInt(process.env.EXCHANGE_RATE_NEGATIVE_CACHE_TTL_MS || "30000", 10);
+/**
+ * Cache TTL configuration (#1407, W11-AUD-004):
+ * - The on-chain acbu_oracle contract rejects rate attestations older than 300 seconds (5 minutes).
+ * - Align backend exchange rate cache TTL to 180 seconds (3 minutes) to guarantee rates submitted
+ *   or verified on-chain never breach contract staleness bounds.
+ * - MAX_EXCHANGE_RATE_CACHE_TTL_MS clamps any external environment override to 180s.
+ */
+export const MAX_EXCHANGE_RATE_CACHE_TTL_MS = 180_000; // 180 seconds (3 minutes)
+export const DEFAULT_POSITIVE_TTL_MS = 180_000; // 180 seconds (3 minutes)
+export const DEFAULT_NEGATIVE_TTL_MS = 30_000; // 30 seconds
 const REQUEST_TIMEOUT_MS = 10_000;
 
 interface ExchangeRateApiPairResponse {
@@ -36,7 +44,19 @@ export function isReasonableExchangeRate(rate: number): boolean {
 }
 
 export function resolveExchangeRateCacheTtlMs(success: boolean): number {
-  return success ? POSITIVE_TTL_MS : NEGATIVE_TTL_MS;
+  if (!success) {
+    const rawNeg = parseInt(
+      process.env.EXCHANGE_RATE_NEGATIVE_CACHE_TTL_MS || String(DEFAULT_NEGATIVE_TTL_MS),
+      10,
+    );
+    return Number.isFinite(rawNeg) && rawNeg > 0 ? rawNeg : DEFAULT_NEGATIVE_TTL_MS;
+  }
+  const rawPos = parseInt(
+    process.env.EXCHANGE_RATE_CACHE_TTL_MS || String(DEFAULT_POSITIVE_TTL_MS),
+    10,
+  );
+  const ttl = Number.isFinite(rawPos) && rawPos > 0 ? rawPos : DEFAULT_POSITIVE_TTL_MS;
+  return Math.min(ttl, MAX_EXCHANGE_RATE_CACHE_TTL_MS);
 }
 
 /** True for upstream/transient failures that should be negative-cached. */
@@ -110,16 +130,28 @@ async function fetchFromExternalApi(currency: string): Promise<number | null> {
   return null;
 }
 
+export interface FetchExchangeRateOptions {
+  forceRefresh?: boolean;
+}
+
 /**
  * Fetch USD rate for 1 unit of the given currency (e.g. 1 NGN = x USD).
  * Successful responses and retryable failures are cached independently.
+ * Pass { forceRefresh: true } to bypass cache and trigger immediate refresh (#1407).
  */
-export async function fetchExchangeRateUsd(currency: string): Promise<number | null> {
+export async function fetchExchangeRateUsd(
+  currency: string,
+  options?: FetchExchangeRateOptions,
+): Promise<number | null> {
   const key = currency.toUpperCase();
 
-  const cached = getCachedExchangeRate(key);
-  if (cached !== undefined) {
-    return cached;
+  if (options?.forceRefresh) {
+    invalidateExchangeRateCache(key);
+  } else {
+    const cached = getCachedExchangeRate(key);
+    if (cached !== undefined) {
+      return cached;
+    }
   }
 
   const pending = inflight.get(key);
@@ -146,4 +178,21 @@ export async function fetchExchangeRateUsd(currency: string): Promise<number | n
 
   inflight.set(key, promise);
   return promise;
+}
+
+/**
+ * Refresh exchange rate immediately and return the fresh rate.
+ */
+export async function refreshExchangeRate(currency: string): Promise<number | null> {
+  return fetchExchangeRateUsd(currency, { forceRefresh: true });
+}
+
+/**
+ * Trigger an immediate background refresh of the exchange rate without awaiting (#1407).
+ */
+export function triggerBackgroundExchangeRateRefresh(currency: string): void {
+  invalidateExchangeRateCache(currency);
+  fetchExchangeRateUsd(currency, { forceRefresh: true }).catch((error) => {
+    logger.warn("Background exchange rate refresh failed", { currency, error });
+  });
 }

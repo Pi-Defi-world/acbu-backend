@@ -22,15 +22,11 @@ import {
   isCurrencyWithdrawalPaused,
 } from "../services/limits/limitsService";
 import { getBurnFeeBps } from "../services/feePolicy/feePolicyService";
-import {
-  parseMonetaryString,
-  decimalToContractNumber,
-  contractNumberToDecimal,
-  calculateFee,
-} from "../utils/decimalUtils";
+import { parseMonetaryString, decimalToContractAmount, calculateFee } from "../utils/decimalUtils";
 import { AppError } from "../middleware/errorHandler";
 import { getLatestAcbuRate } from "../services/rates/acbuRateCache";
 import { logger } from "../config/logger";
+import { assertValidRecipientAccount } from "../utils/stellar";
 
 function extractIdempotencyKey(req: AuthRequest): string | undefined {
   const key = req.headers["idempotency-key"];
@@ -99,6 +95,20 @@ export const burnAcbu = async (
     if (!wallet) {
       throw new AppError("Wallet not found", 404);
     }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.apiKey.userId },
+      select: { stellarAddress: true },
+    });
+    if (!user?.stellarAddress) {
+      throw new AppError("Recipient Stellar account is not configured", 400);
+    }
+    try {
+      assertValidRecipientAccount(user.stellarAddress);
+    } catch {
+      throw new AppError("Recipient Stellar account is invalid", 400);
+    }
+    const recipientAddress = user.stellarAddress;
 
     // **SECURITY FIX (AB-009)**: Verify sufficient balance before attempting burn
     const currentBalance = new Decimal(wallet.acbuBalance as any);
@@ -172,7 +182,7 @@ export const burnAcbu = async (
       try {
         const result = await acbuBurningService.redeemSingle({
           user: req.apiKey.userId,
-          recipient: wallet.id,
+          recipient: recipientAddress,
           acbuAmount: decimalToContractNumber(acbuAmount),
           currency: body.currency,
           idempotencyKey,

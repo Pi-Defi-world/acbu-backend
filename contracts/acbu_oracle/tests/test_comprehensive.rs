@@ -474,6 +474,57 @@ fn test_set_basket_config() {
 }
 
 #[test]
+fn test_set_basket_config_allows_zero_weight_expansion_slots() {
+    let (env, client, _contract_id, _admin, _validators) = setup();
+    let codes = [
+        "NGN", "ZAR", "KES", "EGP", "GHS", "RWF", "XOF", "MAD", "TZS", "UGX",
+    ];
+    let mut currencies = Vec::new(&env);
+    let mut weights = Map::new(&env);
+
+    for code in codes {
+        let currency = CurrencyCode::new(&env, code);
+        currencies.push_back(currency.clone());
+        let weight = match code {
+            "NGN" => 4615,
+            "KES" => 3077,
+            "GHS" => 2308,
+            _ => 0,
+        };
+        weights.set(currency, weight);
+    }
+
+    client.set_basket_config(&currencies, &weights);
+
+    assert_eq!(client.get_currencies().len(), 10);
+    assert_eq!(client.get_basket_weight(&CurrencyCode::new(&env, "NGN")), 4615);
+    assert_eq!(client.get_basket_weight(&CurrencyCode::new(&env, "ZAR")), 0);
+}
+
+#[test]
+fn test_basket_rate_requires_active_feeds_but_ignores_zero_weight_slots() {
+    let (env, client, _contract_id, _admin, _validators) = setup();
+    let ngn = CurrencyCode::new(&env, "NGN");
+    let kes = CurrencyCode::new(&env, "KES");
+    let ugx = CurrencyCode::new(&env, "UGX");
+    let mut currencies = Vec::new(&env);
+    currencies.push_back(ngn.clone());
+    currencies.push_back(kes.clone());
+    currencies.push_back(ugx.clone());
+    let mut weights = Map::new(&env);
+    weights.set(ngn.clone(), 5000);
+    weights.set(kes.clone(), 5000);
+    weights.set(ugx, 0);
+    client.set_basket_config(&currencies, &weights);
+
+    client.set_rate_admin(&ngn, &1_000_000);
+    assert!(client.try_get_acbu_usd_rate().is_err());
+
+    client.set_rate_admin(&kes, &2_000_000);
+    assert_eq!(client.get_acbu_usd_rate(), 1_500_000);
+}
+
+#[test]
 fn test_get_basket_weight_nonexistent_returns_zero() {
     let (env, client, _contract_id, _admin, _validators) = setup();
 

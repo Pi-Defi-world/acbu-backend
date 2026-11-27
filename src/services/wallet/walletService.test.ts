@@ -19,6 +19,11 @@ jest.mock("./walletStateService", () => ({
   updateWalletWithConcurrency: jest.fn(),
 }));
 
+// Avoid loading src/config/env.ts (pre-existing unrelated namedType issue).
+jest.mock("../../config/logger", () => ({
+  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+}));
+
 const mockedFindUnique = prisma.user.findUnique as jest.Mock;
 const mockedUpdateWallet = updateWalletWithConcurrency as jest.Mock;
 
@@ -57,6 +62,15 @@ describe("walletService", () => {
       assertUserWalletAddress("user-3", "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"),
     ).rejects.toMatchObject({ statusCode: 403, message: "Wallet address does not match user" });
   });
+
+  it("rejects a stored placeholder even when it matches the provided value (#1313)", async () => {
+    const placeholder = `G${"A".repeat(55)}`;
+    mockedFindUnique.mockResolvedValue({ stellarAddress: placeholder });
+    await expect(assertUserWalletAddress("user-placeholder", placeholder)).rejects.toMatchObject({
+      statusCode: 500,
+      message: "Invalid wallet address format",
+    });
+  });
 });
 
 describe("getWalletEnrollmentStatus", () => {
@@ -81,6 +95,22 @@ describe("getWalletEnrollmentStatus", () => {
   it("reports enrollment required for an unknown user", async () => {
     mockedFindUnique.mockResolvedValue(null);
     await expect(getWalletEnrollmentStatus("missing")).resolves.toEqual({
+      enrolled: false,
+      stellar_address: null,
+    });
+  });
+
+  it("does not report a legacy non-G placeholder as enrolled (#1313)", async () => {
+    mockedFindUnique.mockResolvedValue({ stellarAddress: `P${"A".repeat(55)}` });
+    await expect(getWalletEnrollmentStatus("user-legacy")).resolves.toEqual({
+      enrolled: false,
+      stellar_address: null,
+    });
+  });
+
+  it("does not report a G-prefixed placeholder as enrolled (#1313)", async () => {
+    mockedFindUnique.mockResolvedValue({ stellarAddress: `G${"A".repeat(55)}` });
+    await expect(getWalletEnrollmentStatus("user-placeholder")).resolves.toEqual({
       enrolled: false,
       stellar_address: null,
     });
