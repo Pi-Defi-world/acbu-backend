@@ -16,6 +16,12 @@ const TESTNET_HORIZON_URL =
 const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
 export const TRANSACTION_TIMEOUT_SECONDS = 60;
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  throw new Error("Transfer canceled because the wallet disconnected.");
+}
+
 async function resolveHorizonUrl(): Promise<string> {
   try {
     const cfg = await getAssetsConfig();
@@ -58,12 +64,18 @@ export async function submitAcbuPaymentClient(params: {
   amount: string;
   userSecret?: string;
   external?: { kit: StellarWalletsKit; address: string };
+  signal?: AbortSignal;
 }): Promise<{ transactionHash: string; sourceAddress: string }> {
+  throwIfAborted(params.signal);
   const horizonUrl = await resolveHorizonUrl();
+  throwIfAborted(params.signal);
   const networkPassphrase = await resolveNetworkPassphrase();
+  throwIfAborted(params.signal);
   const asset = await resolveAcbuAsset();
+  throwIfAborted(params.signal);
   // W11-AUD-023: dynamic import for Horizon to enable code-splitting
   const { Horizon } = await import("@stellar/stellar-sdk");
+  throwIfAborted(params.signal);
   const server = new Horizon.Server(horizonUrl);
 
   const sourceAddress = params.external?.address
@@ -76,10 +88,12 @@ export async function submitAcbuPaymentClient(params: {
   }
 
   const sourceAccount = await server.loadAccount(sourceAddress);
+  throwIfAborted(params.signal);
   // Use current network base fee instead of a hardcoded value to avoid
   // transactions getting stuck during congestion. Apply a multiplier to
   // increase the chance of timely inclusion.
   const baseFee = await server.fetchBaseFee();
+  throwIfAborted(params.signal);
   const fee = String(Math.max(100, Math.ceil(baseFee * 2)));
   const tx = new TransactionBuilder(sourceAccount, {
     fee,
@@ -96,12 +110,28 @@ export async function submitAcbuPaymentClient(params: {
     .build();
 
   if (params.external?.kit) {
-    const { signedTxXdr } = await params.external.kit.signTransaction(tx.toXDR(), {
-      address: sourceAddress,
-      networkPassphrase,
-    });
+    throwIfAborted(params.signal);
+    const { address: activeAddress } = await params.external.kit.getAddress();
+    throwIfAborted(params.signal);
+    if (activeAddress !== sourceAddress) {
+      throw new Error(
+        "The connected wallet changed during transfer. Reconnect the correct wallet and try again.",
+      );
+    }
+    const { signedTxXdr, signerAddress } =
+      await params.external.kit.signTransaction(tx.toXDR(), {
+        address: sourceAddress,
+        networkPassphrase,
+      });
+    throwIfAborted(params.signal);
+    if (signerAddress && signerAddress !== sourceAddress) {
+      throw new Error(
+        "The connected wallet signed with a different address. Reconnect the correct wallet and try again.",
+      );
+    }
     const signed = TransactionBuilder.fromXDR(signedTxXdr, networkPassphrase);
     const res = await server.submitTransaction(signed);
+    throwIfAborted(params.signal);
     const txHash = res.hash;
     // Poll Horizon briefly for the transaction to be included in a ledger.
     try {
@@ -109,43 +139,53 @@ export async function submitAcbuPaymentClient(params: {
       const started = Date.now();
       let found = false;
       while (Date.now() - started < timeoutMs) {
+        throwIfAborted(params.signal);
         try {
           await server.transactions().transaction(txHash).call();
           found = true;
           break;
         } catch (err) {
+          throwIfAborted(params.signal);
           await new Promise((r) => setTimeout(r, 2000));
         }
       }
+      throwIfAborted(params.signal);
       if (!found) logger.warn(`Stellar tx ${txHash} submitted but not found within ${timeoutMs}ms`);
     } catch (e) {
+      throwIfAborted(params.signal);
       logger.warn('Error polling Horizon for tx confirmation', e);
     }
     return { transactionHash: txHash, sourceAddress };
   }
 
+  throwIfAborted(params.signal);
   if (!params.userSecret) {
     throw new Error("Missing wallet secret.");
   }
   const kp = Keypair.fromSecret(params.userSecret);
   tx.sign(kp);
   const res = await server.submitTransaction(tx);
+  throwIfAborted(params.signal);
   const txHash = res.hash;
   try {
     const timeoutMs = 60000;
     const started = Date.now();
     let found = false;
     while (Date.now() - started < timeoutMs) {
+      throwIfAborted(params.signal);
       try {
         await server.transactions().transaction(txHash).call();
         found = true;
         break;
       } catch (err) {
+        throwIfAborted(params.signal);
         await new Promise((r) => setTimeout(r, 2000));
       }
     }
+    throwIfAborted(params.signal);
     if (!found) logger.warn(`Stellar tx ${txHash} submitted but not found within ${timeoutMs}ms`);
   } catch (e) {
+    throwIfAborted(params.signal);
     logger.warn('Error polling Horizon for tx confirmation', e);
   }
   return { transactionHash: txHash, sourceAddress };
