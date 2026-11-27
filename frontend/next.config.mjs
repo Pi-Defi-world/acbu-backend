@@ -164,7 +164,7 @@ const nextConfig = {
   // resolved to original source.  The maps are uploaded to the error
   // tracking service and then stripped from the public build output
   // (see webpack config below) so they are never served to browsers.
-  productionBrowserSourceMaps: true,
+  productionBrowserSourceMaps: false,
 
   webpack(config, { isServer, dev }) {
     // --- Path alias (must match tsconfig.json `paths`) --------------------
