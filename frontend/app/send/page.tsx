@@ -72,6 +72,44 @@ function getStatusBadgeClassName(status: string): string {
   }
 }
 
+function throwIfAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  throw new Error("Transfer canceled because the wallet disconnected.");
+}
+
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(
+      signal.reason instanceof Error
+        ? signal.reason
+        : new Error("Transfer canceled because the wallet disconnected."),
+    );
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("Transfer canceled because the wallet disconnected."),
+      );
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 /**
  * Page component for sending ACBU tokens.
  */
@@ -251,6 +289,10 @@ export default function SendPage() {
     }
     setSubmitError("");
     setSending(true);
+    const abortController = new AbortController();
+    const { signal } = abortController;
+    const stopWalletMonitoring: Array<() => void> = [];
+    let activeExternalAddress: string | undefined;
     try {
       let blockchainTxHash: string | undefined;
 
@@ -258,6 +300,7 @@ export default function SendPage() {
       if (looksLikeStellarAddress(to)) {
         if (!userId) throw new Error("Not logged in");
         const secret = await getWalletSecretAnyLocal(userId, stellarAddress);
+        throwIfAborted(signal);
         if (secret) {
           const sourceAddress = Keypair.fromSecret(secret).publicKey();
           if (stellarAddress && sourceAddress !== stellarAddress) {
@@ -269,7 +312,9 @@ export default function SendPage() {
             destination: to,
             amount,
             userSecret: secret,
+            signal,
           });
+          throwIfAborted(signal);
           blockchainTxHash = submit.transactionHash;
         } else {
           if (!kit) {
@@ -277,35 +322,104 @@ export default function SendPage() {
               "Your wallet secret isn't available on this device and the wallet connector isn't ready yet. Please wait a moment and retry.",
             );
           }
-          const address = await new Promise<string>((resolve, reject) => {
-            kit
-              .openModal({
-                onWalletSelected: async (selectedOption: { id: string }) => {
-                  try {
-                    kit.setWallet(selectedOption.id);
-                    const { address } = await kit.getAddress();
-                    resolve(address);
-                  } catch (err) {
-                    reject(err);
-                  }
-                },
-              })
-              .catch(reject);
-          });
+          const abortForWalletChange = () => {
+            abortController.abort(
+              new Error(
+                "Wallet disconnected or changed during transfer. Reconnect and try again.",
+              ),
+            );
+          };
+          const address = await withAbort(
+            new Promise<string>((resolve, reject) => {
+              kit
+                .openModal({
+                  onWalletSelected: async (selectedOption: { id: string }) => {
+                    try {
+                      throwIfAborted(signal);
+                      kit.setWallet(selectedOption.id);
+                      const { address: selectedAddress } =
+                        await kit.getAddress();
+                      throwIfAborted(signal);
+                      resolve(selectedAddress);
+                    } catch (err) {
+                      reject(err);
+                    }
+                  },
+                  onClosed: (err?: Error) => {
+                    reject(err || new Error("Wallet modal closed"));
+                  },
+                })
+                .catch(reject);
+            }),
+            signal,
+          );
+          activeExternalAddress = address;
           if (stellarAddress && address !== stellarAddress) {
             throw new Error(
               `Connected wallet (${address.slice(0, 6)}…${address.slice(-4)}) doesn't match the account on record (${stellarAddress.slice(0, 6)}…${stellarAddress.slice(-4)}). Connect the correct wallet (or update your linked wallet), then retry.`,
             );
           }
-          const submit = await submitAcbuPaymentClient({
-            destination: to,
-            amount,
-            external: { kit, address },
-          });
+          const { address: currentAddress } = await withAbort(
+            kit.getAddress(),
+            signal,
+          );
+          if (currentAddress !== address) {
+            throw new Error(
+              "The connected wallet changed during transfer. Reconnect the correct wallet and try again.",
+            );
+          }
+          let walletCheckInProgress = false;
+          const walletCheckInterval = window.setInterval(() => {
+            if (walletCheckInProgress || signal.aborted) return;
+            walletCheckInProgress = true;
+            void kit
+              .getAddress()
+              .then(({ address: currentExternalAddress }) => {
+                if (currentExternalAddress !== address) abortForWalletChange();
+              })
+              .catch(abortForWalletChange)
+              .finally(() => {
+                walletCheckInProgress = false;
+              });
+          }, 500);
+          stopWalletMonitoring.push(() =>
+            window.clearInterval(walletCheckInterval),
+          );
+          const submit = await withAbort(
+            submitAcbuPaymentClient({
+              destination: to,
+              amount,
+              external: { kit, address },
+              signal,
+            }),
+            signal,
+          );
+          throwIfAborted(signal);
+          const { address: finalAddress } = await withAbort(
+            kit.getAddress(),
+            signal,
+          );
+          if (finalAddress !== address || submit.sourceAddress !== address) {
+            throw new Error(
+              "The connected wallet changed during transfer. Reconnect the correct wallet and try again.",
+            );
+          }
           blockchainTxHash = submit.transactionHash;
         }
       }
 
+      throwIfAborted(signal);
+      if (activeExternalAddress && kit) {
+        const { address: currentAddress } = await withAbort(
+          kit.getAddress(),
+          signal,
+        );
+        if (currentAddress !== activeExternalAddress) {
+          throw new Error(
+            "The connected wallet changed during transfer. Reconnect the correct wallet and try again.",
+          );
+        }
+      }
       await transfersApi.createTransfer(
         {
           to,
@@ -313,7 +427,7 @@ export default function SendPage() {
           note,
           ...(blockchainTxHash ? { blockchain_tx_hash: blockchainTxHash } : {}),
         },
-        opts,
+        { ...opts, signal },
       );
       loadTransfers();
       refreshBalance();
@@ -331,6 +445,7 @@ export default function SendPage() {
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : "Transfer failed");
     } finally {
+      stopWalletMonitoring.forEach((stop) => stop());
       setSending(false);
     }
   }, [
