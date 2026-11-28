@@ -629,13 +629,25 @@ pub fn calculate_amount_after_fee(amount: i128, fee_rate_bps: i128) -> Result<i1
 /// stranding protection cannot drift apart (AC-031). Callers panic with their
 /// own `InvalidRecipient` error so contract error codes stay unchanged.
 ///
-/// W11-CAR-033: uses the XDR `ScAddress` discriminant rather than a strkey
-/// heuristic (length-56 + leading `G`), which could pass for malformed keys.
+/// W11-CAR-033: reads the address kind from the canonical strkey version byte.
+/// The XDR `ScAddress` conversion cannot be used here: soroban-sdk 21 gates
+/// `From<&Address> for ScAddress` behind `not(target_family = "wasm")`, so it
+/// does not exist in a contract build. `Address::to_string` is the guest-safe
+/// accessor, and because an `Address` value can only come from the host (or
+/// from `Address::from_string`, which validates the version byte and CRC16),
+/// its strkey is always canonical: `G` for an account, `C` for a contract.
 pub fn is_account_address(address: &Address) -> bool {
-    matches!(
-        soroban_sdk::xdr::ScAddress::from(address),
-        soroban_sdk::xdr::ScAddress::Account(_)
-    )
+    const STRKEY_LEN: u32 = 56;
+    const ACCOUNT_STRKEY_PREFIX: u8 = b'G';
+
+    let strkey = address.to_string();
+    if strkey.len() != STRKEY_LEN {
+        return false;
+    }
+
+    let mut bytes = [0u8; 56];
+    strkey.copy_into_slice(&mut bytes);
+    bytes[0] == ACCOUNT_STRKEY_PREFIX
 }
 
 /// Calculate median using in-place quickselect algorithm

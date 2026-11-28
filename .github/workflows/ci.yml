@@ -129,8 +129,13 @@ jobs:
         run: node -e "require('bcrypt')"
 
       - name: Create schema drift shadow database
+        # `pg` is not a dependency of this package, so a `node -e require('pg')`
+        # one-liner cannot resolve it under pnpm's isolated node_modules. Use
+        # the psql client already inside the running postgres container instead.
         run: >
-          node -e "const{Pool}=require('pg');(async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL});await p.query('CREATE DATABASE acbu_test_shadow');await p.end();})().catch(e=>{console.error(e.message);process.exit(1);})"
+          docker compose exec -T postgres
+          psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+          -c 'CREATE DATABASE acbu_test_shadow'
 
       - name: Verify schema drift and down-migrations
         env:
@@ -306,8 +311,12 @@ jobs:
         # `prisma migrate diff --from-migrations` rebuilds the schema purely from the
         # migration files into an empty shadow database, then compares it to the deployed
         # database. The superuser provisioned by the service container can create it.
+        # `pg` is not a dependency of this package, so this uses the psql client inside
+        # the running postgres container instead of a `node -e require('pg')` one-liner.
         run: >
-          node -e "const{Pool}=require('pg');(async()=>{const p=new Pool({connectionString:process.env.DATABASE_URL});await p.query('CREATE DATABASE acbu_ci_shadow');await p.end();console.log('shadow database created');})().catch(e=>{console.error(e.message);process.exit(1);})"
+          docker compose exec -T postgres
+          psql -U acbu_ci -d acbu_ci
+          -c 'CREATE DATABASE acbu_ci_shadow'
 
       - name: Block destructive migrations without label
         # Shared, unit-tested implementation (see tests/destructiveMigrationGate.test.ts).
