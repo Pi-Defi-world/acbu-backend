@@ -56,6 +56,21 @@ wave 11 issue.
 - Branch protection should require this check plus "branches up to date" on `dev`/`main`.
 - Open PRs against the archived repos must be rebased/retargeted here by their authors.
 
+## Local tooling
+
+- **Git hooks:** one root hook manager lives in `scripts/hooks/` and is installed
+  by the root `postinstall` script (`git config core.hooksPath scripts/hooks`).
+  It runs backend and frontend lint/format checks plus the shared contract
+  validation script, so there are no separate `contracts/.githooks` or
+  `frontend/.husky` installers to keep in sync.
+- **TypeScript:** the root `tsconfig.json` is a composite project that references
+  the frontend project config at `frontend/tsconfig.project.json`. Use
+  `pnpm type-check` for the backend-only check or `pnpm type-check:all` to build
+  the complete project-reference graph.
+- **Lint and format:** `pnpm lint` and `pnpm format:check` run the backend checks
+  and then delegate to the frontend's own ESLint/Prettier configuration, so
+  frontend rules are enforced from the repository root.
+
 ## Pending follow-ups (tracked as wave 11 issues)
 
 - Credential rotation attestation for anyone who opened an infected clone.

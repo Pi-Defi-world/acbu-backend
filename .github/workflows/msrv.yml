@@ -2,11 +2,13 @@ name: MSRV
 
 # Enforces the platform-wide minimum supported Rust version (MSRV) across the
 # Rust repositories that make up the ACBU stack:
+#   - contracts/                 (the monorepo Soroban workspace)
 #   - acbu-smart-contract        (Soroban contracts, default branch: dev)
 #   - acbu-zk                    (contracts/zk_verifier, default branch: master)
 #   - ultrahonk-soroban-verifier (default branch: main)
 #
-# Each repo is checked out on its default branch and `cargo check` is run with
+# The local `contracts/` workspace is checked in this repository. The remaining
+# repos are checked out on their default branch and `cargo check` is run with
 # the shared MSRV. RUSTUP_TOOLCHAIN is pinned so a repo's own rust-toolchain.toml
 # cannot silently override the toolchain being validated.
 #
@@ -32,6 +34,38 @@ env:
   MSRV: "1.88.0"
 
 jobs:
+  contracts-msrv:
+    name: MSRV · contracts workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust ${{ env.MSRV }}
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: ${{ env.MSRV }}
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-msrv-contracts-${{ hashFiles('contracts/Cargo.toml', 'contracts/Cargo.lock', 'contracts/rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-msrv-contracts-
+
+      - name: cargo check at MSRV
+        working-directory: contracts
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
+        # --locked keeps the check pinned to the committed Cargo.lock so the
+        # MSRV gate cannot silently resolve newer transitive dependencies.
+        run: cargo check --workspace --locked
+
   msrv:
     name: MSRV · ${{ matrix.repo.name }}
     runs-on: ubuntu-latest

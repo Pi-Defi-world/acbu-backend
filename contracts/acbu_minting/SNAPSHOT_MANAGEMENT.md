@@ -139,7 +139,7 @@ Add snapshot validation to your pre-commit hook:
 
 ```bash
 #!/bin/bash
-# .githooks/pre-commit
+# scripts/validate-staged-contracts.sh
 
 echo "Validating snapshots..."
 if ! cargo test test_snapshot_validation --package acbu_minting --quiet 2>&1 | grep -q "test result: ok"; then
@@ -231,7 +231,7 @@ If snapshots are not actively used in tests currently, consider:
 - `acbu_minting/tests/snapshot_validation.rs` - Validation logic
 - `acbu_minting/test_snapshots/*.json` - Snapshot files
 - `acbu_minting/tests/test.rs` - Main test suite
-- `.githooks/pre-commit` - Git hook for validation
+- `scripts/validate-staged-contracts.sh` - Shared pre-commit validation
 
 ## References
 

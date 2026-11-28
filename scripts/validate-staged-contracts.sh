@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# Pre-commit hook for WASM integrity verification and secret scanning.
-# Prevents committing changes that would break WASM hash verification
-# or leak credentials into source control (AX-002).
+# Shared pre-commit checks for the contracts workspace.
+# Prevents committing changes that would break WASM hash verification,
+# leak credentials into source control (AX-002), or invalidate snapshots.
+# Invoked by the single root hook at scripts/hooks/pre-commit.
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(git rev-parse --show-toplevel)/contracts"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+PROJECT_ROOT="$REPO_ROOT/contracts"
 
 # Colors
 RED='\033[0;31m'
@@ -39,7 +40,7 @@ if [ -n "$STAGED_TEXT_FILES" ]; then
     GENERIC_SECRET_PATTERN='(SECRET|SECRET_KEY|STELLAR_SECRET_KEY|PRIVATE_KEY)\s*[=:]\s*["\x27]?[A-Za-z0-9+/]{20,}'
 
     while IFS= read -r file; do
-        [ -f "$PROJECT_ROOT/$file" ] || continue
+        [ -f "$REPO_ROOT/$file" ] || continue
 
         # Check staged content (not working tree) via git show
         STAGED_CONTENT=$(git show ":$file" 2>/dev/null || true)
@@ -136,13 +137,13 @@ echo -e "${GREEN}[PASS]${NC} WASM integrity checks passed"
 # Check snapshot validity if snapshot-related files are being modified
 echo -e "${YELLOW}[Pre-commit Hook]${NC} Checking test snapshots..."
 
-SNAPSHOT_RELATED_FILES=$(git diff --cached --name-only | grep -E "(^|/)(acbu_minting/src/|acbu_minting/tests/|acbu_minting/test_snapshots/|shared/src/)" || true)
+SNAPSHOT_RELATED_FILES=$(git diff --cached --name-only | grep -E "(^|/)contracts/(acbu_minting/src/|acbu_minting/tests/|acbu_minting/test_snapshots/|shared/src/)" || true)
 
 if [ -n "$SNAPSHOT_RELATED_FILES" ]; then
     echo -e "${YELLOW}⚠️  Snapshot-related files modified, validating snapshots...${NC}"
     
-    # Run snapshot validation
-    if ! cargo test test_snapshot_validation --package acbu_minting --quiet 2>&1 | grep -q "test result: ok"; then
+    # Run snapshot validation from the contracts workspace.
+    if ! cargo test --manifest-path "$PROJECT_ROOT/Cargo.toml" test_snapshot_validation --package acbu_minting --quiet 2>&1 | grep -q "test result: ok"; then
         echo -e "${RED}[FAIL]${NC} Snapshot validation failed!"
         echo ""
         echo "Modified files:"
