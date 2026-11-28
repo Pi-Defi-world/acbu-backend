@@ -50,10 +50,12 @@
     "compute:basket-weights": "ts-node --transpile-only scripts/compute-basket-weights.ts",
     "event-schema:check": "node scripts/check-event-schema.js",
     "test:event-schema": "node --test scripts/check-event-schema.test.js",
-    "hooks:install": "git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/*",
-    "postinstall": "node scripts/prisma-generate-if-needed.js && git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/* || true",
+    "postinstall": "node scripts/prisma-generate-if-needed.js",
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0",
-    "changelog:update": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s"
+    "changelog:update": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s",
+    "dev:frontend": "pnpm --filter acbu-frontend dev",
+    "build:all": "pnpm run build && pnpm --filter acbu-frontend build && pnpm --filter zk-comply-sdk build",
+    "type-check:all": "pnpm run type-check && pnpm --filter acbu-frontend typecheck"
   },
   "keywords": [
     "acbu",
@@ -140,7 +142,10 @@
     "supertest": "^7.2.2",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
-    "zod-to-json-schema": "^3.25.2"
+    "zod-to-json-schema": "^3.25.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "@commitlint/cli": "^21.2.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -188,5 +193,21 @@
       "proxy-addr": ">=2.0.8",
       "compression": ">=1.8.2"
     }
+  },
+  "lint-staged": {
+    "src/**/*.{js,jsx,ts,tsx}": [
+      "prettier --write",
+      "ESLINT_USE_FLAT_CONFIG=false eslint --fix"
+    ],
+    "frontend/**/*.{js,jsx,ts,tsx}": [
+      "pnpm --dir frontend exec prettier --write",
+      "pnpm --dir frontend exec eslint --fix"
+    ],
+    "frontend/**/*.{json,css,md}": [
+      "pnpm --dir frontend exec prettier --write"
+    ],
+    "contracts/**/*.{rs,toml,json,md,yml,yaml}": [
+      "pnpm exec prettier --write"
+    ]
   }
 }

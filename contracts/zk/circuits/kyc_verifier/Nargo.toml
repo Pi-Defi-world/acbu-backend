@@ -2,6 +2,7 @@
 name = "kyc_verifier"
 type = "bin"
 authors = ["ACBU Protocol"]
+license = "Apache-2.0"
 compiler_version = "=0.38.0"
 
 [dependencies]
