@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:poseidon2": "node scripts/verify-poseidon2-differential.mjs"
   },
   "dependencies": {
     "@aztec/bb.js": "0.87.0",
