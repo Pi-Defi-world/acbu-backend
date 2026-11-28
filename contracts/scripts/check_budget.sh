@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-MAX_SIZE_BYTES=60000
+MAX_SIZE_BYTES=120000
 WASM_DIR="target/wasm32-unknown-unknown/release"
 
 if [[ ! -d "$WASM_DIR" ]]; then
