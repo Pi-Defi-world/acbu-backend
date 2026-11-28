@@ -9,7 +9,8 @@
 //
 //   * state width t = 4, rate r = 3, capacity c = 1
 //   * domain separator IV = input_length << 64, stored in state[rate]
-//   * every full rate-sized block is added into the state, then permuted
+//   * a full rate-sized block is only permuted once more input follows; when
+//     the input ends on a block boundary the squeeze performs that permutation
 //   * the remaining zero-padded block is absorbed and squeezed with one final
 //     permutation, returning state[0]
 //
@@ -33,7 +34,13 @@ fn poseidon2_hash<let N: u32>(input: [Field; N]) -> Field {
         state[0] += input[block * POSEIDON2_RATE];
         state[1] += input[block * POSEIDON2_RATE + 1];
         state[2] += input[block * POSEIDON2_RATE + 2];
-        state = poseidon2_permute(state);
+        // Barretenberg keeps a complete block cached until the next element
+        // arrives; for inputs that end exactly on a block boundary the squeeze
+        // below performs this permutation instead, so permuting here as well
+        // would add an extra round for lengths divisible by the rate.
+        if (block + 1) * POSEIDON2_RATE < N {
+            state = poseidon2_permute(state);
+        }
     }
 
     let absorbed = full_blocks * POSEIDON2_RATE;
@@ -121,7 +128,8 @@ fn main(
 // `@aztec/bb.js@0.87.0` `BarretenbergSync.poseidon2Hash()` (the same library the
 // prover uses), so any divergence between the circuit sponge and Barretenberg
 // breaks these assertions. Lengths 2, 4 and 5 cover a single block, an exact
-// block plus a residual block, and two blocks plus a residual.
+// block plus a residual block, and two blocks plus a residual; lengths 3 and 6
+// cover inputs that end exactly on a block boundary.
 #[test]
 fn poseidon2_hash_matches_bb_js() {
     assert_eq(
@@ -133,8 +141,16 @@ fn poseidon2_hash_matches_bb_js() {
         0x208a72dec0df0224f59fdf62644c391524b9a313a49f62c90f0a20df1c84a391,
     );
     assert_eq(
+        poseidon2_hash([1, 2, 3]),
+        0x23864adb160dddf590f1d3303683ebcb914f828e2635f6e85a32f0a1aecd3dd8,
+    );
+    assert_eq(
         poseidon2_hash([1, 2, 3, 4, 5]),
         0x2247be7014a54d17342a7ef677f58d28877780d203860396967f5d0a18d259db,
+    );
+    assert_eq(
+        poseidon2_hash([1, 2, 3, 4, 5, 6]),
+        0x07f57fcda925c06dc0a311f3f17fa0218e079b514552744a25ba8a74ee8c9e7a,
     );
     assert_eq(
         poseidon2_hash([0, 0, 0, 0]),
@@ -184,7 +200,7 @@ fn test_valid_enterprise_kes() {
 fn test_rejects_kyc_level_outside_documented_range() {
     let commitment = poseidon2_hash_4(4, 566, 12345, 0);
     main(
-        1,
+        4,
         566,
         12345,
         commitment,

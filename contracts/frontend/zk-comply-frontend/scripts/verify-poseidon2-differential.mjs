@@ -37,8 +37,16 @@ const vectors = [
     expected: "0x208a72dec0df0224f59fdf62644c391524b9a313a49f62c90f0a20df1c84a391",
   },
   {
+    input: [1n, 2n, 3n],
+    expected: "0x23864adb160dddf590f1d3303683ebcb914f828e2635f6e85a32f0a1aecd3dd8",
+  },
+  {
     input: [1n, 2n, 3n, 4n, 5n],
     expected: "0x2247be7014a54d17342a7ef677f58d28877780d203860396967f5d0a18d259db",
+  },
+  {
+    input: [1n, 2n, 3n, 4n, 5n, 6n],
+    expected: "0x07f57fcda925c06dc0a311f3f17fa0218e079b514552744a25ba8a74ee8c9e7a",
   },
   {
     input: [0n, 0n, 0n, 0n],
